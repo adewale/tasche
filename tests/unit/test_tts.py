@@ -142,6 +142,103 @@ class TestListenLater:
 # ---------------------------------------------------------------------------
 
 
+    async def test_returns_409_when_already_pending(self) -> None:
+        """POST listen-later returns 409 when audio is already pending."""
+        article = ArticleFactory.create(
+            id="art_dup1", user_id="user_001", audio_status="pending",
+        )
+
+        def execute(sql: str, params: list) -> list:
+            if sql.startswith("SELECT") and "id = ?" in sql:
+                return [article]
+            return []
+
+        db = _TrackingD1(result_fn=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles/art_dup1/listen-later",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 409
+        assert "already in progress" in resp.json()["detail"]
+
+    async def test_returns_409_when_generating(self) -> None:
+        """POST listen-later returns 409 when audio is generating."""
+        article = ArticleFactory.create(
+            id="art_dup2", user_id="user_001", audio_status="generating",
+        )
+
+        def execute(sql: str, params: list) -> list:
+            if sql.startswith("SELECT") and "id = ?" in sql:
+                return [article]
+            return []
+
+        db = _TrackingD1(result_fn=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles/art_dup2/listen-later",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 409
+
+    async def test_returns_200_when_already_ready(self) -> None:
+        """POST listen-later returns 200 with existing data when ready."""
+        article = ArticleFactory.create(
+            id="art_ready", user_id="user_001",
+            audio_status="ready",
+            audio_key="articles/art_ready/audio.mp3",
+        )
+
+        def execute(sql: str, params: list) -> list:
+            if sql.startswith("SELECT") and "id = ?" in sql:
+                return [article]
+            return []
+
+        db = _TrackingD1(result_fn=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles/art_ready/listen-later",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["audio_status"] == "ready"
+        assert data["audio_key"] == "articles/art_ready/audio.mp3"
+
+    async def test_enqueues_when_failed(self) -> None:
+        """POST listen-later enqueues when previous attempt failed."""
+        article = ArticleFactory.create(
+            id="art_fail", user_id="user_001", audio_status="failed",
+        )
+
+        def execute(sql: str, params: list) -> list:
+            if sql.startswith("SELECT") and "id = ?" in sql:
+                return [article]
+            return []
+
+        db = _TrackingD1(result_fn=execute)
+        queue = MockQueue()
+        env = MockEnv(db=db, article_queue=queue)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles/art_fail/listen-later",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 202
+        assert len(queue.messages) == 1
+
+
 class TestGetAudio:
     async def test_streams_audio(self) -> None:
         """GET audio returns audio/mpeg content from R2."""
@@ -436,6 +533,110 @@ class TestTTSProcessingFailure:
 # ---------------------------------------------------------------------------
 # Authentication enforcement
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# strip_markdown unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestStripMarkdown:
+    def test_removes_headings(self) -> None:
+        """Heading markers (#) are removed, text is kept."""
+        from tts.processing import strip_markdown
+
+        assert "Hello" in strip_markdown("# Hello")
+        assert "#" not in strip_markdown("# Hello")
+
+    def test_removes_bold_italic(self) -> None:
+        """Bold and italic markers are removed."""
+        from tts.processing import strip_markdown
+
+        result = strip_markdown("This is **bold** and *italic* text")
+        assert "bold" in result
+        assert "italic" in result
+        assert "**" not in result
+        assert "*" not in result
+
+    def test_converts_links_to_text(self) -> None:
+        """Links [text](url) become just text."""
+        from tts.processing import strip_markdown
+
+        result = strip_markdown("Visit [Google](https://google.com)")
+        assert "Google" in result
+        assert "https://google.com" not in result
+
+    def test_removes_images(self) -> None:
+        """Images ![alt](url) are removed entirely."""
+        from tts.processing import strip_markdown
+
+        result = strip_markdown("See ![photo](https://img.com/x.jpg)")
+        assert "photo" not in result
+        assert "img.com" not in result
+
+    def test_removes_code_blocks(self) -> None:
+        """Code blocks are removed."""
+        from tts.processing import strip_markdown
+
+        md = "Before\n```python\nprint('hello')\n```\nAfter"
+        result = strip_markdown(md)
+        assert "print" not in result
+        assert "Before" in result
+        assert "After" in result
+
+    def test_removes_inline_code(self) -> None:
+        """Inline code backticks are removed but content kept."""
+        from tts.processing import strip_markdown
+
+        result = strip_markdown("Use `print()` function")
+        assert "print()" in result
+        assert "`" not in result
+
+    def test_removes_blockquotes(self) -> None:
+        """Blockquote markers are removed."""
+        from tts.processing import strip_markdown
+
+        result = strip_markdown("> This is a quote")
+        assert "This is a quote" in result
+        assert ">" not in result
+
+    def test_removes_horizontal_rules(self) -> None:
+        """Horizontal rules are removed."""
+        from tts.processing import strip_markdown
+
+        result = strip_markdown("Above\n---\nBelow")
+        assert "Above" in result
+        assert "Below" in result
+        assert "---" not in result
+
+    def test_removes_list_markers(self) -> None:
+        """List markers (-, *, 1.) are removed."""
+        from tts.processing import strip_markdown
+
+        result = strip_markdown("- item one\n* item two\n1. item three")
+        assert "item one" in result
+        assert "item two" in result
+        assert "item three" in result
+
+    def test_removes_html_tags(self) -> None:
+        """HTML tags are removed."""
+        from tts.processing import strip_markdown
+
+        result = strip_markdown("Some <em>text</em> here")
+        assert "text" in result
+        assert "<em>" not in result
+
+    def test_empty_input(self) -> None:
+        """Empty string returns empty string."""
+        from tts.processing import strip_markdown
+
+        assert strip_markdown("") == ""
+
+    def test_none_input(self) -> None:
+        """None returns None."""
+        from tts.processing import strip_markdown
+
+        assert strip_markdown(None) is None
 
 
 class TestTTSAuthRequired:

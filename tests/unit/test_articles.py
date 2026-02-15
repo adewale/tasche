@@ -362,6 +362,64 @@ class TestDeleteArticle:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Input validation (field length limits)
+# ---------------------------------------------------------------------------
+
+
+class TestInputValidation:
+    async def test_rejects_url_too_long(self) -> None:
+        """POST /api/articles returns 400 when URL exceeds 2048 chars."""
+        env = MockEnv()
+        client, session_id = await _authenticated_client(env)
+
+        long_url = "https://example.com/" + "a" * 2100
+        resp = client.post(
+            "/api/articles",
+            json={"url": long_url},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 400
+        assert "2048" in resp.json()["detail"]
+
+    async def test_rejects_title_too_long(self) -> None:
+        """POST /api/articles returns 400 when title exceeds 500 chars."""
+        env = MockEnv()
+        client, session_id = await _authenticated_client(env)
+
+        resp = client.post(
+            "/api/articles",
+            json={"url": "https://example.com", "title": "x" * 501},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 400
+        assert "500" in resp.json()["detail"]
+
+    async def test_rejects_title_too_long_on_update(self) -> None:
+        """PATCH /api/articles/{id} returns 400 when title exceeds 500 chars."""
+        article = ArticleFactory.create(id="art_valid", user_id="user_001")
+
+        def execute(sql: str, params: list) -> list:
+            if "id = ?" in sql and params[0] == "art_valid":
+                return [article]
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.patch(
+            "/api/articles/art_valid",
+            json={"title": "x" * 501},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 400
+        assert "500" in resp.json()["detail"]
+
+
 class TestAuthRequired:
     def test_post_returns_401_without_auth(self) -> None:
         """POST /api/articles returns 401 without a session cookie."""

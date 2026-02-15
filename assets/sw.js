@@ -178,7 +178,16 @@ self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'QUEUE_REQUEST') {
     event.waitUntil(
       getQueue().then((queue) => {
-        queue.push(event.data.request);
+        const newReq = event.data.request;
+        // Deduplicate: if a request with the same URL and method exists, replace it
+        const existingIndex = queue.findIndex(
+          (item) => item.url === newReq.url && item.method === newReq.method
+        );
+        if (existingIndex !== -1) {
+          queue[existingIndex] = newReq;
+        } else {
+          queue.push(newReq);
+        }
         return saveQueue(queue);
       })
     );

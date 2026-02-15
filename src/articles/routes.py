@@ -64,6 +64,12 @@ async def create_article(
     url = body.get("url", "")
     title = body.get("title")
 
+    # Validate field lengths
+    if isinstance(url, str) and len(url) > 2048:
+        raise HTTPException(status_code=400, detail="URL must not exceed 2048 characters")
+    if title is not None and isinstance(title, str) and len(title) > 500:
+        raise HTTPException(status_code=400, detail="Title must not exceed 500 characters")
+
     # Validate URL
     try:
         url = validate_url(url)
@@ -87,15 +93,25 @@ async def create_article(
     domain = extract_domain(url)
     now = datetime.now(UTC).isoformat()
 
-    await (
-        db.prepare(
-            "INSERT INTO articles (id, user_id, original_url, domain, title, "
-            "status, reading_status, is_favorite, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, 'pending', 'unread', 0, ?, ?)"
+    try:
+        await (
+            db.prepare(
+                "INSERT INTO articles (id, user_id, original_url, domain, title, "
+                "status, reading_status, is_favorite, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, 'pending', 'unread', 0, ?, ?)"
+            )
+            .bind(article_id, user_id, url, domain, title, now, now)
+            .run()
         )
-        .bind(article_id, user_id, url, domain, title, now, now)
-        .run()
-    )
+    except Exception as exc:
+        # Handle unique constraint violation (race condition)
+        exc_msg = str(exc).lower()
+        if "unique" in exc_msg or "constraint" in exc_msg:
+            raise HTTPException(
+                status_code=409,
+                detail="Article with this URL already exists",
+            ) from exc
+        raise
 
     # Enqueue processing job
     message = _to_js_value({
@@ -204,6 +220,12 @@ async def update_article(
         "reading_status", "is_favorite", "scroll_position", "reading_progress", "title",
     }
 
+    # Validate field lengths
+    if "title" in body and isinstance(body["title"], str) and len(body["title"]) > 500:
+        raise HTTPException(status_code=400, detail="Title must not exceed 500 characters")
+    if "notes" in body and isinstance(body["notes"], str) and len(body["notes"]) > 10000:
+        raise HTTPException(status_code=400, detail="Notes must not exceed 10000 characters")
+
     # Validate enum fields
     if "reading_status" in body and body["reading_status"] not in _VALID_READING_STATUSES:
         raise HTTPException(
@@ -258,12 +280,12 @@ async def delete_article(
 
     await _get_user_article(db, article_id, user_id, fields="id")
 
+    # Delete R2 content first — if this fails, D1 row still exists for retry
+    await delete_article_content(env.CONTENT, article_id)
+
     # Delete from D1
     await (
         db.prepare("DELETE FROM articles WHERE id = ? AND user_id = ?")
         .bind(article_id, user_id)
         .run()
     )
-
-    # Delete content from R2
-    await delete_article_content(env.CONTENT, article_id)

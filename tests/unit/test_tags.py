@@ -144,6 +144,21 @@ class TestCreateTag:
 # ---------------------------------------------------------------------------
 
 
+    async def test_rejects_name_too_long(self) -> None:
+        """POST /api/tags returns 400 when name exceeds 100 characters."""
+        env = MockEnv()
+        client, session_id = await _authenticated_client(env)
+
+        resp = client.post(
+            "/api/tags",
+            json={"name": "x" * 101},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 400
+        assert "100" in resp.json()["detail"]
+
+
 class TestListTags:
     async def test_returns_users_tags(self) -> None:
         """GET /api/tags returns all tags for the authenticated user."""

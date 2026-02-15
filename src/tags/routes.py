@@ -84,6 +84,9 @@ async def create_tag(
     if not name:
         raise HTTPException(status_code=422, detail="Tag name is required")
 
+    if len(name) > 100:
+        raise HTTPException(status_code=400, detail="Tag name must not exceed 100 characters")
+
     env = request.scope["env"]
     db = env.DB
     user_id = user["user_id"]

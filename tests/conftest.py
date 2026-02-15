@@ -145,12 +145,37 @@ class MockR2:
         self._store.pop(key, None)
 
     async def list(self, **kwargs: Any) -> dict[str, Any]:
-        """List objects.  Supports optional ``prefix`` filtering."""
+        """List objects.  Supports optional ``prefix`` filtering and pagination."""
         prefix = kwargs.get("prefix", "")
-        objects = [
-            {"key": k, "size": len(v)} for k, v in self._store.items() if k.startswith(prefix)
-        ]
-        return {"objects": objects, "truncated": False}
+        cursor = kwargs.get("cursor")
+        page_size = kwargs.get("limit", 1000)
+
+        all_objects = sorted(
+            [
+                {"key": k, "size": len(v)}
+                for k, v in self._store.items()
+                if k.startswith(prefix)
+            ],
+            key=lambda o: o["key"],
+        )
+
+        # Simulate cursor-based pagination
+        start = 0
+        if cursor is not None:
+            for i, obj in enumerate(all_objects):
+                if obj["key"] > cursor:
+                    start = i
+                    break
+            else:
+                return {"objects": [], "truncated": False}
+
+        end = start + page_size
+        page = all_objects[start:end]
+        truncated = end < len(all_objects)
+        result: dict[str, Any] = {"objects": page, "truncated": truncated}
+        if truncated:
+            result["cursor"] = page[-1]["key"]
+        return result
 
 
 # ---------------------------------------------------------------------------

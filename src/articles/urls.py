@@ -11,17 +11,71 @@ from urllib.parse import urlparse
 
 from wrappers import d1_first
 
+# Hostnames that must be blocked to prevent SSRF
+_BLOCKED_HOSTNAMES = {
+    "localhost",
+    "127.0.0.1",
+    "0.0.0.0",
+    "[::1]",
+    "::1",
+    "metadata.google.internal",
+    "metadata.google",
+    "169.254.169.254",
+}
+
+
+def _is_private_hostname(hostname: str) -> bool:
+    """Check if a hostname resolves to a private/internal network address.
+
+    Blocks: localhost, loopback, private RFC1918 ranges (10.*, 172.16-31.*,
+    192.168.*), link-local (169.254.*), and cloud metadata endpoints.
+    """
+    hostname = hostname.lower().strip("[]")
+
+    if hostname in _BLOCKED_HOSTNAMES:
+        return True
+
+    # Check IP-based patterns
+    parts = hostname.split(".")
+    if len(parts) == 4:
+        try:
+            octets = [int(p) for p in parts]
+            # 10.0.0.0/8
+            if octets[0] == 10:
+                return True
+            # 172.16.0.0/12
+            if octets[0] == 172 and 16 <= octets[1] <= 31:
+                return True
+            # 192.168.0.0/16
+            if octets[0] == 192 and octets[1] == 168:
+                return True
+            # 169.254.0.0/16 (link-local)
+            if octets[0] == 169 and octets[1] == 254:
+                return True
+            # 127.0.0.0/8
+            if octets[0] == 127:
+                return True
+            # 0.0.0.0/8
+            if octets[0] == 0:
+                return True
+        except (ValueError, IndexError):
+            pass
+
+    return False
+
 
 def validate_url(url: str) -> str:
     """Validate and normalise a URL.
 
-    Ensures the URL uses an ``http`` or ``https`` scheme and has a valid
-    network location (hostname).  Returns the normalised URL string.
+    Ensures the URL uses an ``http`` or ``https`` scheme, has a valid
+    network location (hostname), and does not point to a private network
+    address (SSRF protection).  Returns the normalised URL string.
 
     Raises
     ------
     ValueError
-        If the URL is invalid or uses a disallowed scheme.
+        If the URL is invalid, uses a disallowed scheme, or points to a
+        private network address.
     """
     if not url or not isinstance(url, str):
         raise ValueError("URL must be a non-empty string")
@@ -35,6 +89,10 @@ def validate_url(url: str) -> str:
 
     if not parsed.netloc:
         raise ValueError("URL must have a valid hostname")
+
+    hostname = parsed.hostname or ""
+    if _is_private_hostname(hostname):
+        raise ValueError("URLs pointing to private/internal networks are not allowed")
 
     return parsed.geturl()
 

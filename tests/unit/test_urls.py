@@ -68,6 +68,58 @@ class TestValidateUrl:
 # =========================================================================
 
 
+class TestSsrfProtection:
+    def test_blocks_localhost(self) -> None:
+        """URLs with localhost are rejected."""
+        with pytest.raises(ValueError, match="private"):
+            validate_url("https://localhost/admin")
+
+    def test_blocks_127_0_0_1(self) -> None:
+        """URLs with 127.0.0.1 are rejected."""
+        with pytest.raises(ValueError, match="private"):
+            validate_url("https://127.0.0.1/secret")
+
+    def test_blocks_0_0_0_0(self) -> None:
+        """URLs with 0.0.0.0 are rejected."""
+        with pytest.raises(ValueError, match="private"):
+            validate_url("https://0.0.0.0/")
+
+    def test_blocks_10_x(self) -> None:
+        """URLs in 10.0.0.0/8 range are rejected."""
+        with pytest.raises(ValueError, match="private"):
+            validate_url("https://10.0.0.1/internal")
+
+    def test_blocks_172_16_x(self) -> None:
+        """URLs in 172.16.0.0/12 range are rejected."""
+        with pytest.raises(ValueError, match="private"):
+            validate_url("https://172.16.0.1/")
+
+    def test_blocks_192_168_x(self) -> None:
+        """URLs in 192.168.0.0/16 range are rejected."""
+        with pytest.raises(ValueError, match="private"):
+            validate_url("https://192.168.1.1/router")
+
+    def test_blocks_169_254_x(self) -> None:
+        """URLs with link-local 169.254.x.x are rejected."""
+        with pytest.raises(ValueError, match="private"):
+            validate_url("https://169.254.169.254/metadata")
+
+    def test_blocks_cloud_metadata(self) -> None:
+        """URLs to cloud metadata endpoints are rejected."""
+        with pytest.raises(ValueError, match="private"):
+            validate_url("https://metadata.google.internal/")
+
+    def test_allows_public_ip(self) -> None:
+        """Public IP addresses are allowed."""
+        result = validate_url("https://8.8.8.8/dns")
+        assert result == "https://8.8.8.8/dns"
+
+    def test_allows_public_domain(self) -> None:
+        """Regular public domains are allowed."""
+        result = validate_url("https://example.com/article")
+        assert result == "https://example.com/article"
+
+
 class TestExtractDomain:
     def test_extracts_hostname(self) -> None:
         """Extracts the hostname from a valid URL."""

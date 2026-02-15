@@ -147,6 +147,63 @@ class TestGetCurrentUser:
 # =========================================================================
 
 
+class TestSessionRevocation:
+    async def test_revokes_session_when_email_no_longer_allowed(self) -> None:
+        """Access is denied if user email is removed from ALLOWED_EMAILS."""
+        env = MockEnv(allowed_emails="other@example.com")
+        user_data = {
+            "user_id": "u1",
+            "email": "test@example.com",
+            "username": "tester",
+            "avatar_url": "https://avatar.url",
+            "created_at": "2025-01-01T00:00:00",
+        }
+        session_id = await create_session(env.SESSIONS, user_data)
+
+        app = _make_app_with_env(env)
+        client = TestClient(app)
+        resp = client.get("/me", cookies={COOKIE_NAME: session_id})
+        assert resp.status_code == 401
+        assert "revoked" in resp.json()["detail"].lower()
+
+        # Session should be deleted from KV
+        assert await get_session(env.SESSIONS, session_id) is None
+
+    async def test_allows_session_when_email_still_allowed(self) -> None:
+        """Access is allowed when user email is in ALLOWED_EMAILS."""
+        env = MockEnv(allowed_emails="test@example.com")
+        user_data = {
+            "user_id": "u1",
+            "email": "test@example.com",
+            "username": "tester",
+            "avatar_url": "https://avatar.url",
+            "created_at": "2025-01-01T00:00:00",
+        }
+        session_id = await create_session(env.SESSIONS, user_data)
+
+        app = _make_app_with_env(env)
+        client = TestClient(app)
+        resp = client.get("/me", cookies={COOKIE_NAME: session_id})
+        assert resp.status_code == 200
+
+    async def test_allows_session_when_allowlist_empty(self) -> None:
+        """When ALLOWED_EMAILS is empty, no revocation check is performed."""
+        env = MockEnv(allowed_emails="")
+        user_data = {
+            "user_id": "u1",
+            "email": "anyone@example.com",
+            "username": "anyone",
+            "avatar_url": "",
+            "created_at": "2025-01-01T00:00:00",
+        }
+        session_id = await create_session(env.SESSIONS, user_data)
+
+        app = _make_app_with_env(env)
+        client = TestClient(app)
+        resp = client.get("/me", cookies={COOKIE_NAME: session_id})
+        assert resp.status_code == 200
+
+
 class TestAllowedEmailsParsing:
     def test_empty_string_returns_empty_set(self) -> None:
         assert _parse_allowed_emails("") == set()

@@ -374,7 +374,7 @@
 
   function getBookmarkletCode() {
     var origin = window.location.origin;
-    return "javascript:void((function(){var s='" + origin + "';fetch(s+'/api/articles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:location.href,title:document.title}),credentials:'include'}).then(function(r){if(!r.ok)throw new Error(r.status);return r.json()}).then(function(){alert('Saved to Tasche!')}).catch(function(e){alert('Tasche error: '+e)})})())";
+    return "javascript:void(window.open('" + origin + "/?url='+encodeURIComponent(location.href)+'&title='+encodeURIComponent(document.title)))";
   }
 
   function renderLogin() {
@@ -785,10 +785,14 @@
       bindReaderEvents(id);
       setupScrollTracking(id);
 
-      // Restore scroll position if previously saved
+      // Restore scroll position from percentage
       if (article.scroll_position && parseFloat(article.scroll_position) > 0) {
         setTimeout(function () {
-          window.scrollTo(0, parseFloat(article.scroll_position));
+          var pct = parseFloat(article.scroll_position);
+          // scroll_position is stored as a percentage (0-1)
+          var docHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+          var targetScroll = pct * docHeight;
+          window.scrollTo(0, targetScroll);
         }, 100);
       }
     } catch (e) {
@@ -945,8 +949,9 @@
         var docHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
         if (docHeight <= 0) return;
         var progress = Math.min(1, Math.max(0, scrollTop / docHeight));
+        // Save scroll position as percentage for cross-device compatibility
         api.updateArticle(articleId, {
-          scroll_position: scrollTop,
+          scroll_position: Math.round(progress * 10000) / 10000,
           reading_progress: Math.round(progress * 100) / 100,
         }).catch(function () {});
       }, 1000);
@@ -991,16 +996,18 @@
     // Horizontal rules
     html = html.replace(/^---$/gm, '<hr>');
 
-    // Links (sanitize javascript: URLs)
+    // Links (sanitize javascript: URLs, decode HTML entities in href)
     html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function (_, text, url) {
       if (/^\s*javascript\s*:/i.test(url.replace(/&amp;/g, '&').replace(/&#/g, '#'))) return text;
-      return '<a href="' + url + '" target="_blank" rel="noopener">' + text + '</a>';
+      var decodedUrl = url.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+      return '<a href="' + decodedUrl + '" target="_blank" rel="noopener">' + text + '</a>';
     });
 
-    // Images (sanitize javascript: URLs)
+    // Images (sanitize javascript: URLs, decode HTML entities in src)
     html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function (_, alt, url) {
       if (/^\s*javascript\s*:/i.test(url.replace(/&amp;/g, '&').replace(/&#/g, '#'))) return alt;
-      return '<img src="' + url + '" alt="' + alt + '" loading="lazy">';
+      var decodedUrl = url.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+      return '<img src="' + decodedUrl + '" alt="' + alt + '" loading="lazy">';
     });
 
     // Unordered lists

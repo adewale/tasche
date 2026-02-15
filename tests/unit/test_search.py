@@ -135,7 +135,9 @@ class TestSearchArticles:
         sql = select_calls[0]["sql"]
         assert "articles_fts MATCH ?" in sql
         assert "INNER JOIN articles_fts" in sql
-        assert "cloudflare" in select_calls[0]["params"]
+        # After FTS5 sanitization, query is wrapped in quotes: "cloudflare"
+        params = select_calls[0]["params"]
+        assert any("cloudflare" in str(p) for p in params)
 
     async def test_rejects_empty_query(self) -> None:
         """GET /api/search?q= returns 422 for an empty search query."""
@@ -204,6 +206,72 @@ class TestSearchArticles:
 # ---------------------------------------------------------------------------
 # Authentication enforcement
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# FTS5 query sanitization
+# ---------------------------------------------------------------------------
+
+
+class TestFts5Sanitization:
+    async def test_wraps_words_in_quotes(self) -> None:
+        """Multi-word query becomes quoted tokens: "hello" "world"."""
+        captured: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            captured.append({"sql": sql, "params": params})
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        client.get(
+            "/api/search?q=hello+world",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        select_calls = [c for c in captured if "SELECT" in c["sql"]]
+        assert len(select_calls) >= 1
+        query_param = select_calls[0]["params"][0]
+        assert query_param == '"hello" "world"'
+
+    async def test_strips_fts5_operators(self) -> None:
+        """FTS5 operator characters are stripped from search queries."""
+        captured: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            captured.append({"sql": sql, "params": params})
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        client.get(
+            "/api/search?q=test*+OR+evil",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        select_calls = [c for c in captured if "SELECT" in c["sql"]]
+        query_param = select_calls[0]["params"][0]
+        # * and OR are stripped/quoted as literals
+        assert '"test"' in query_param
+        assert '"OR"' in query_param
+        assert '"evil"' in query_param
+        assert "*" not in query_param
+
+    async def test_rejects_query_with_only_operators(self) -> None:
+        """Query that becomes empty after sanitization returns 422."""
+        env = MockEnv()
+        client, session_id = await _authenticated_client(env)
+
+        resp = client.get(
+            "/api/search?q=***",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 422
 
 
 class TestSearchAuthRequired:

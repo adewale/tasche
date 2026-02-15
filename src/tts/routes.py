@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from articles.routes import _get_user_article
 from auth.dependencies import get_current_user
@@ -37,8 +37,26 @@ async def listen_later(
     user_id = user["user_id"]
 
     # Verify article exists and belongs to user
-    await _get_user_article(db, article_id, user_id)
+    article = await _get_user_article(db, article_id, user_id)
 
+    # Idempotency check: don't enqueue if already in progress or ready
+    audio_status = article.get("audio_status")
+    if audio_status in ("pending", "generating"):
+        raise HTTPException(
+            status_code=409,
+            detail="Audio generation is already in progress",
+        )
+    if audio_status == "ready":
+        return JSONResponse(
+            content={
+                "id": article_id,
+                "audio_status": "ready",
+                "audio_key": article.get("audio_key"),
+            },
+            status_code=200,
+        )
+
+    # Only enqueue if audio_status is NULL or 'failed'
     now = datetime.now(UTC).isoformat()
 
     # Update D1: set listen_later and audio_status
@@ -103,6 +121,34 @@ async def get_audio(
     if audio_obj is None:
         raise HTTPException(status_code=404, detail="Audio file not found")
 
+    # Stream from R2 body if available, otherwise fall back to arrayBuffer
+    body = getattr(audio_obj, "body", None)
+
+    if body is not None and hasattr(body, "getReader"):
+        # R2 ReadableStream — read chunks via JS reader
+        async def _stream_body():
+            reader = body.getReader()
+            try:
+                while True:
+                    result = await reader.read()
+                    done = getattr(result, "done", True)
+                    if done:
+                        break
+                    chunk = getattr(result, "value", None)
+                    if chunk is not None:
+                        if hasattr(chunk, "to_py"):
+                            yield bytes(chunk.to_py())
+                        else:
+                            yield bytes(chunk)
+            finally:
+                reader.releaseLock()
+
+        return StreamingResponse(
+            _stream_body(),
+            media_type="audio/mpeg",
+        )
+
+    # Fallback: load entire buffer (for mocks / non-streaming environments)
     audio_bytes = await audio_obj.arrayBuffer()
 
     async def _stream():

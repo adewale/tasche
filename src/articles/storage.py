@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from wrappers import _to_py_safe
+
 
 def article_key(article_id: str, filename: str) -> str:
     """Generate an R2 object key for an article file.
@@ -107,10 +109,28 @@ async def delete_article_content(r2: Any, article_id: str) -> None:
         The article's unique identifier.
     """
     prefix = f"articles/{article_id}/"
-    result = await r2.list(prefix=prefix)
+    cursor = None
 
-    objects = result.get("objects", []) if isinstance(result, dict) else []
-    for obj in objects:
-        key = obj.get("key", "") if isinstance(obj, dict) else getattr(obj, "key", "")
-        if key:
-            await r2.delete(key)
+    while True:
+        list_kwargs: dict[str, Any] = {"prefix": prefix}
+        if cursor is not None:
+            list_kwargs["cursor"] = cursor
+
+        result = await r2.list(**list_kwargs)
+
+        # Handle both JsProxy and plain dict results
+        converted = _to_py_safe(result) if not isinstance(result, dict) else result
+
+        objects = converted.get("objects", []) if isinstance(converted, dict) else []
+        for obj in objects:
+            key = obj.get("key", "") if isinstance(obj, dict) else getattr(obj, "key", "")
+            if key:
+                await r2.delete(key)
+
+        # Check if there are more pages
+        truncated = converted.get("truncated", False) if isinstance(converted, dict) else False
+        if not truncated:
+            break
+        cursor = converted.get("cursor") if isinstance(converted, dict) else None
+        if not cursor:
+            break

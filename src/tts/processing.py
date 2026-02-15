@@ -29,6 +29,9 @@ _TTS_MODEL = "@cf/deepgram/aura-2-en"
 # Approximate speech rate: ~150 words per minute for TTS
 _WORDS_PER_MINUTE = 150
 
+# Maximum text length to send to TTS (characters)
+_MAX_TTS_TEXT_LENGTH = 100_000
+
 
 def _estimate_duration(text: str) -> int:
     """Estimate audio duration in seconds from text length.
@@ -39,6 +42,140 @@ def _estimate_duration(text: str) -> int:
     word_count = len(text.split())
     seconds = max(1, int((word_count / _WORDS_PER_MINUTE) * 60))
     return seconds
+
+
+def strip_markdown(text: str) -> str:
+    """Remove markdown syntax from text for cleaner TTS output.
+
+    Strips: headings (#), bold/italic (**, *, __, _), links ([text](url) -> text),
+    images (![alt](url) -> removed), code blocks (``` and inline `code`),
+    horizontal rules (---), blockquotes (>), HTML tags, and list markers.
+    """
+    if not text:
+        return text
+
+    lines = text.split("\n")
+    result_lines: list[str] = []
+    in_code_block = False
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Handle code blocks
+        if stripped.startswith("```"):
+            in_code_block = not in_code_block
+            continue
+        if in_code_block:
+            continue
+
+        # Skip horizontal rules
+        if stripped in ("---", "***", "___"):
+            continue
+
+        # Remove heading markers
+        if stripped.startswith("#"):
+            # Count the heading level and strip the markers
+            heading_text = stripped.lstrip("#").strip()
+            result_lines.append(heading_text)
+            continue
+
+        # Remove blockquote markers
+        if stripped.startswith(">"):
+            stripped = stripped.lstrip(">").strip()
+
+        # Remove list markers (-, *, 1.)
+        if len(stripped) >= 2:
+            if stripped[0] in ("-", "*") and stripped[1] == " ":
+                stripped = stripped[2:]
+            elif len(stripped) >= 3 and stripped[0].isdigit():
+                dot_pos = stripped.find(". ")
+                if dot_pos > 0 and dot_pos <= 3 and stripped[:dot_pos].isdigit():
+                    stripped = stripped[dot_pos + 2 :]
+
+        result_lines.append(stripped)
+
+    text = "\n".join(result_lines)
+
+    # Remove images entirely: ![alt](url)
+    i = 0
+    out_chars: list[str] = []
+    while i < len(text):
+        if text[i : i + 2] == "![":
+            # Find closing ]
+            close_bracket = text.find("]", i + 2)
+            has_paren = (
+                close_bracket != -1
+                and close_bracket + 1 < len(text)
+                and text[close_bracket + 1] == "("
+            )
+            if has_paren:
+                close_paren = text.find(")", close_bracket + 2)
+                if close_paren != -1:
+                    i = close_paren + 1
+                    continue
+        out_chars.append(text[i])
+        i += 1
+    text = "".join(out_chars)
+
+    # Replace links [text](url) with just text
+    i = 0
+    out_chars = []
+    while i < len(text):
+        if text[i] == "[":
+            close_bracket = text.find("]", i + 1)
+            has_paren = (
+                close_bracket != -1
+                and close_bracket + 1 < len(text)
+                and text[close_bracket + 1] == "("
+            )
+            if has_paren:
+                close_paren = text.find(")", close_bracket + 2)
+                if close_paren != -1:
+                    link_text = text[i + 1 : close_bracket]
+                    out_chars.append(link_text)
+                    i = close_paren + 1
+                    continue
+        out_chars.append(text[i])
+        i += 1
+    text = "".join(out_chars)
+
+    # Remove inline code
+    i = 0
+    out_chars = []
+    while i < len(text):
+        if text[i] == "`":
+            end = text.find("`", i + 1)
+            if end != -1:
+                out_chars.append(text[i + 1 : end])
+                i = end + 1
+                continue
+        out_chars.append(text[i])
+        i += 1
+    text = "".join(out_chars)
+
+    # Remove bold/italic markers: ***, **, *, ___, __, _
+    for marker in ("***", "**", "*", "___", "__", "_"):
+        text = text.replace(marker, "")
+
+    # Remove HTML tags
+    i = 0
+    out_chars = []
+    while i < len(text):
+        if text[i] == "<":
+            end = text.find(">", i + 1)
+            if end != -1:
+                i = end + 1
+                continue
+        out_chars.append(text[i])
+        i += 1
+    text = "".join(out_chars)
+
+    # Clean up excess whitespace
+    while "\n\n\n" in text:
+        text = text.replace("\n\n\n", "\n\n")
+    text = text.strip()
+
+    return text
 
 
 def _now() -> str:
@@ -90,15 +227,30 @@ async def process_tts(article_id: str, env: object) -> None:
         if not markdown_text:
             raise ValueError(f"No markdown content found for article {article_id}")
 
+        # Strip markdown syntax for cleaner speech output
+        tts_text = strip_markdown(markdown_text)
+
+        # Truncate to maximum length if needed
+        if len(tts_text) > _MAX_TTS_TEXT_LENGTH:
+            tts_text = tts_text[:_MAX_TTS_TEXT_LENGTH] + "\n\n... Content has been truncated."
+            print(
+                json.dumps({
+                    "event": "tts_text_truncated",
+                    "article_id": article_id,
+                    "original_length": len(markdown_text),
+                    "truncated_to": _MAX_TTS_TEXT_LENGTH,
+                })
+            )
+
         # Step 4: Call Workers AI for TTS
-        audio_data = await ai.run(_TTS_MODEL, text=markdown_text)
+        audio_data = await ai.run(_TTS_MODEL, text=tts_text)
 
         # Step 5: Store audio in R2
         audio_r2_key = article_key(article_id, "audio.mp3")
         await r2.put(audio_r2_key, audio_data)
 
         # Step 6: Update D1 with audio metadata
-        duration = _estimate_duration(markdown_text)
+        duration = _estimate_duration(tts_text)
 
         await db.prepare(
             "UPDATE articles SET audio_key = ?, audio_duration_seconds = ?, "
@@ -115,8 +267,19 @@ async def process_tts(article_id: str, env: object) -> None:
             })
         )
 
+    except (ConnectionError, TimeoutError):
+        # Transient network errors — let propagate for queue retry
+        print(
+            json.dumps({
+                "event": "tts_processing_failed",
+                "article_id": article_id,
+                "error": traceback.format_exc(),
+                "retryable": True,
+            })
+        )
+        raise
     except Exception:
-        # Step 7: On failure, set audio_status to 'failed'
+        # Permanent errors (missing content, AI model failure) — mark as failed
         print(
             json.dumps({
                 "event": "tts_processing_failed",

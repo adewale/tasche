@@ -17,6 +17,30 @@ from wrappers import d1_rows
 
 router = APIRouter()
 
+# Characters that have special meaning in FTS5 query syntax.
+_FTS5_SPECIAL_CHARS = set('"*+-^():{}[]|\\')
+
+
+def _sanitize_fts5_query(query: str) -> str:
+    """Sanitize a search query for safe use with FTS5 MATCH.
+
+    Wraps each word in double quotes so FTS5 treats them as literals,
+    stripping any FTS5 operator characters. Example:
+    ``hello world`` -> ``"hello" "world"``.
+    ``OR AND NOT`` -> ``"OR" "AND" "NOT"``
+    """
+    # Split on whitespace and process each token
+    tokens = query.split()
+    safe_tokens = []
+    for token in tokens:
+        # Remove any FTS5 special characters
+        cleaned = "".join(ch for ch in token if ch not in _FTS5_SPECIAL_CHARS)
+        if cleaned:
+            # Wrap in double quotes to treat as a literal
+            safe_tokens.append(f'"{cleaned}"')
+    return " ".join(safe_tokens)
+
+
 # Column list for search results — same as the articles list endpoint.
 _SEARCH_COLUMNS = (
     "id, user_id, original_url, final_url, canonical_url, domain, title, "
@@ -54,6 +78,11 @@ async def search_articles(
     if not q:
         raise HTTPException(status_code=422, detail="Search query is required")
 
+    # Sanitize the query to prevent FTS5 syntax injection
+    safe_q = _sanitize_fts5_query(q)
+    if not safe_q:
+        raise HTTPException(status_code=422, detail="Search query is required")
+
     env = request.scope["env"]
     db = env.DB
     user_id = user["user_id"]
@@ -66,5 +95,5 @@ async def search_articles(
         "LIMIT ? OFFSET ?"
     )
 
-    results = await db.prepare(sql).bind(q, user_id, limit, offset).all()
+    results = await db.prepare(sql).bind(safe_q, user_id, limit, offset).all()
     return d1_rows(results)

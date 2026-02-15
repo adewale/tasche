@@ -216,8 +216,24 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
             })
         )
 
+    except (
+        ConnectionError,
+        TimeoutError,
+        httpx.ConnectError,
+        httpx.TimeoutException,
+    ):
+        # Transient network errors — let propagate for queue retry
+        print(
+            json.dumps({
+                "event": "article_processing_failed",
+                "article_id": article_id,
+                "error": traceback.format_exc(),
+                "retryable": True,
+            })
+        )
+        raise
     except Exception:
-        # On failure: update status to 'failed'
+        # Permanent errors (HTTP 4xx, invalid content, etc.) — mark as failed
         print(
             json.dumps({
                 "event": "article_processing_failed",
@@ -230,7 +246,6 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
                 "UPDATE articles SET status = ?, updated_at = ? WHERE id = ?"
             ).bind("failed", _now(), article_id).run()
         except Exception:
-            # If even the status update fails, just log it
             print(
                 json.dumps({
                     "event": "article_status_update_failed",
