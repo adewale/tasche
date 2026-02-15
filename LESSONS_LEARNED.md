@@ -86,12 +86,27 @@ Each phase was implemented by a sub-agent, then audited by a separate sub-agent.
 - **Audit: PASS on first review** (5 LOW issues only)
 - This was the cleanest phase — the wide events middleware pattern is well-defined and self-contained
 
+### Phase 9: Edge Case Hardening
+- **Iterations:** 1 (implement → audit → PASS)
+- **Files:** 20 files changed (12 source, 7 test files, 1 new migration)
+- **17 edge cases fixed:** 3 CRITICAL, 6 HIGH, 8 MEDIUM
+- **Audit: PASS on first review** — all 17 fixes verified correct
+- **Key fixes:**
+  - FTS5 query injection sanitization
+  - Request body size limits on all input fields
+  - TTS idempotency, markdown stripping, text truncation, and streaming
+  - SSRF protection blocking private/internal network URLs
+  - Unique constraint on (user_id, original_url) to prevent duplicate race condition
+  - Queue retry enabled for transient errors
+  - Session revocation on ALLOWED_EMAILS change
+  - Bookmarklet changed from fetch() to window.open() for SameSite cookie compatibility
+
 ## Final Stats
 
-- **Total test count:** 203 tests passing
+- **Total test count:** 239 tests passing (203 original + 36 new)
 - **Lint:** `ruff check src/ tests/` — all clean
-- **Total audit iterations:** 15 (8 initial audits + 7 re-audits after fixes)
-- **Only Phase 8 passed audit on first attempt** — all others required one fix cycle
+- **Total audit iterations:** 17 (9 initial audits + 8 re-audits after fixes)
+- **Phases 8 and 9 passed audit on first attempt** — all others required one fix cycle
 
 ## Patterns Discovered
 
@@ -147,3 +162,75 @@ Phase 8 (Observability) was the only phase to pass audit on the first attempt. T
 The `wrappers.py` module (`_to_py_safe`, `_to_js_value`, `d1_first`, etc.) established in Phase 1 prevented JsProxy leakage throughout the codebase. Every phase that interacted with D1, R2, or KV used these wrappers consistently.
 
 **Lesson:** Invest in the FFI boundary layer early. Convert at the boundary, use native Python types everywhere else.
+
+---
+
+## Edge Case Hardening — Patterns Discovered
+
+### 11. FTS5 Is Its Own Query Language
+FTS5's `MATCH` clause accepts operators (`OR`, `NOT`, `NEAR`, `*`, column filters). Passing unsanitized user input is essentially query injection. Unlike SQL injection (prevented by parameterized queries), FTS5 injection happens *within* the parameter value.
+
+**Lesson:** Always sanitize FTS5 input — strip operators and quote each word as a literal. Parameterized queries are necessary but not sufficient for FTS5.
+
+### 12. Input Validation Is Not Optional, Even for Internal APIs
+The initial implementation had no field length limits anywhere. A single POST request could insert megabytes of text into D1 and FTS5. This is trivially exploitable.
+
+**Lesson:** Add length limits on every text field at the API boundary. Define them in the spec. Make the schema enforce them with CHECK constraints too.
+
+### 13. Idempotency Must Be Explicit for Expensive Operations
+The TTS endpoint would happily enqueue duplicate Workers AI jobs costing real money. Queue consumers had no deduplication, so every click = another AI invocation.
+
+**Lesson:** Expensive operations need idempotency checks. Check the current state before triggering work. Return the existing result if work is already done or in progress.
+
+### 14. TTS Needs Text Preprocessing
+Sending raw markdown to a speech model produces garbled output ("hash hash Introduction, asterisk asterisk bold"). The content pipeline converts HTML→Markdown for storage, but TTS needs a third format: plain text.
+
+**Lesson:** Different consumers need different content formats. Spec the transformations explicitly: HTML for reading, Markdown for FTS5, plain text for TTS.
+
+### 15. Error Categorization Determines Retry Behavior
+The queue handlers caught all exceptions and ACKed every message, preventing Cloudflare Queues' built-in retry from ever firing. Transient errors (network timeouts) and permanent errors (invalid content) need different handling.
+
+**Lesson:** Categorize errors explicitly. Transient errors should propagate for infrastructure retry. Permanent errors should be caught and recorded. This distinction must be designed, not left to a catch-all.
+
+### 16. Delete in the Right Order
+Deleting the D1 reference before R2 content creates orphaned objects with no way to find or clean them. The reverse order is safe: if R2 deletion fails, the D1 row still exists as a reference for retry.
+
+**Lesson:** When cleaning up across multiple stores, delete the data first, then the reference. Never delete the reference first.
+
+### 17. SameSite Cookies Break Cross-Origin Bookmarklets
+Bookmarklets using `fetch()` with `credentials: 'include'` fail silently when the session cookie is `SameSite=Lax`. The browser won't send the cookie on a cross-origin fetch. Using `window.open()` for a top-level navigation is the correct pattern.
+
+**Lesson:** Cross-origin integrations (bookmarklets, browser extensions, share targets) must account for SameSite cookie policies. Top-level navigations work; cross-origin fetches don't.
+
+### 18. SSRF Is a Server-Side Concern for URL-Based Services
+Any service that fetches URLs on behalf of users is a potential SSRF vector. The processing pipeline will happily fetch `http://169.254.169.254/` (cloud metadata) or `http://localhost:8080/admin` if not blocked.
+
+**Lesson:** Block private/internal network URLs at the validation layer. This should be in the spec, not discovered after implementation.
+
+---
+
+## What We Would Spec Differently
+
+### 1. Define Input Constraints Explicitly
+The spec described fields (title, url, notes, tag name) but never specified maximum lengths. This led to no validation at all in the initial implementation. Every text field should have a maximum length in the spec.
+
+### 2. Specify Content Formats Per Consumer
+The spec described HTML→Markdown conversion but didn't specify what format TTS should consume. "Plain text stripped of markup" should have been an explicit pipeline output.
+
+### 3. Include SSRF Protection in URL Handling Requirements
+The spec described URL validation (scheme, format) but not SSRF protection. Blocking private network addresses should have been a stated requirement.
+
+### 4. Specify Idempotency Semantics for Expensive Operations
+The spec described "POST to enqueue TTS" but not what happens on repeated calls. Idempotency behavior (409 if in progress, 200 if already done) should be specified for any operation that costs money or takes significant time.
+
+### 5. Specify Error Retry Categories
+The spec mentioned "Queues: automatic retry with exponential backoff" but didn't specify which errors should be retried vs. permanently failed. This distinction is critical for queue-based architectures.
+
+### 6. Specify Deletion Order Across Stores
+The spec described article deletion but not the order of operations across D1 and R2. "Delete storage first, then references" should be a stated architectural principle.
+
+### 7. Specify FTS5 Input Sanitization
+The spec described FTS5 search but not how to handle FTS5-specific query syntax in user input. This is a domain-specific security concern that should be called out explicitly.
+
+### 8. Specify Cross-Origin Cookie Behavior for Integrations
+The spec described the bookmarklet and share target but not how authentication works cross-origin. SameSite cookie behavior should have been analyzed when specifying the bookmarklet flow.
