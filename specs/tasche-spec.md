@@ -3,8 +3,8 @@
 
 ## Product Specification for Coding Agents
 
-**Last Updated:** January 2026  
-**Cloudflare Compatibility Date:** 2025-12-01  
+**Last Updated:** February 2026
+**Cloudflare Compatibility Date:** 2025-12-01
 **Runtime:** Python Workers (Pyodide)
 
 ---
@@ -117,12 +117,20 @@ Reading requires visual attention. Listening enables multitasking—commutes, ex
 3. Article is queued for TTS processing
 4. When ready, audio player appears on article
 5. User listens during commute, exercise, chores
+6. If generation fails, user can retry by clicking "Listen Later" again
 
 **Why explicit opt-in:**
 - No wasted compute on articles that will only be read
 - User decides what's worth the audio generation cost
 - Storage efficient—audio only for articles that need it
 - Clear mental model: "Listen Later" is a distinct action
+
+**Idempotency:** The listen-later endpoint MUST check `audio_status` before enqueuing:
+- `pending` or `generating`: Return 409 Conflict (already in progress)
+- `ready`: Return 200 with existing audio data (no re-enqueue)
+- `null` or `failed`: Proceed to enqueue (new request or retry)
+
+This prevents duplicate Workers AI invocations, which cost real compute.
 
 **Processing flow:**
 ```
@@ -140,18 +148,23 @@ User clicks "Listen Later"
 └─────────────────────────────┘
          │
          ▼
-┌─────────────────────────────┐
-│  TTS Queue Consumer         │
-│                             │
-│  1. Fetch markdown from R2  │
-│  2. Call Workers AI:        │
-│     @cf/deepgram/aura-2-en  │
-│  3. Store audio.mp3 → R2    │
-│  4. Update D1:              │
-│     - audio_key             │
-│     - audio_duration_seconds│
-│     - audio_status = 'ready'│
-└─────────────────────────────┘
+┌─────────────────────────────────┐
+│  TTS Queue Consumer             │
+│                                 │
+│  1. Fetch markdown from R2      │
+│  2. Strip markdown syntax →     │
+│     plain text (no #, **, [],   │
+│     code blocks, HTML tags)     │
+│  3. Truncate to 100K chars      │
+│     (append "...truncated" note)│
+│  4. Call Workers AI:            │
+│     @cf/deepgram/aura-2-en      │
+│  5. Store audio.mp3 → R2        │
+│  6. Update D1:                  │
+│     - audio_key                 │
+│     - audio_duration_seconds    │
+│     - audio_status = 'ready'    │
+└─────────────────────────────────┘
          │
          ▼
    Audio player appears
@@ -190,9 +203,12 @@ Tasche stores articles in **dual format**:
 
 1. User reads an article on the web
 2. Clicks bookmarklet in browser toolbar
-3. Popup confirms "Saving..." then "Saved ✓"
-4. Article appears in library within seconds (thumbnail, title, excerpt)
-5. Original page can now disappear—user has their copy
+3. Bookmarklet opens Tasche in a new tab via `window.open(SITE_URL + '/?url=...')` — this is a top-level navigation, so `SameSite=Lax` session cookies are included
+4. Tasche frontend detects the `?url=` parameter and saves the article via same-origin API call
+5. Article appears in library within seconds (thumbnail, title, excerpt)
+6. Original page can now disappear—user has their copy
+
+**Important:** The bookmarklet MUST use `window.open()` (top-level navigation), NOT `fetch()`. Cross-origin `fetch()` with `credentials: 'include'` will not send `SameSite=Lax` cookies. The bookmarklet template uses a `__SITE_URL__` placeholder; the frontend generates the actual bookmarklet with the correct origin baked in.
 
 ### Save an Article (Share Sheet / Mobile)
 
@@ -212,17 +228,20 @@ Tasche stores articles in **dual format**:
 ### Search Library
 
 1. User types in search box
-2. FTS5 searches title, excerpt, and full markdown content
-3. Results highlight matching terms
-4. User clicks result → opens reader view
+2. Input is sanitized: FTS5 operators stripped, each word quoted as a literal (see §9.2)
+3. FTS5 searches title, excerpt, and full markdown content, ordered by relevance (`rank`)
+4. Results highlight matching terms
+5. User clicks result → opens reader view
 
 ### Listen Later
 
 1. User sees article they want to hear
 2. Taps headphone icon → "Generating audio..."
-3. Notification when ready (or polls on next open)
-4. Audio player appears on article card
-5. User listens during commute with background playback
+3. If already pending/generating, shows status (does not re-enqueue)
+4. Notification when ready (or polls on next open)
+5. Audio player appears on article card
+6. User listens during commute with background playback
+7. If generation failed, "Listen Later" button reappears for retry
 
 ### Tag and Organize
 
@@ -495,7 +514,7 @@ This section explains the architectural decisions behind Tasche and why each Clo
 **Why Queues for Tasche:**
 - **Decouple save from process**: When a user clicks "Save," the API immediately returns success. The heavy work (fetching page, extracting content, generating thumbnail) happens asynchronously.
 - **User experience**: Save operations feel instant (<100ms) instead of waiting 5-10 seconds for page processing.
-- **Retry on failure**: If Browser Rendering times out or the page is temporarily unavailable, Queues automatically retry with exponential backoff.
+- **Retry on failure**: If Browser Rendering times out or the page is temporarily unavailable, Queues automatically retry with exponential backoff. See §10.1 for error categorization (transient vs. permanent).
 - **Rate limit compliance**: Browser Rendering allows 2 new browsers/minute. Queue's `max_batch_timeout: 60` ensures we don't exceed this limit.
 - **Batch processing**: Multiple saves can be processed together, reducing Browser Rendering overhead.
 
@@ -506,11 +525,13 @@ User saves URL → POST /api/articles
                       ▼
 ┌─────────────────────────────────────┐
 │  API Handler (~50ms response)       │
-│  1. Validate URL                    │
-│  2. Check duplicates (all 3 URLs)   │
-│  3. Create article (status:pending) │
-│  4. Enqueue processing job          │
-│  5. Return { id, status: 'pending' }│
+│  1. Validate URL (scheme, format,   │
+│     SSRF blocklist — see §9.1)      │
+│  2. Validate field lengths (§5.1)   │
+│  3. Check duplicates (all 3 URLs)   │
+│  4. Create article (status:pending) │
+│  5. Enqueue processing job          │
+│  6. Return { id, status: 'pending' }│
 └─────────────────────────────────────┘
                       │
                       ▼
@@ -520,11 +541,15 @@ User saves URL → POST /api/articles
 │  1. Spawn headless browser          │
 │  2. Navigate, follow redirects      │
 │     → capture final_url             │
+│     → validate final_url against    │
+│       SSRF blocklist (see §9.1)     │
 │  3. Extract canonical_url from DOM  │
 │  4. Full-page screenshot → R2       │
 │  5. Thumbnail screenshot → R2       │
 │  6. Readability extracts content    │
 │  7. Download + convert images       │
+│     → validate each URL (§9.1)      │
+│     → skip private network URLs     │
 │     → R2 images/*.webp              │
 │  8. Rewrite HTML with local paths   │
 │  9. Convert to Markdown (Turndown)  │
@@ -653,8 +678,10 @@ The PWA is designed for true offline reading—users should be able to read save
 
 1. **Eager caching**: When user views article list, background-fetch article content for unread items
 2. **Manual save for offline**: "Save for offline" button explicitly caches article content
-3. **Queue offline actions**: If user archives/favorites while offline, queue action in IndexedDB and sync when online
+3. **Queue offline actions**: If user archives/favorites while offline, queue action and sync when online
 4. **Background sync**: Use Background Sync API to retry queued actions
+5. **Queue deduplication**: Deduplicate queued requests by URL + HTTP method (last-write-wins). Toggling a favorite on/off/on while offline should result in one request, not three. See §10.8.
+6. **Cache preservation**: The service worker MUST preserve the sync queue cache during activation. See §10.7.
 
 **Why this works with Cloudflare:**
 - **R2 zero egress**: Caching article content doesn't increase costs
@@ -790,32 +817,49 @@ flowchart TB
 
 **Articles table key fields:**
 
-| Field | Type | Purpose |
-|-------|------|---------|
-| `id` | TEXT | Primary key |
-| `user_id` | TEXT | Owner reference |
-| `original_url` | TEXT | URL as submitted |
-| `final_url` | TEXT | After redirects |
-| `canonical_url` | TEXT | Page's declared canonical |
-| `domain` | TEXT | Extracted hostname for display |
-| `title` | TEXT | Article title |
-| `excerpt` | TEXT | Short description |
-| `author` | TEXT | Byline if available |
-| `word_count` | INTEGER | For reading time estimates |
-| `reading_time_minutes` | INTEGER | Calculated at ~200 WPM |
-| `image_count` | INTEGER | Number of images archived |
-| `status` | TEXT | 'pending', 'processing', 'ready', 'failed' |
-| `reading_status` | TEXT | 'unread', 'reading', 'archived' |
-| `is_favorite` | INTEGER | 0 or 1 |
-| `listen_later` | INTEGER | 0 or 1 — user wants audio version |
-| `audio_key` | TEXT | R2 path to audio.mp3 |
-| `audio_duration_seconds` | INTEGER | For playlist time budgeting |
-| `audio_status` | TEXT | 'pending', 'generating', 'ready', 'failed' |
-| `html_key` | TEXT | R2 path to content.html |
-| `markdown_key` | TEXT | R2 path to content.md |
-| `thumbnail_key` | TEXT | R2 path to thumbnail.webp |
-| `created_at` | TEXT | When saved |
-| `updated_at` | TEXT | Last modified |
+| Field | Type | Max Length | Purpose |
+|-------|------|-----------|---------|
+| `id` | TEXT | 22 | Primary key (`secrets.token_urlsafe(16)`) |
+| `user_id` | TEXT | 22 | Owner reference |
+| `original_url` | TEXT | 2048 | URL as submitted |
+| `final_url` | TEXT | 2048 | After redirects |
+| `canonical_url` | TEXT | 2048 | Page's declared canonical |
+| `domain` | TEXT | 255 | Extracted hostname for display |
+| `title` | TEXT | 500 | Article title |
+| `excerpt` | TEXT | 1000 | Short description |
+| `author` | TEXT | 255 | Byline if available |
+| `word_count` | INTEGER | — | For reading time estimates |
+| `reading_time_minutes` | INTEGER | — | Calculated at ~200 WPM |
+| `image_count` | INTEGER | — | Number of images archived |
+| `status` | TEXT | — | 'pending', 'processing', 'ready', 'failed' |
+| `reading_status` | TEXT | — | 'unread', 'reading', 'archived' |
+| `is_favorite` | INTEGER | — | 0 or 1 |
+| `listen_later` | INTEGER | — | 0 or 1 — user wants audio version |
+| `audio_key` | TEXT | — | R2 path to audio.mp3 |
+| `audio_duration_seconds` | INTEGER | — | For playlist time budgeting |
+| `audio_status` | TEXT | — | 'pending', 'generating', 'ready', 'failed' |
+| `html_key` | TEXT | — | R2 path to content.html |
+| `markdown_key` | TEXT | — | R2 path to content.md |
+| `thumbnail_key` | TEXT | — | R2 path to thumbnail.webp |
+| `notes` | TEXT | 10000 | User notes on the article |
+| `created_at` | TEXT | — | When saved (ISO 8601 with timezone) |
+| `updated_at` | TEXT | — | Last modified (ISO 8601 with timezone) |
+
+**Input validation:** All user-supplied text fields MUST be validated at the API boundary:
+- `url`: max 2048 characters, must be `http` or `https` scheme
+- `title`: max 500 characters
+- `notes`: max 10000 characters
+- Return 400 with a clear error message when limits are exceeded
+
+**Uniqueness:** A `UNIQUE(user_id, original_url)` index prevents duplicate articles per user. The API should return 409 Conflict when a duplicate is detected.
+
+**Tags table:**
+
+| Field | Type | Max Length | Purpose |
+|-------|------|-----------|---------|
+| `name` | TEXT | 100 | Tag display name |
+
+Tag names are validated to max 100 characters at the API boundary.
 
 ### 5.2 R2 Storage Structure
 
@@ -831,6 +875,18 @@ flowchart TB
 - D1: Fast FTS5 search without R2 fetches
 - R2: Permanent backup, file export, AI processing (large context windows)
 - Storage cost is negligible: 10K articles × 50KB markdown = 500MB
+
+**Content formats per consumer:**
+
+| Consumer | Format | Source | Notes |
+|----------|--------|--------|-------|
+| Reader view | Clean HTML | R2 `content.html` via `GET /api/articles/:id/content` | Primary display format with local image paths |
+| Reader fallback | Rendered markdown | D1 `markdown_content` | Used when R2 content unavailable |
+| FTS5 search | Markdown text | D1 `markdown_content` | Indexed via FTS5 triggers |
+| TTS | Plain text | Derived from markdown | Strip all markup before sending to TTS model |
+| Export | Markdown file | R2 `content.md` | For backup and external use |
+
+**API content endpoint:** `GET /api/articles/:id/content` serves the clean HTML from R2 as `text/html`. The frontend should try this endpoint first and fall back to rendering `markdown_content` if it returns 404 or fails.
 
 ---
 
@@ -863,6 +919,8 @@ GitHub OAuth requires these endpoints:
 If `ALLOWED_EMAILS` is set in `wrangler.toml`, only those emails can access the app.
 
 If empty or not set, any authenticated GitHub user can access the application.
+
+**Session revocation:** The whitelist MUST be re-checked on every authenticated request, not just at login. If a user's email is removed from `ALLOWED_EMAILS`, their existing sessions are invalidated on the next request — the session is deleted from KV and a 401 is returned. See §9.6.
 
 ---
 
@@ -1001,13 +1059,141 @@ The Service Worker is the heart of Tasche's offline capability. It enables:
 
 ### 8.2 Bookmarklet
 
-The bookmarklet automatically uses the configured `SITE_URL`. Users drag it to their bookmark bar to save articles with one click.
+The bookmarklet opens Tasche in a new tab with the current page URL as a query parameter. It uses `window.open()` (top-level navigation) rather than `fetch()` because `SameSite=Lax` cookies are not sent on cross-origin fetch requests.
+
+**Template** (`bookmarklet.js`): Uses `__SITE_URL__` placeholder, replaced at build time or generated dynamically by the frontend with the correct origin.
+
+**Generated code pattern:**
+```javascript
+javascript:void(window.open('https://tasche.example.com/?url='
+  +encodeURIComponent(location.href)
+  +'&title='+encodeURIComponent(document.title)))
+```
+
+The frontend handles the `?url=` parameter via the same code path as the PWA share target — both result in a same-origin API call with valid session cookies.
 
 ---
 
-## 9. Key Practices for Python Workers
+## 9. Security Requirements
 
-### 9.1 Deployment & Configuration
+### 9.1 SSRF Protection
+
+Tasche fetches URLs on behalf of users (article processing, image downloads, browser rendering). All outbound HTTP requests MUST validate the target hostname against a private network blocklist:
+
+**Blocked ranges:**
+- Loopback: `127.0.0.0/8`, `[::1]`, `localhost`
+- RFC1918 private: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`
+- Link-local: `169.254.0.0/16`
+- Cloud metadata: `169.254.169.254`, `metadata.google.internal`
+- Null address: `0.0.0.0`
+
+**Validation points:**
+1. **URL submission** (`validate_url`): Block before saving the article
+2. **After redirect resolution**: `httpx` follows redirects by default. A public URL can 302-redirect to a private IP. Validate `final_url` after fetch completes.
+3. **Image downloads**: Article HTML may contain `<img src="http://10.0.0.1/...">`. Validate each image URL before fetching, and validate again after redirect resolution.
+
+### 9.2 FTS5 Query Sanitization
+
+FTS5 has its own query language with operators (`OR`, `NOT`, `NEAR`, `*`, column filters like `title:secret`). User search input passed to a `MATCH` clause is NOT protected by SQL parameterization — the injection happens within the parameter value.
+
+**Required sanitization:** Strip all FTS5 operator characters and wrap each word in double quotes to force literal matching. Example: `hello OR evil*` → `"hello" "OR" "evil"`. Return 422 if the query is empty after sanitization.
+
+### 9.3 Cross-Origin Cookie Behavior
+
+Session cookies use `SameSite=Lax` (the correct setting for CSRF protection). This has implications for cross-origin integrations:
+
+| Integration | Method | SameSite=Lax sends cookie? | Pattern |
+|-------------|--------|---------------------------|---------|
+| Bookmarklet | `window.open()` (top-level nav) | Yes | Correct |
+| Bookmarklet | `fetch()` (cross-origin) | No | **Broken** — never use |
+| Share target | Top-level navigation to `/` | Yes | Correct |
+| PWA same-origin API | `fetch()` (same-origin) | Yes | Correct |
+
+**Rule:** Any integration that runs from a different origin MUST use top-level navigation (`window.open()`, `<a>`, form submission), not `fetch()` or `XMLHttpRequest`.
+
+### 9.4 Input Validation
+
+All user-supplied text fields must have maximum length limits enforced at the API boundary. See §5.1 for specific limits per field. The API should return 400 with a clear error message when limits are exceeded.
+
+### 9.5 Frontend Security
+
+When rendering user-controlled content (markdown, URLs), sanitize against:
+- `javascript:` URLs in `href` and `src` attributes (case-insensitive, whitespace-tolerant)
+- HTML injection via unsanitized attribute values
+
+**Markdown renderer ordering:** Image regex (`![alt](url)`) MUST run before link regex (`[text](url)`) because `![alt](url)` contains the substring `[alt](url)`. Wrong order breaks all images.
+
+### 9.6 Session Revocation
+
+When `ALLOWED_EMAILS` is configured, the email whitelist MUST be re-checked on every authenticated request — not just at login time. If a user's email is removed from the list, their existing sessions should be invalidated on the next request, not after TTL expiry.
+
+---
+
+## 10. Failure Modes & Edge Cases
+
+### 10.1 Queue Error Categories
+
+Queue consumers MUST categorize errors to enable correct retry behavior:
+
+| Error Type | Examples | Handling | Queue Action |
+|-----------|----------|----------|-------------|
+| **Transient** | Network timeout, DNS failure, 5xx response, rate limit | Re-raise exception | `message.retry()` (auto-backoff) |
+| **Permanent** | Invalid content, 4xx response, missing data, parse error | Catch, set `status='failed'` | `message.ack()` |
+
+**Critical:** Catching all exceptions and always calling `message.ack()` disables Cloudflare Queues' built-in retry mechanism. Only ACK on success or permanent failure.
+
+### 10.2 Cross-Store Deletion Order
+
+When deleting resources that span multiple stores (D1 + R2), always delete **data first, references second**:
+
+1. Delete R2 content (data)
+2. Delete D1 row (reference)
+
+If R2 deletion fails, the D1 row still exists as a reference for retry. If D1 were deleted first and R2 failed, the R2 objects would be orphaned with no way to find or clean them up.
+
+### 10.3 R2 List Pagination
+
+R2's `list()` API is paginated (default 1000 objects per page). When deleting all objects for an article prefix, use cursor-based pagination to ensure all objects are processed. Failing to paginate leaves orphaned objects when an article has many images.
+
+### 10.4 Idempotency for Expensive Operations
+
+Any operation that costs real compute (Workers AI, Browser Rendering) MUST be idempotent:
+- Check the current state before triggering work
+- Return the existing result if work is already done
+- Return 409 if work is already in progress
+- Only trigger new work for initial requests or retries after failure
+
+### 10.5 TTS Content Preprocessing
+
+The TTS model receives **plain text**, not markdown. Before sending to Workers AI:
+
+1. **Strip markdown syntax:** Remove headings (`#`), bold/italic (`**`, `*`), links (`[text](url)` → `text`), images (remove entirely), code blocks, blockquotes, HTML tags, list markers
+2. **Truncate:** Limit to 100,000 characters. Append "... Content has been truncated." if truncated.
+3. **Log:** Emit a structured log event when truncation occurs.
+
+Without stripping, the TTS model reads out "hash hash Introduction, asterisk asterisk bold text asterisk asterisk" — rendering the feature unusable.
+
+### 10.6 Audio Streaming
+
+The audio endpoint MUST stream from R2's ReadableStream rather than buffering the entire file in memory via `arrayBuffer()`. Workers have a 128MB memory limit; large audio files can cause OOM crashes. Use the R2 object's `body` stream with chunked reading.
+
+### 10.7 Service Worker Cache Management
+
+The service worker uses three caches: `STATIC_CACHE` (app shell), `API_CACHE` (API responses), and `CACHE_NAME` (sync queue for offline mutations). The activate handler MUST preserve all three during cache cleanup. Failing to preserve `CACHE_NAME` would lose queued offline mutations during a service worker update.
+
+### 10.8 Offline Sync Queue Deduplication
+
+The offline mutation queue should deduplicate requests by URL + HTTP method. If a user toggles a favorite on/off/on while offline, only the last state should be queued — not three separate requests. Use last-write-wins semantics.
+
+### 10.9 Scroll Position Persistence
+
+Save scroll position as a **percentage** (0-1) of total scrollable height, not as absolute pixels. Pixel values are meaningless across devices with different screen sizes, font sizes, or zoom levels. On restore, multiply the percentage by the current document height.
+
+---
+
+## 11. Key Practices for Python Workers
+
+### 11.1 Deployment & Configuration
 
 1. **Use pywrangler for deployment** — Regular wrangler can't deploy Python Workers with packages. Use `uv run pywrangler deploy --env production`.
 
@@ -1017,7 +1203,7 @@ The bookmarklet automatically uses the configured `SITE_URL`. Users drag it to t
 
 4. **Workers Paid for large apps** — If compressed packages exceed 1MB, you need the $5/mo paid plan.
 
-### 9.2 Python Workers Runtime
+### 11.2 Python Workers Runtime
 
 5. **All handlers must be async** — No sync handlers. Threading is unsupported; sync handlers cause `RuntimeError: can't start new thread`.
 
@@ -1029,7 +1215,7 @@ The bookmarklet automatically uses the configured `SITE_URL`. Users drag it to t
 
 9. **Check package compatibility** — Not all packages work. Stick to pure-Python or Pyodide-compatible libraries.
 
-### 9.3 Request Handling
+### 11.3 Request Handling
 
 10. **Stream large responses** — Don't buffer entire article content in memory. Use FastAPI's `StreamingResponse` to pipe R2 object bodies directly to the client.
 
@@ -1037,23 +1223,27 @@ The bookmarklet automatically uses the configured `SITE_URL`. Users drag it to t
 
 12. **Always await async calls** — Unawaited async calls are "floating promises" that may never complete before the isolate terminates.
 
-### 9.4 Data Patterns
+### 11.4 Data Patterns
 
-13. **Store dual format** — Keep original HTML for fidelity, Markdown for search/AI. R2 storage is cheap.
+13. **Store triple format** — Clean HTML in R2 for reader display, Markdown in D1 for FTS5 search, plain text (stripped of markup) for TTS. Each consumer gets the format it needs. See §5.2 content formats table.
 
-14. **D1 FTS5 for search** — SQLite's full-text search works great with Markdown content.
+14. **D1 FTS5 for search** — SQLite's full-text search works great with Markdown content. Always sanitize user queries before FTS5 MATCH — see §9.2.
+
+15. **Serve reader content from R2** — The reader view loads clean HTML from R2 via `GET /api/articles/:id/content`, not from D1's `markdown_content`. Fall back to rendering markdown only when R2 content is unavailable.
+
+16. **Delete data before references** — When cleaning up across stores (R2 + D1), delete data first, then the reference. See §10.2.
 
 ---
 
-## 10. Observability
+## 12. Observability
 
 Observability is not optional. Enable it before production, not after the first outage.
 
-### 10.1 Configuration
+### 12.1 Configuration
 
 Enable in wrangler.jsonc under `observability`: set `enabled: true`, configure `logs.head_sampling_rate` (1 = 100%), and optionally enable traces with their own sampling rate.
 
-### 10.2 Wide Events (Canonical Log Lines)
+### 12.2 Wide Events (Canonical Log Lines)
 
 Traditional logging emits many small log lines per request ("Processing article...", "Fetching content...", "Saved to DB..."). This creates noise and loses context. Instead, emit **one wide event per request** containing everything needed to debug.
 
@@ -1065,7 +1255,7 @@ Build the event incrementally during request processing, then emit it once in a 
 
 When a user reports an issue, search by `user.id` and you have full context instantly—no grep-ing through fragmented logs.
 
-### 10.3 Tail Sampling
+### 12.3 Tail Sampling
 
 At scale, storing 100% of logs is expensive. Use **tail sampling** to keep what matters:
 
@@ -1078,7 +1268,7 @@ At scale, storing 100% of logs is expensive. Use **tail sampling** to keep what 
 
 Workers Logs supports `head_sampling_rate` in config (decides before request). For tail sampling (decides after request based on outcome), implement the decision logic in code before emitting.
 
-### 10.4 What to Log
+### 12.4 What to Log
 
 | Always Include | Add When Relevant |
 |----------------|-------------------|
@@ -1088,7 +1278,7 @@ Workers Logs supports `head_sampling_rate` in config (decides before request). F
 | `user.id` (if authed) | `tts.duration_seconds`, `tts.model` |
 | `error.type`, `error.message` | `feature_flags.*` |
 
-### 10.5 Avoid These Patterns
+### 12.5 Avoid These Patterns
 
 - **String logs** — `print(f"Processing article {url}")` is unsearchable
 - **Multiple log lines per request** — Creates noise, loses correlation
@@ -1097,17 +1287,17 @@ Workers Logs supports `head_sampling_rate` in config (decides before request). F
 
 ---
 
-## 11. Testing
+## 13. Testing
 
-### 11.1 Unit Testing
+### 13.1 Unit Testing
 
 Test pure Python logic (domain parsing, markdown sanitization, URL validation) with pytest. These tests don't need the Workers runtime—just import your modules and assert behavior.
 
-### 11.2 Integration Testing
+### 13.2 Integration Testing
 
 For testing with actual bindings (D1, R2, KV), run the worker locally with `uv run pywrangler dev --local` (uses Miniflare). Then run HTTP tests against localhost:8787 using httpx or requests.
 
-### 11.3 What to Test
+### 13.3 What to Test
 
 | Layer | What to Test | How |
 |-------|--------------|-----|
