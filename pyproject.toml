@@ -1,0 +1,26 @@
+[project]
+name = "tasche"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "python-readability",
+    "markdownify",
+    "httpx",
+    "beautifulsoup4",
+]
+
+[dependency-groups]
+workers = ["workers-py"]
+test = ["pytest>=8.0", "pytest-asyncio>=0.24", "ruff>=0.8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]

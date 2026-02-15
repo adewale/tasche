@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.egg-info/
+*.egg
+dist/
+build/
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# Ruff
+.ruff_cache/
+
+# Node
+node_modules/
+package-lock.json
+
+# Cloudflare Workers
+.wrangler/
+.dev.vars
+
+# Environment / secrets
+.env
+.env.local
+.env.production
+.env.staging
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store

@@ -1,0 +1,1 @@
+javascript:void((function(){var s='__SITE_URL__';fetch(s+'/api/articles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:location.href,title:document.title}),credentials:'include'}).then(function(r){if(!r.ok)throw new Error(r.status);return r.json()}).then(function(){alert('Saved to Tasche!')}).catch(function(e){alert('Tasche error: '+e)})})())

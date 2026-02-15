@@ -1,0 +1,1121 @@
+
+# Tasche: A Pocket Clone on Cloudflare Developer Platform
+
+## Product Specification for Coding Agents
+
+**Last Updated:** January 2026  
+**Cloudflare Compatibility Date:** 2025-12-01  
+**Runtime:** Python Workers (Pyodide)
+
+---
+
+## 1. Overview
+
+**Tasche** (German for "pocket") is a **single-user, self-hosted** read-it-later service built entirely on the Cloudflare Developer Platform. Each user deploys their own instance—there's no multi-tenancy, no shared infrastructure, no SaaS.
+
+### 1.0 Deployment Model
+
+**One click, your own instance:**
+
+1. User clicks **"Deploy to Cloudflare"** on GitHub
+2. Authenticates with their Cloudflare account
+3. Gets their own D1 database, R2 bucket, KV namespace, Queues
+4. Data lives in their Cloudflare account, under their control
+
+**Why self-hosted?**
+- **Privacy**: Your reading history stays in your account
+- **Simplicity**: No billing logic, no tenant isolation, no abuse prevention
+- **Permanence**: You control the data—it doesn't disappear when a startup dies
+- **Cost**: ~$5/month on Workers Paid plan, paid directly to Cloudflare
+
+The `ALLOWED_EMAILS` env var restricts access to the owner (or use "first user wins" mode). Auth is simply "is this me?"
+
+### 1.1 Core Promise: Your Articles Survive
+
+When you save an article, Tasche creates a **complete, self-contained archive**:
+- The original might get paywalled, deleted, or the domain might expire
+- **Doesn't matter**—you have your copy with all images, styling preserved
+- Reader loads from R2, not the live web
+- If you click the original URL and it 404s: "Original is gone. Good thing you saved it."
+
+This is the entire point of the app. Tasche captures everything needed for a complete reading experience at save time—clean HTML, all images downloaded locally, and a full-page screenshot as fallback.
+
+### 1.2 What Gets Archived
+
+When you save a URL, Tasche creates a complete, self-contained archive:
+
+| Asset | Purpose | Storage |
+|-------|---------|---------|
+| `original_url` | What you submitted (may have tracking params) | D1 |
+| `final_url` | After redirects (t.co → real URL) | D1 |
+| `canonical_url` | What the page declares as canonical | D1 |
+| `content.html` | Clean HTML with localized image paths | R2 |
+| `content.md` | Markdown for search and alternative rendering | R2 |
+| `thumbnail.webp` | Above-the-fold screenshot for article cards | R2 |
+| `original.webp` | Full-page scrolling screenshot (optional) | R2 |
+| `images/*.webp` | All article images, converted to WebP | R2 |
+| `metadata.json` | Archive timestamp, image count, provenance | R2 |
+| `audio.mp3` | TTS audio version (only if Listen Later enabled) | R2 |
+
+**Why three URLs?**
+- `original_url`: Detect duplicates when same article saved via different links (Twitter t.co, newsletter tracking, etc.)
+- `final_url`: The actual page after redirects resolved
+- `canonical_url`: What the site declares as the authoritative URL (for deduplication across shares)
+
+**Why save images locally?**
+- Images disappear faster than text (CDN expiry, hotlink protection, domain death)
+- Broken image placeholders ruin reading experience
+- WebP conversion saves ~30% storage vs. original formats
+- Limits: 2MB per image, 10MB total per article (configurable)
+
+**Why full-page screenshot?**
+- Fallback when Readability extraction fails (infographics, complex layouts)
+- Visual proof of what the page looked like when saved
+- Archival value—the web changes and disappears
+- Optional feature (default off, enable in settings for power users)
+
+### 1.3 Configuration
+
+Users forking this sample need to configure **one file** to deploy their own instance: `wrangler.jsonc`
+
+**Key configuration for Python Workers:**
+
+1. **`main`** - Points to Python entrypoint: `"main": "src/entry.py"`
+2. **`compatibility_flags`** - Include `"python_workers"` flag
+3. **Automatic provisioning** - Bindings without IDs are created on first `wrangler deploy`
+4. **Static Assets** - Frontend served alongside Python API
+5. **Environment variables** - `SITE_URL`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`
+
+The bookmarklet, auth callbacks, and all internal URLs are derived from `SITE_URL`, so changing this single value configures the entire application.
+
+### 1.4 Authentication: GitHub OAuth
+
+Tasche uses **GitHub OAuth** for authentication:
+- 2-minute setup at github.com/settings/developers
+- No consent screen verification
+- Manual implementation (no BetterAuth equivalent for Python)
+- Sessions stored in KV with TTL
+
+### 1.5 Core Features (Priority Order)
+
+1. Save and sync content across devices
+2. Offline reading capability
+3. Clean reading experience (reader mode)
+4. Permanent library (content preservation)
+5. **Full-text search** across saved articles
+6. Tagging and organization
+7. Browser integration via extension/bookmarklet
+8. **Listen Later** — audio versions of articles via TTS
+
+### 1.6 Listen Later (Text-to-Speech)
+
+Reading requires visual attention. Listening enables multitasking—commutes, exercise, chores, walking. The "Listen Later" feature lets users explicitly mark articles for audio generation.
+
+**User flow:**
+1. User sees article in library
+2. Clicks "Listen Later" button (headphone icon)
+3. Article is queued for TTS processing
+4. When ready, audio player appears on article
+5. User listens during commute, exercise, chores
+
+**Why explicit opt-in:**
+- No wasted compute on articles that will only be read
+- User decides what's worth the audio generation cost
+- Storage efficient—audio only for articles that need it
+- Clear mental model: "Listen Later" is a distinct action
+
+**Processing flow:**
+```
+User clicks "Listen Later"
+         │
+         ▼
+┌─────────────────────────────┐
+│  POST /api/articles/:id/    │
+│       listen-later          │
+│                             │
+│  1. Set listen_later = 1    │
+│  2. Set audio_status =      │
+│     'pending'               │
+│  3. Enqueue TTS job         │
+└─────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────┐
+│  TTS Queue Consumer         │
+│                             │
+│  1. Fetch markdown from R2  │
+│  2. Call Workers AI:        │
+│     @cf/deepgram/aura-2-en  │
+│  3. Store audio.mp3 → R2    │
+│  4. Update D1:              │
+│     - audio_key             │
+│     - audio_duration_seconds│
+│     - audio_status = 'ready'│
+└─────────────────────────────┘
+         │
+         ▼
+   Audio player appears
+   on article card/view
+```
+
+**Workers AI model:** `@cf/deepgram/aura-2-en` — Deepgram's context-aware TTS with natural pacing and expressiveness. Runs on Cloudflare's edge, no external API keys needed.
+
+**R2 storage:** Audio stored as `articles/{id}/audio.mp3`. Zero egress fees mean offline audio sync doesn't blow up costs.
+
+**PWA audio features:**
+- Play/pause, skip ±15s, playback speed (1x, 1.5x, 2x)
+- Background playback (continues when screen off)
+- Offline sync: "Download for offline listening" caches audio to device
+- Listen Later queue: filtered view of articles with audio ready
+
+### 1.7 Content Storage Philosophy
+
+Tasche stores articles in **dual format**:
+
+| Format | Purpose | Storage |
+|--------|---------|---------|
+| **Original HTML** | Preserve exact rendering, images, styling | R2 |
+| **Markdown** | Search indexing, AI processing, clean reading | R2 + D1 FTS5 |
+
+**Why both?**
+- **HTML** preserves the author's intent—formatting, images, and layout
+- **Markdown** is ideal for full-text search (FTS5), AI summarization, and clean reader mode
+- Storing both costs minimal extra R2 storage but unlocks powerful features
+
+---
+
+## 1.8 User Journeys
+
+### Save an Article (Bookmarklet)
+
+1. User reads an article on the web
+2. Clicks bookmarklet in browser toolbar
+3. Popup confirms "Saving..." then "Saved ✓"
+4. Article appears in library within seconds (thumbnail, title, excerpt)
+5. Original page can now disappear—user has their copy
+
+### Save an Article (Share Sheet / Mobile)
+
+1. User taps Share on mobile browser
+2. Selects "Tasche" from share targets
+3. App opens briefly, confirms save
+4. Returns to original browser
+
+### Read Offline
+
+1. User opens PWA while connected
+2. Library syncs, articles cache in background
+3. User goes offline (subway, airplane)
+4. Opens PWA—cached articles load instantly
+5. Reading progress syncs when back online
+
+### Search Library
+
+1. User types in search box
+2. FTS5 searches title, excerpt, and full markdown content
+3. Results highlight matching terms
+4. User clicks result → opens reader view
+
+### Listen Later
+
+1. User sees article they want to hear
+2. Taps headphone icon → "Generating audio..."
+3. Notification when ready (or polls on next open)
+4. Audio player appears on article card
+5. User listens during commute with background playback
+
+### Tag and Organize
+
+1. User opens article
+2. Taps tag icon → shows existing tags + "Add new"
+3. Types tag name, presses enter
+4. Tag appears on article, filterable in library
+
+### Original Disappeared
+
+1. User clicks "View Original" on saved article
+2. Browser opens original URL → 404 or paywall
+3. Returns to Tasche → article still fully readable
+4. UI shows: "Original is gone. Good thing you saved it."
+
+---
+
+## 2. Python Workers Libraries
+
+This section documents the specific libraries chosen for Tasche and why they work well with Python Workers on Cloudflare.
+
+**Important:** Python Workers run on Pyodide (WebAssembly). Use `pywrangler` (not regular wrangler) to deploy Workers with packages. Packages are defined in `pyproject.toml`.
+
+**Confirmed working** (from [cloudflare/python-workers-examples](https://github.com/cloudflare/python-workers-examples)):
+- FastAPI, D1 queries, KV bindings, R2, Durable Objects, Queues
+- Workers AI, Workflows, Cron triggers, HTMLRewriter
+- Static Assets, WebSocket streams
+
+### 2.1 Core Framework
+
+| Library | Version | Purpose | Status |
+|---------|---------|---------|--------|
+| **FastAPI** | ^0.110.x | Web framework | ✅ Official example (03-fastapi) |
+| **asgi** | (built-in) | ASGI adapter | ✅ Provided by Workers runtime |
+
+**FastAPI pattern** (from official example):
+
+```python
+from workers import WorkerEntrypoint
+import asgi
+from fastapi import FastAPI, Request
+
+app = FastAPI()
+
+@app.get("/")
+async def root(request: Request):
+    env = request.scope["env"]  # Access bindings
+    return {"message": "Hello"}
+
+class Worker(WorkerEntrypoint):
+    async def fetch(self, request):
+        return await asgi.fetch(app, request.js_object, self.env)
+```
+
+**Key points:**
+- Use `request.js_object` (raw JS Request) for the ASGI adapter
+- Access bindings via `request.scope["env"]` in route handlers
+- All handlers must be `async def` (no sync handlers—threading unsupported)
+
+### 2.2 Authentication: Manual GitHub OAuth
+
+Python Workers don't have a BetterAuth equivalent, so we implement GitHub OAuth directly. It's straightforward:
+
+1. Redirect user to GitHub's authorize URL
+2. GitHub redirects back with a code
+3. Exchange code for access token
+4. Fetch user info from GitHub API
+5. Create session in KV
+
+**Session management:**
+- Generate session ID with `secrets.token_urlsafe(32)`
+- Store session data in KV with TTL
+- Set HTTP-only cookie with session ID
+- Validate session on each request via middleware
+
+### 2.3 Database: Raw SQL
+
+| Library | Version | Purpose | Why It Works |
+|---------|---------|---------|--------------|
+| **sqlite3** | (stdlib) | SQL interface | D1 bindings expose same interface |
+
+No ORM needed. D1's Python bindings work like standard sqlite3:
+
+- `env.DB.execute(sql, params)` for queries
+- `env.DB.fetchone()`, `env.DB.fetchall()` for results
+- Parameterized queries prevent SQL injection
+
+For a simple schema like Tasche's, raw SQL is clearer than an ORM anyway.
+
+### 2.4 Content Extraction & Parsing
+
+| Library | Version | Purpose | Pyodide Status |
+|---------|---------|---------|----------------|
+| **beautifulsoup4** | ^4.12.x | HTML parsing | ✅ Available |
+| **python-readability** | ^0.1.x | Article extraction | ✅ Works (uses native JS engine) |
+| **markdownify** | ^0.11.x | HTML to Markdown | ✅ Pure Python |
+| **httpx** | ^0.27.x | HTTP client | ✅ Available |
+
+**Why python-readability over readability-lxml:**
+- Wraps the actual @mozilla/readability (Firefox Reader View engine)
+- Uses Pyodide's native JS engine—no C extensions needed
+- Same algorithm Mozilla actively maintains for modern web pages
+- Better HTML5 handling, metadata extraction (author, date, excerpt)
+
+### 2.5 Browser Rendering: REST API
+
+Python Workers can't use the Puppeteer binding directly. Instead, use Cloudflare's Browser Rendering REST API:
+
+**Endpoints:**
+- `POST /screenshot` — Capture page as image
+- `POST /scrape` — Extract rendered HTML after JavaScript execution
+
+**Usage from Python:**
+
+```
+POST https://api.cloudflare.com/client/v4/accounts/{account_id}/browser-rendering/screenshot
+Authorization: Bearer {api_token}
+
+{
+  "url": "https://example.com/article",
+  "viewport": { "width": 1200, "height": 630 },
+  "fullPage": true
+}
+```
+
+**Tradeoffs vs Puppeteer binding:**
+- Less control (can't interact with page, fill forms, etc.)
+- Requires API token management
+- Slightly higher latency (external API call vs binding)
+- Works from any language
+
+For Tasche's use case (screenshot + scrape HTML), the REST API is sufficient.
+
+### 2.6 ID Generation
+
+| Library | Version | Purpose | Why It Works |
+|---------|---------|---------|--------------|
+| **secrets** | (stdlib) | Secure random IDs | Built into Python, cryptographically secure |
+
+Use `secrets.token_urlsafe(16)` for 22-character URL-safe IDs, or `uuid.uuid4()` for standard UUIDs.
+
+### 2.7 Libraries to AVOID
+
+| Library | Reason |
+|---------|--------|
+| `lxml` (standalone) | C extension may not work in Pyodide |
+| `readability-lxml` | Requires lxml; use `python-readability` instead |
+| `playwright` | No Python Workers support |
+| `selenium` | Requires browser binary |
+| `requests` | Use `httpx` instead (async support) |
+| Any C-extension library | Must be pre-compiled for Pyodide |
+
+### 2.8 Python Workers Runtime Constraints
+
+Python Workers run Python via Pyodide (WebAssembly) inside V8 isolates. Key constraints:
+
+**No threading:**
+- `RuntimeError: can't start new thread` if any library uses threads
+- All FastAPI dependencies must be `async def` (sync handlers cause thread dispatch)
+- Avoid libraries that use `concurrent.futures`, `threading`, or `multiprocessing`
+
+**JsProxy and .to_py():**
+- JS objects crossing into Python become `JsProxy` objects
+- To use them as native Python dicts/lists, call `.to_py()`
+- Example: `rows = (await env.DB.execute(sql)).to_py()`
+
+**request.js_object:**
+- Some JS APIs need the raw JS Request/Response, not the Python wrapper
+- FastAPI's ASGI adapter: `await asgi.fetch(app, request.js_object, self.env)`
+- HTMLRewriter: `HTMLRewriter().transform(response.js_object)`
+
+**Accessing bindings in FastAPI:**
+- Bindings are on `request.scope["env"]`, not directly on `self.env`
+- Example: `db = request.scope["env"].DB`
+
+**Per-isolate initialization:**
+- `WorkerEntrypoint` class instances persist across requests within the same V8 isolate
+- Use class attributes (not instance attributes) for cached routers, initialized state
+- This avoids re-initialization overhead on every request
+
+**Static Assets architecture:**
+- Static files (CSS, JS, images) served directly from Cloudflare's edge
+- They do NOT invoke the Python Worker at all
+- Only API routes hit your Python code
+
+---
+
+### 3.1 Why Each Cloudflare Primitive Was Chosen
+
+This section explains the architectural decisions behind Tasche and why each Cloudflare service was selected. Understanding these choices helps developers learn how to compose Cloudflare's primitives for their own applications.
+
+#### **Workers** → API Backend & Queue Consumer
+
+**What it does:** Serverless Python execution at the edge via Pyodide (WebAssembly).
+
+**Why Workers for Tasche:**
+- **Global low-latency API**: Users access their reading list from anywhere. Workers run in 300+ locations, so API responses are fast regardless of where the user is.
+- **No cold starts**: V8 isolates provide sub-millisecond startup. When a user opens the PWA, the article list loads instantly.
+- **Cost-effective**: The free tier (100K requests/day) covers most personal use. Paid plan ($5/mo) includes 10M requests.
+- **Native integrations**: Workers have first-class bindings to D1, R2, KV, Queues, and Browser Rendering—no SDK configuration needed.
+
+---
+
+#### **D1** → Relational Database (Users, Articles, Tags)
+
+**What it does:** Serverless SQLite database with automatic replication.
+
+**Why D1 for Tasche:**
+- **Relational data model**: Articles have tags (many-to-many), users have articles (one-to-many), reading progress tracks position per article. SQL handles these relationships naturally.
+- **Read replicas**: D1 automatically replicates reads globally. When a user in Tokyo opens their library, the query hits a nearby replica—not a single origin database.
+- **Familiar SQL**: No new query language to learn. Standard SQLite syntax works.
+- **Zero configuration**: No connection strings, connection pooling, or VPC setup. Just bind and query.
+- **10GB per database**: More than enough for article metadata. A user with 10,000 saved articles uses ~50MB.
+
+**Why NOT D1 for article content:** Article HTML can be large (50KB-500KB each). Storing blobs in SQLite is inefficient and would quickly hit the 10GB limit. That's why content goes to R2.
+
+---
+
+#### **R2** → Object Storage (Article Content, Thumbnails)
+
+**What it does:** S3-compatible object storage with zero egress fees.
+
+**Why R2 for Tasche:**
+- **Large blob storage**: Article HTML (50KB-500KB), thumbnails (20KB-100KB), and images don't belong in a database. R2 handles objects up to 5TB.
+- **Zero egress fees**: When a user reads an article, that's egress. With R2, storage is the only cost ($0.015/GB/mo).
+- **PWA offline sync**: The Service Worker can cache article content from R2. When the user goes offline (subway, airplane), cached articles are available. Zero egress means this caching strategy doesn't blow up costs.
+- **CDN integration**: R2 objects can be served through Cloudflare's CDN with caching, making repeated reads of popular articles instant.
+- **Permanent archive**: Even if the original article disappears from the web, Tasche's copy in R2 persists. This is the core value proposition.
+
+**Storage structure:**
+
+**Why archive images?**
+- Images disappear faster than articles (CDN expiry, hotlink protection, domain death)
+- Rewritten to local paths in `content.html` for reliable rendering
+- WebP format: 30% smaller than JPEG at same quality
+
+**Why full-page screenshot?**
+- Some content doesn't extract well (infographics, complex layouts)
+- Visual proof of original appearance
+- "View original" fallback when reader mode fails
+- Archive value—web pages change and disappear
+
+---
+
+#### **KV** → Session Storage & Caching
+
+**What it does:** Global key-value store with millisecond reads.
+
+**Why KV for Tasche:**
+- **Session tokens**: After GitHub OAuth, the session ID maps to user data. KV's global distribution means session validation is fast everywhere. TTL support auto-expires sessions.
+- **OAuth state**: CSRF tokens for the OAuth flow need temporary storage (10 minutes). KV's TTL handles cleanup automatically.
+- **Eventually consistent is fine**: Sessions don't need strong consistency. If a user logs out, a 60-second propagation delay is acceptable.
+- **High read throughput**: KV is optimized for read-heavy workloads. Session checks happen on every authenticated request.
+
+**What KV is NOT used for:**
+- *Article metadata*: Needs relational queries (filter by tag, sort by date). → D1
+- *Article content*: Large blobs, write-once-read-many. → R2
+- *Job queues*: Need guaranteed delivery and ordering. → Queues
+
+**Alternative considered:**
+- *D1 for sessions*: Works, but adds database load for simple key lookups. KV is purpose-built for this.
+- *Durable Objects*: Overkill for sessions. DO is for stateful coordination, not simple storage.
+
+---
+
+#### **Queues** → Background Article Processing
+
+**What it does:** Message queue with guaranteed delivery, retries, and batching.
+
+**Why Queues for Tasche:**
+- **Decouple save from process**: When a user clicks "Save," the API immediately returns success. The heavy work (fetching page, extracting content, generating thumbnail) happens asynchronously.
+- **User experience**: Save operations feel instant (<100ms) instead of waiting 5-10 seconds for page processing.
+- **Retry on failure**: If Browser Rendering times out or the page is temporarily unavailable, Queues automatically retry with exponential backoff.
+- **Rate limit compliance**: Browser Rendering allows 2 new browsers/minute. Queue's `max_batch_timeout: 60` ensures we don't exceed this limit.
+- **Batch processing**: Multiple saves can be processed together, reducing Browser Rendering overhead.
+
+**Flow:**
+```
+User saves URL → POST /api/articles
+                      │
+                      ▼
+┌─────────────────────────────────────┐
+│  API Handler (~50ms response)       │
+│  1. Validate URL                    │
+│  2. Check duplicates (all 3 URLs)   │
+│  3. Create article (status:pending) │
+│  4. Enqueue processing job          │
+│  5. Return { id, status: 'pending' }│
+└─────────────────────────────────────┘
+                      │
+                      ▼
+┌─────────────────────────────────────┐
+│  Queue Consumer (async, retries)    │
+│                                     │
+│  1. Spawn headless browser          │
+│  2. Navigate, follow redirects      │
+│     → capture final_url             │
+│  3. Extract canonical_url from DOM  │
+│  4. Full-page screenshot → R2       │
+│  5. Thumbnail screenshot → R2       │
+│  6. Readability extracts content    │
+│  7. Download + convert images       │
+│     → R2 images/*.webp              │
+│  8. Rewrite HTML with local paths   │
+│  9. Convert to Markdown (Turndown)  │
+│ 10. Store content.html → R2         │
+│ 11. Store content.md → R2           │
+│ 12. Store metadata.json → R2        │
+│ 13. Update D1:                      │
+│     - title, excerpt, word_count    │
+│     - reading_time, status: 'ready' │
+│     - all three URLs                │
+│ 14. Index in FTS5                   │
+└─────────────────────────────────────┘
+                      │
+                      ▼
+        Article appears in library
+        with thumbnail and metadata
+```
+
+**Alternative considered:**
+- *Synchronous processing*: Terrible UX. User waits 5-10 seconds staring at a spinner.
+
+---
+
+#### **Browser Rendering REST API** → Page Fetching & Screenshots
+
+**What it does:** Headless Chromium browsers running on Cloudflare's edge, accessible via REST API.
+
+**Why Browser Rendering for Tasche:**
+- **JavaScript rendering**: Modern websites are SPAs. A simple `fetch()` gets empty HTML shells. Browser Rendering executes JavaScript and returns the fully-rendered DOM.
+- **Accurate content extraction**: BeautifulSoup/readability work best on rendered HTML. Paywalls, lazy-loaded content, and dynamic elements are handled.
+- **Thumbnail generation**: The `/screenshot` endpoint creates visual previews. Users can identify articles by thumbnail in the PWA.
+- **No infrastructure**: No Docker containers, no browser servers, no Chrome installation. Just REST API calls.
+
+**REST API endpoints:**
+- `POST /screenshot` — Full-page or viewport screenshot as PNG/JPEG
+- `POST /scrape` — Rendered HTML after JavaScript execution
+
+**Constraints addressed:**
+- *Rate limits*: Queue batching with 60-second timeout keeps us under limit.
+- *$0.02 per 1,000 sessions*: Acceptable for personal use (100 articles/month = $0.002).
+
+---
+
+#### **Workers Static Assets** → PWA Frontend Hosting
+
+**What it does:** Serve static files (HTML, CSS, JS, images) directly from Workers with global CDN caching.
+
+**Why Workers Static Assets for Tasche:**
+- **Unified deployment**: API and frontend deploy together with a single `wrangler deploy`
+- **PWA support**: Serves the app shell, manifest.json, and Service Worker. Users can "Add to Home Screen" and get an app-like experience.
+- **SPA routing**: Configure `not_found_handling = "single-page-application"` for client-side routing
+- **Offline-first**: The Service Worker intercepts requests and serves cached articles when offline
+- **Global CDN**: Assets cached at 300+ edge locations
+
+**Configuration in wrangler.jsonc:**
+
+```jsonc
+{
+  "assets": {
+    "directory": "./dist/client",
+    "not_found_handling": "single-page-application"
+  }
+}
+```
+
+**PWA architecture:**
+
+---
+
+### 3.2 How the Primitives Compose Together
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                              USER DEVICE                                 │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │                    PWA (from Workers Static Assets)              │    │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │    │
+│  │  │ App Shell   │  │  Service    │  │  IndexedDB              │  │    │
+│  │  │ (cached)    │  │  Worker     │  │  (offline article cache)│  │    │
+│  │  └─────────────┘  └──────┬──────┘  └─────────────────────────┘  │    │
+│  └──────────────────────────┼──────────────────────────────────────┘    │
+└─────────────────────────────┼───────────────────────────────────────────┘
+                              │ HTTPS
+┌─────────────────────────────┼───────────────────────────────────────────┐
+│                     CLOUDFLARE EDGE                                      │
+│                              │                                           │
+│  ┌───────────────────────────▼───────────────────────────────────────┐  │
+│  │                   Python Workers (API + Static Assets)            │  │
+│  │  • Authentication (GitHub OAuth)                                  │  │
+│  │  • Article CRUD                                                    │  │
+│  │  • Tag management                                                  │  │
+│  │  • Reading progress sync                                           │  │
+│  │  • Static asset serving (SPA with client-side routing)            │  │
+│  └───┬─────────────┬─────────────┬─────────────┬────────────────┬────┘  │
+│      │             │             │             │                │        │
+│      ▼             ▼             ▼             ▼                ▼        │
+│  ┌───────┐    ┌────────┐   ┌─────────┐   ┌─────────┐    ┌────────────┐  │
+│  │  D1   │    │   R2   │   │   KV    │   │ Queues  │    │  Browser   │  │
+│  │       │    │        │   │         │   │         │    │  Rendering │  │
+│  │Users  │    │Article │   │Sessions │   │Process  │    │  REST API  │  │
+│  │Articles│   │Content │   │         │   │Jobs     │───▶│ Screenshot │  │
+│  │Tags   │    │Thumbnails  │         │   │         │    │ Scrape     │  │
+│  └───────┘    └────────┘   └─────────┘   └────┬────┘    └────────────┘  │
+│                                               │                          │
+│                                               ▼                          │
+│                                    ┌──────────────────┐                  │
+│                                    │  Queue Consumer  │                  │
+│                                    │  (Worker)        │                  │
+│                                    │                  │                  │
+│                                    │  • Fetch via BR  │                  │
+│                                    │  • Extract text  │                  │
+│                                    │  • Store to R2   │                  │
+│                                    │  • Update D1     │                  │
+│                                    └──────────────────┘                  │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+### 3.3 Offline PWA Architecture
+
+The PWA is designed for true offline reading—users should be able to read saved articles on airplanes, subways, or anywhere without connectivity.
+
+**Service Worker Strategy:**
+
+**Offline sync strategy:**
+
+1. **Eager caching**: When user views article list, background-fetch article content for unread items
+2. **Manual save for offline**: "Save for offline" button explicitly caches article content
+3. **Queue offline actions**: If user archives/favorites while offline, queue action in IndexedDB and sync when online
+4. **Background sync**: Use Background Sync API to retry queued actions
+
+**Why this works with Cloudflare:**
+- **R2 zero egress**: Caching article content doesn't increase costs
+- **Workers global**: Even cache misses are fast due to edge execution
+- **KV sessions**: Session validation works at edge, reducing round-trips
+
+---
+
+
+### 3.4 System Architecture Diagram
+
+**Component overview:**
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                      Cloudflare Edge Network                        │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ┌───────────────┐    ┌─────────────────────────────────────────┐  │
+│  │ Static Assets │    │         Python Worker (FastAPI)         │  │
+│  │   (PWA/SPA)   │    │  ┌─────────────┐  ┌─────────────────┐   │  │
+│  └───────────────┘    │  │  API Routes │  │ Queue Consumer  │   │  │
+│                       │  │  + OAuth    │  │ (Articles, TTS) │   │  │
+│                       │  └─────────────┘  └─────────────────┘   │  │
+│                       └─────────────────────────────────────────┘  │
+│                                      │                              │
+│         ┌────────────────────────────┼────────────────────┐        │
+│         ▼                            ▼                    ▼        │
+│  ┌─────────────┐  ┌─────────────┐  ┌──────┐  ┌─────────────────┐  │
+│  │     D1      │  │     R2      │  │  KV  │  │     Queues      │  │
+│  │  Database   │  │   Content   │  │ Sess │  │   Processing    │  │
+│  └─────────────┘  └─────────────┘  └──────┘  └─────────────────┘  │
+│                                                                     │
+│  ┌─────────────────────────────┐  ┌─────────────────────────────┐  │
+│  │   Browser Rendering API     │  │        Workers AI           │  │
+│  │  (JS-heavy site scraping)   │  │   (TTS: aura-2-en model)    │  │
+│  └─────────────────────────────┘  └─────────────────────────────┘  │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+          │                              │
+          ▼                              ▼
+   ┌─────────────┐                ┌─────────────┐
+   │   GitHub    │                │  Original   │
+   │   OAuth     │                │  Articles   │
+   └─────────────┘                └─────────────┘
+```
+
+**Data flow diagram (Mermaid):**
+
+```mermaid
+flowchart TB
+    subgraph Client
+        PWA[PWA / Browser]
+        BM[Bookmarklet]
+    end
+
+    subgraph Edge["Cloudflare Edge Network"]
+        SA[Static Assets]
+        API[Python Worker<br/>FastAPI]
+        QC[Queue Consumer]
+        
+        subgraph Storage
+            D1[(D1<br/>Articles, Users)]
+            R2[(R2<br/>HTML, MD, Audio)]
+            KV[(KV<br/>Sessions)]
+        end
+        
+        Q[/Queue/]
+        BR[Browser Rendering<br/>REST API]
+        AI[Workers AI<br/>TTS]
+    end
+
+    subgraph External
+        GH[GitHub OAuth]
+        WEB[Original Article]
+    end
+
+    %% Client flows
+    PWA -->|GET /| SA
+    PWA -->|API calls| API
+    BM -->|POST /api/articles| API
+
+    %% Auth flow
+    API -->|OAuth redirect| GH
+    GH -->|callback| API
+    API <-->|sessions| KV
+
+    %% Save article flow
+    API -->|enqueue URL| Q
+    Q -->|consume| QC
+    QC -->|fetch| WEB
+    QC -->|if JS-heavy| BR
+    BR -->|rendered HTML| QC
+    QC -->|metadata| D1
+    QC -->|HTML + Markdown| R2
+
+    %% Read flow
+    API <-->|query| D1
+    API -->|stream content| R2
+
+    %% Listen Later flow
+    API -->|enqueue TTS job| Q
+    QC -->|generate speech| AI
+    AI -->|audio| QC
+    QC -->|audio.mp3| R2
+```
+
+**Key flows:**
+1. **Save article**: Bookmarklet/PWA → API → Queue → Consumer fetches URL (via Browser Rendering if needed) → stores metadata in D1, content in R2
+2. **Read article**: PWA → API → D1 for metadata → R2 for content (streamed)
+3. **Listen Later**: PWA → API → Queue → Consumer → Workers AI generates audio → R2
+4. **Auth**: PWA → API → GitHub OAuth → callback → session stored in KV
+
+---
+
+## 4. Cloudflare Services Mapping
+
+| Feature | Cloudflare Service | Purpose |
+|---------|-------------------|---------|
+| API Backend | Python Workers | Request handling, business logic (FastAPI) |
+| Frontend Hosting | Workers Static Assets | React SPA with PWA support |
+| Database | D1 | Users, articles, tags, metadata |
+| Content Storage | R2 | Archived HTML, Markdown, thumbnails, audio |
+| Session Management | KV | Auth sessions with TTL |
+| Background Processing | Queues | Article fetching, content extraction, TTS generation |
+| Content Extraction | Browser Rendering REST API | Screenshot and HTML scraping |
+| Authentication | Manual GitHub OAuth | OAuth flow with KV sessions |
+| Listen Later (TTS) | Workers AI | Text-to-speech via @cf/deepgram/aura-2-en |
+
+---
+
+### 5.1 D1 Database Schema
+
+**Articles table key fields:**
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `id` | TEXT | Primary key |
+| `user_id` | TEXT | Owner reference |
+| `original_url` | TEXT | URL as submitted |
+| `final_url` | TEXT | After redirects |
+| `canonical_url` | TEXT | Page's declared canonical |
+| `domain` | TEXT | Extracted hostname for display |
+| `title` | TEXT | Article title |
+| `excerpt` | TEXT | Short description |
+| `author` | TEXT | Byline if available |
+| `word_count` | INTEGER | For reading time estimates |
+| `reading_time_minutes` | INTEGER | Calculated at ~200 WPM |
+| `image_count` | INTEGER | Number of images archived |
+| `status` | TEXT | 'pending', 'processing', 'ready', 'failed' |
+| `reading_status` | TEXT | 'unread', 'reading', 'archived' |
+| `is_favorite` | INTEGER | 0 or 1 |
+| `listen_later` | INTEGER | 0 or 1 — user wants audio version |
+| `audio_key` | TEXT | R2 path to audio.mp3 |
+| `audio_duration_seconds` | INTEGER | For playlist time budgeting |
+| `audio_status` | TEXT | 'pending', 'generating', 'ready', 'failed' |
+| `html_key` | TEXT | R2 path to content.html |
+| `markdown_key` | TEXT | R2 path to content.md |
+| `thumbnail_key` | TEXT | R2 path to thumbnail.webp |
+| `created_at` | TEXT | When saved |
+| `updated_at` | TEXT | Last modified |
+
+### 5.2 R2 Storage Structure
+
+**Dual Content Storage Philosophy:**
+
+| Location | Content | Purpose |
+|----------|---------|---------|
+| **D1** `markdown_content` | Full Markdown text | FTS5 search indexing, quick access |
+| **R2** `content.html` | Clean HTML with styling | Reader mode rendering |
+| **R2** `content.md` | Markdown file | Backup, export, future AI features |
+
+**Why store Markdown in both D1 and R2?**
+- D1: Fast FTS5 search without R2 fetches
+- R2: Permanent backup, file export, AI processing (large context windows)
+- Storage cost is negligible: 10K articles × 50KB markdown = 500MB
+
+---
+
+### 5.1 Authentication Endpoints
+
+GitHub OAuth requires these endpoints:
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/auth/login` | GET | Redirect to GitHub authorize URL |
+| `/api/auth/callback` | GET | Handle GitHub callback, create session |
+| `/api/auth/logout` | POST | Delete session from KV |
+| `/api/auth/session` | GET | Return current user info |
+
+**OAuth flow:**
+1. User visits `/api/auth/login`
+2. Redirect to `https://github.com/login/oauth/authorize?client_id=...&redirect_uri=...&scope=user:email`
+3. User authorizes on GitHub
+4. GitHub redirects to `/api/auth/callback?code=...`
+5. Exchange code for access token via POST to `https://github.com/login/oauth/access_token`
+6. Fetch user info from `https://api.github.com/user`
+7. Create or update user in D1
+8. Generate session ID with `secrets.token_urlsafe(32)`
+9. Store session in KV with 7-day TTL
+10. Set HTTP-only cookie with session ID
+11. Redirect to app
+
+### 5.2 Whitelist Configuration (Optional)
+
+If `ALLOWED_EMAILS` is set in `wrangler.toml`, only those emails can access the app.
+
+If empty or not set, any authenticated GitHub user can access the application.
+
+---
+
+### 6.3 Article Processing Queue Consumer
+
+The queue consumer fetches and processes articles asynchronously.
+
+### 6.4 Wrangler Configuration
+
+**Deploy with pywrangler** (not regular wrangler) for Python Workers with packages:
+
+```bash
+# Development
+uv run pywrangler dev
+
+# Deploy to production
+uv run pywrangler deploy --env production
+
+# Deploy to staging
+uv run pywrangler deploy --env staging
+```
+
+**wrangler.jsonc:**
+
+```jsonc
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tasche",
+  "main": "src/entry.py",
+  "compatibility_date": "2025-12-01",
+  "compatibility_flags": ["python_workers"],
+  
+  // Shared configuration (base)
+  "vars": {
+    "ALLOWED_EMAILS": ""
+  },
+  
+  "d1_databases": [{ "binding": "DB" }],
+  "r2_buckets": [{ "binding": "CONTENT" }],
+  "kv_namespaces": [{ "binding": "SESSIONS" }],
+  
+  "queues": {
+    "producers": [{ "binding": "ARTICLE_QUEUE", "queue": "tasche-articles" }],
+    "consumers": [{ "queue": "tasche-articles", "max_batch_size": 10, "max_batch_timeout": 60 }]
+  },
+  
+  "observability": {
+    "enabled": true,
+    "logs": { "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 0.1 }
+  },
+
+  // Production environment
+  "env": {
+    "production": {
+      "vars": { "SITE_URL": "https://tasche.yourdomain.com" },
+      "routes": [{ "pattern": "tasche.yourdomain.com", "custom_domain": true }]
+    },
+    "staging": {
+      "vars": { "SITE_URL": "https://tasche-staging.yourdomain.com" },
+      "routes": [{ "pattern": "tasche-staging.yourdomain.com", "custom_domain": true }]
+    }
+  }
+}
+```
+
+**Custom domains vs routes:**
+- **Custom domain**: Worker IS the origin. Cloudflare creates DNS + SSL automatically. Use for Tasche.
+- **Route**: Worker runs in front of existing origin. Requires existing proxied DNS record.
+
+**pyproject.toml** (packages defined here, not requirements.txt):
+
+```toml
+[project]
+name = "tasche"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "python-readability",
+    "markdownify",
+    "httpx",
+]
+
+[tool.uv]
+dev-dependencies = ["pywrangler"]
+```
+
+**Note:** Workers Paid plan ($5/mo) required if compressed package size exceeds 1MB.
+
+### 6.5 GitHub OAuth Setup
+
+Setup takes under 2 minutes:
+
+1. Go to https://github.com/settings/developers
+2. Click "OAuth Apps" → "New OAuth App"
+3. Fill in the form:
+   - **Application name**: Tasche
+   - **Homepage URL**: `https://tasche.yourdomain.com`
+   - **Authorization callback URL**: `https://tasche.yourdomain.com/api/auth/callback`
+4. Click "Register application"
+5. Generate a new client secret
+6. Set secrets in Cloudflare:
+   - `wrangler secret put GITHUB_CLIENT_ID`
+   - `wrangler secret put GITHUB_CLIENT_SECRET`
+
+### 7.7 Handling Disappeared Articles
+
+The whole point of a read-it-later app is **permanence**. When the original article disappears, Tasche's archive remains.
+
+**Article states:**
+
+| `original_status` | Meaning | UI Treatment |
+|-------------------|---------|--------------|
+| `available` | Original still accessible | Show "View original" link |
+| `paywalled` | Returns 403, requires login | Note: "Original requires subscription" |
+| `gone` | 404/410, page deleted | Show: "Original no longer available" |
+| `domain_dead` | Entire domain unreachable | Show: "Source website offline" |
+| `unknown` | Never checked | No indicator |
+
+**Periodic health check (via Durable Objects alarm):** A scheduled task periodically checks if original URLs are still accessible and updates their status.
+
+---
+
+## 8. Frontend Specification (PWA)
+
+The Tasche frontend is a Progressive Web App (PWA) designed for offline-first reading. Users add it to their home screen and use it like a native app.
+
+### 8.1 Offline Support (Service Worker)
+
+The Service Worker is the heart of Tasche's offline capability. It enables:
+- **App shell caching**: The UI loads instantly, even offline
+- **Article content caching**: Saved articles are readable without connectivity
+- **Background sync**: Actions taken offline sync when connectivity returns
+- **Offline indicators**: UI shows online/offline status
+
+### 8.2 Bookmarklet
+
+The bookmarklet automatically uses the configured `SITE_URL`. Users drag it to their bookmark bar to save articles with one click.
+
+---
+
+## 9. Key Practices for Python Workers
+
+### 9.1 Deployment & Configuration
+
+1. **Use pywrangler for deployment** — Regular wrangler can't deploy Python Workers with packages. Use `uv run pywrangler deploy --env production`.
+
+2. **Define packages in pyproject.toml** — Not requirements.txt. pywrangler reads from pyproject.toml.
+
+3. **Configure environments deliberately** — Always deploy with `--env production` or `--env staging`. The root Worker (no env suffix) is a separate deployment.
+
+4. **Workers Paid for large apps** — If compressed packages exceed 1MB, you need the $5/mo paid plan.
+
+### 9.2 Python Workers Runtime
+
+5. **All handlers must be async** — No sync handlers. Threading is unsupported; sync handlers cause `RuntimeError: can't start new thread`.
+
+6. **Access bindings via request.scope["env"]** — In FastAPI handlers, bindings aren't on `self`, they're in the request scope.
+
+7. **Use request.js_object for ASGI** — FastAPI needs the raw JS Request via `asgi.fetch(app, request.js_object, self.env)`.
+
+8. **Call .to_py() on JS results** — D1 results are JsProxy objects. Convert with `.to_py()` to use as Python dicts.
+
+9. **Check package compatibility** — Not all packages work. Stick to pure-Python or Pyodide-compatible libraries.
+
+### 9.3 Request Handling
+
+10. **Stream large responses** — Don't buffer entire article content in memory. Use FastAPI's `StreamingResponse` to pipe R2 object bodies directly to the client.
+
+11. **Never store request-scoped state in globals** — Workers reuse isolates across requests. Global variables persist and leak between requests. Always pass state through function arguments or store on `request.state`.
+
+12. **Always await async calls** — Unawaited async calls are "floating promises" that may never complete before the isolate terminates.
+
+### 9.4 Data Patterns
+
+13. **Store dual format** — Keep original HTML for fidelity, Markdown for search/AI. R2 storage is cheap.
+
+14. **D1 FTS5 for search** — SQLite's full-text search works great with Markdown content.
+
+---
+
+## 10. Observability
+
+Observability is not optional. Enable it before production, not after the first outage.
+
+### 10.1 Configuration
+
+Enable in wrangler.jsonc under `observability`: set `enabled: true`, configure `logs.head_sampling_rate` (1 = 100%), and optionally enable traces with their own sampling rate.
+
+### 10.2 Wide Events (Canonical Log Lines)
+
+Traditional logging emits many small log lines per request ("Processing article...", "Fetching content...", "Saved to DB..."). This creates noise and loses context. Instead, emit **one wide event per request** containing everything needed to debug.
+
+**The principle:** Instead of logging what your code is doing, log what happened to this request.
+
+A wide event is a single JSON object emitted at the end of each request containing: timestamp, request_id (use `cf-ray` header), method, path, status_code, duration_ms, outcome (success/error), user context (id, email), and request-specific fields (article URL, domain, etc.). If an error occurred, include error type and message.
+
+Build the event incrementally during request processing, then emit it once in a `finally` block. Workers Logs captures stdout, so `print(json.dumps(event))` works.
+
+When a user reports an issue, search by `user.id` and you have full context instantly—no grep-ing through fragmented logs.
+
+### 10.3 Tail Sampling
+
+At scale, storing 100% of logs is expensive. Use **tail sampling** to keep what matters:
+
+| Condition | Sample Rate | Rationale |
+|-----------|-------------|-----------|
+| `status_code >= 500` | 100% | Always keep errors |
+| `duration_ms > 2000` | 100% | Always keep slow requests |
+| `outcome = "error"` | 100% | Always keep failures |
+| Everything else | 5-10% | Sample successful, fast requests |
+
+Workers Logs supports `head_sampling_rate` in config (decides before request). For tail sampling (decides after request based on outcome), implement the decision logic in code before emitting.
+
+### 10.4 What to Log
+
+| Always Include | Add When Relevant |
+|----------------|-------------------|
+| `timestamp`, `request_id` | `article.url`, `article.domain` |
+| `method`, `path`, `status_code` | `queue.batch_size`, `queue.failures` |
+| `duration_ms`, `outcome` | `extraction.method` (browser vs fetch) |
+| `user.id` (if authed) | `tts.duration_seconds`, `tts.model` |
+| `error.type`, `error.message` | `feature_flags.*` |
+
+### 10.5 Avoid These Patterns
+
+- **String logs** — `print(f"Processing article {url}")` is unsearchable
+- **Multiple log lines per request** — Creates noise, loses correlation
+- **Missing user context** — Can't debug user-reported issues
+- **Logging sensitive data** — Never log full article content, auth tokens, or PII beyond user ID
+
+---
+
+## 11. Testing
+
+### 11.1 Unit Testing
+
+Test pure Python logic (domain parsing, markdown sanitization, URL validation) with pytest. These tests don't need the Workers runtime—just import your modules and assert behavior.
+
+### 11.2 Integration Testing
+
+For testing with actual bindings (D1, R2, KV), run the worker locally with `uv run pywrangler dev --local` (uses Miniflare). Then run HTTP tests against localhost:8787 using httpx or requests.
+
+### 11.3 What to Test
+
+| Layer | What to Test | How |
+|-------|--------------|-----|
+| Extraction | Domain parsing, markdown sanitization, URL validation | Unit tests (pytest) |
+| API | Endpoints return correct status codes and shapes | Integration tests against local dev server |
+| Auth | Session creation, validation, expiry | Integration tests |
+| Queue | Message format, consumer handles errors gracefully | Unit tests for handler logic |
+
+---
+
+*This specification provides a complete blueprint for building Tasche on the Cloudflare Developer Platform using Python Workers. All services used are production-ready and within Cloudflare's documented capabilities.*

@@ -1,0 +1,22 @@
+{
+  "name": "Tasche",
+  "short_name": "Tasche",
+  "description": "Save articles. Read later. Listen anywhere.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1a1a2e",
+  "icons": [
+    {"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png"}
+  ],
+  "share_target": {
+    "action": "/",
+    "method": "GET",
+    "params": {
+      "url": "url",
+      "title": "title"
+    }
+  }
+}
