@@ -37,7 +37,7 @@ async def listen_later(
     user_id = user["user_id"]
 
     # Verify article exists and belongs to user
-    article = await _get_user_article(db, article_id, user_id)
+    article = await _get_user_article(db, article_id, user_id, fields="id, audio_status, audio_key")
 
     # Idempotency check: don't enqueue if already in progress or ready
     audio_status = article.get("audio_status")

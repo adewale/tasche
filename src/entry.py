@@ -136,6 +136,7 @@ async def _handle_tts_generation(message_body: dict, env: object) -> None:
     from tts.processing import process_tts
 
     article_id = message_body.get("article_id")
+    user_id = message_body.get("user_id")
 
     if not article_id:
         print(
@@ -148,7 +149,7 @@ async def _handle_tts_generation(message_body: dict, env: object) -> None:
         )
         return
 
-    await process_tts(article_id, env)
+    await process_tts(article_id, env, user_id=user_id)
 
 
 QUEUE_HANDLERS: dict[str, object] = {

@@ -12,8 +12,9 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse
 
-from articles.storage import delete_article_content
+from articles.storage import delete_article_content, get_content
 from articles.urls import check_duplicate, extract_domain, validate_url
 from auth.dependencies import get_current_user
 from wrappers import _to_js_value, d1_first, d1_rows
@@ -195,6 +196,35 @@ async def get_article(
 
     article = await _get_user_article(db, article_id, user_id)
     return article
+
+
+@router.get("/{article_id}/content")
+async def get_article_content(
+    request: Request,
+    article_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> HTMLResponse:
+    """Serve the article's HTML content from R2.
+
+    Returns the clean HTML stored during article processing.  Falls back to
+    404 if no HTML content is available in R2.
+    """
+    env = request.scope["env"]
+    db = env.DB
+    r2 = env.CONTENT
+    user_id = user["user_id"]
+
+    article = await _get_user_article(db, article_id, user_id, fields="id, html_key")
+
+    html_key = article.get("html_key")
+    if not html_key:
+        raise HTTPException(status_code=404, detail="No content available")
+
+    html_content = await get_content(r2, html_key)
+    if html_content is None:
+        raise HTTPException(status_code=404, detail="Content not found in storage")
+
+    return HTMLResponse(content=html_content)
 
 
 @router.patch("/{article_id}")

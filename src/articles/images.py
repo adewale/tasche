@@ -11,9 +11,12 @@ conversion requires testing in the actual Pyodide environment.
 from __future__ import annotations
 
 import hashlib
+from urllib.parse import urlparse
 
 import httpx
 from bs4 import BeautifulSoup
+
+from articles.urls import _is_private_hostname
 
 
 async def download_images(
@@ -64,9 +67,22 @@ async def download_images(
         if total_size >= max_total:
             break
 
+        # SSRF protection: skip images pointing to private/internal URLs
+        try:
+            parsed = urlparse(url)
+            if parsed.hostname and _is_private_hostname(parsed.hostname):
+                continue
+        except Exception:
+            continue
+
         try:
             resp = await client.get(url, timeout=15.0, follow_redirects=True)
             if resp.status_code != 200:
+                continue
+
+            # SSRF protection: check final URL after redirects
+            resp_parsed = urlparse(str(resp.url))
+            if resp_parsed.hostname and _is_private_hostname(resp_parsed.hostname):
                 continue
         except (httpx.HTTPError, Exception):
             continue

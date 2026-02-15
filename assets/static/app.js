@@ -81,6 +81,16 @@
 
     // TTS / Audio
     listenLater(articleId) { return this.request('POST', '/api/articles/' + articleId + '/listen-later'); },
+
+    // Article content from R2
+    getArticleContent(articleId) {
+      return fetch('/api/articles/' + articleId + '/content', { credentials: 'include' })
+        .then(function (resp) {
+          if (!resp.ok) return null;
+          return resp.text();
+        })
+        .catch(function () { return null; });
+    },
   };
 
   // =========================================================================
@@ -282,6 +292,9 @@
 
     resolve() {
       const hash = this.currentHash();
+
+      // Clean up scroll tracking from previous reader view
+      if (_scrollCleanup) _scrollCleanup();
 
       // Try exact match first
       if (this.routes[hash]) {
@@ -719,7 +732,9 @@
       var statusClass = article.reading_status || 'unread';
       var isFav = article.is_favorite;
       var hasAudio = article.audio_status === 'ready';
-      var canRequestAudio = !article.listen_later && article.audio_status !== 'pending' && article.audio_status !== 'generating';
+      var canRequestAudio = article.audio_status !== 'pending'
+          && article.audio_status !== 'generating'
+          && article.audio_status !== 'ready';
       var audioPending = article.audio_status === 'pending' || article.audio_status === 'generating';
 
       // Build tags HTML
@@ -728,9 +743,12 @@
           '<span class="tag-chip-remove" data-tag-id="' + escapeHtml(t.id) + '" data-article-id="' + escapeHtml(id) + '">\u00D7</span></span>';
       }).join('');
 
-      // Determine content to show
+      // Determine content to show: try R2 HTML first, fall back to markdown
       var contentHtml = '';
-      if (article.markdown_content) {
+      var r2Html = await api.getArticleContent(id);
+      if (r2Html) {
+        contentHtml = r2Html;
+      } else if (article.markdown_content) {
         contentHtml = renderMarkdown(article.markdown_content);
       } else if (article.excerpt) {
         contentHtml = '<p>' + escapeHtml(article.excerpt) + '</p>';
@@ -937,7 +955,11 @@
     }
   }
 
+  var _scrollCleanup = null;
+
   function setupScrollTracking(articleId) {
+    if (_scrollCleanup) _scrollCleanup();
+
     var debounceTimer = null;
     var readerContent = $('.reader-content');
     if (!readerContent) return;
@@ -959,12 +981,10 @@
 
     window.addEventListener('scroll', onScroll);
 
-    // Clean up on navigation
-    var origResolve = router.resolve.bind(router);
-    router.resolve = function () {
+    _scrollCleanup = function () {
       window.removeEventListener('scroll', onScroll);
-      router.resolve = origResolve;
-      origResolve();
+      if (debounceTimer) clearTimeout(debounceTimer);
+      _scrollCleanup = null;
     };
   }
 
@@ -996,18 +1016,18 @@
     // Horizontal rules
     html = html.replace(/^---$/gm, '<hr>');
 
+    // Images MUST be processed before links because ![alt](url) contains [alt](url)
+    html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function (_, alt, url) {
+      if (/^\s*javascript\s*:/i.test(url.replace(/&amp;/g, '&').replace(/&#/g, '#'))) return alt;
+      var decodedUrl = url.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+      return '<img src="' + decodedUrl + '" alt="' + alt + '" loading="lazy">';
+    });
+
     // Links (sanitize javascript: URLs, decode HTML entities in href)
     html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function (_, text, url) {
       if (/^\s*javascript\s*:/i.test(url.replace(/&amp;/g, '&').replace(/&#/g, '#'))) return text;
       var decodedUrl = url.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
       return '<a href="' + decodedUrl + '" target="_blank" rel="noopener">' + text + '</a>';
-    });
-
-    // Images (sanitize javascript: URLs, decode HTML entities in src)
-    html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function (_, alt, url) {
-      if (/^\s*javascript\s*:/i.test(url.replace(/&amp;/g, '&').replace(/&#/g, '#'))) return alt;
-      var decodedUrl = url.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
-      return '<img src="' + decodedUrl + '" alt="' + alt + '" loading="lazy">';
     });
 
     // Unordered lists

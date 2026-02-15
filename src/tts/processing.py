@@ -183,7 +183,7 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-async def process_tts(article_id: str, env: object) -> None:
+async def process_tts(article_id: str, env: object, *, user_id: str | None = None) -> None:
     """Process a TTS generation job for a single article.
 
     This is the main entry point called by the queue handler in ``entry.py``.
@@ -197,6 +197,8 @@ async def process_tts(article_id: str, env: object) -> None:
     env:
         Worker environment object with ``DB`` (D1), ``CONTENT`` (R2),
         and ``AI`` (Workers AI).
+    user_id:
+        The owner's user ID.  When provided, the query verifies ownership.
     """
     db = env.DB  # type: ignore[attr-defined]
     r2 = env.CONTENT  # type: ignore[attr-defined]
@@ -204,16 +206,29 @@ async def process_tts(article_id: str, env: object) -> None:
 
     try:
         # Step 1: Update audio_status to 'generating'
-        await db.prepare(
-            "UPDATE articles SET audio_status = ?, updated_at = ? WHERE id = ?"
-        ).bind("generating", _now(), article_id).run()
+        if user_id:
+            await db.prepare(
+                "UPDATE articles SET audio_status = ?, updated_at = ? WHERE id = ? AND user_id = ?"
+            ).bind("generating", _now(), article_id, user_id).run()
+        else:
+            await db.prepare(
+                "UPDATE articles SET audio_status = ?, updated_at = ? WHERE id = ?"
+            ).bind("generating", _now(), article_id).run()
 
         # Step 2: Fetch markdown content from R2
-        article = d1_first(
-            await db.prepare(
-                "SELECT markdown_key, markdown_content FROM articles WHERE id = ?"
-            ).bind(article_id).first()
-        )
+        if user_id:
+            article = d1_first(
+                await db.prepare(
+                    "SELECT markdown_key, markdown_content FROM articles"
+                    " WHERE id = ? AND user_id = ?"
+                ).bind(article_id, user_id).first()
+            )
+        else:
+            article = d1_first(
+                await db.prepare(
+                    "SELECT markdown_key, markdown_content FROM articles WHERE id = ?"
+                ).bind(article_id).first()
+            )
 
         markdown_text = None
 
@@ -252,10 +267,16 @@ async def process_tts(article_id: str, env: object) -> None:
         # Step 6: Update D1 with audio metadata
         duration = _estimate_duration(tts_text)
 
-        await db.prepare(
-            "UPDATE articles SET audio_key = ?, audio_duration_seconds = ?, "
-            "audio_status = ?, updated_at = ? WHERE id = ?"
-        ).bind(audio_r2_key, duration, "ready", _now(), article_id).run()
+        if user_id:
+            await db.prepare(
+                "UPDATE articles SET audio_key = ?, audio_duration_seconds = ?, "
+                "audio_status = ?, updated_at = ? WHERE id = ? AND user_id = ?"
+            ).bind(audio_r2_key, duration, "ready", _now(), article_id, user_id).run()
+        else:
+            await db.prepare(
+                "UPDATE articles SET audio_key = ?, audio_duration_seconds = ?, "
+                "audio_status = ?, updated_at = ? WHERE id = ?"
+            ).bind(audio_r2_key, duration, "ready", _now(), article_id).run()
 
         print(
             json.dumps({
@@ -288,9 +309,15 @@ async def process_tts(article_id: str, env: object) -> None:
             })
         )
         try:
-            await db.prepare(
-                "UPDATE articles SET audio_status = ?, updated_at = ? WHERE id = ?"
-            ).bind("failed", _now(), article_id).run()
+            if user_id:
+                await db.prepare(
+                    "UPDATE articles SET audio_status = ?, updated_at = ?"
+                    " WHERE id = ? AND user_id = ?"
+                ).bind("failed", _now(), article_id, user_id).run()
+            else:
+                await db.prepare(
+                    "UPDATE articles SET audio_status = ?, updated_at = ? WHERE id = ?"
+                ).bind("failed", _now(), article_id).run()
         except Exception:
             print(
                 json.dumps({

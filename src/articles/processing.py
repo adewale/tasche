@@ -40,7 +40,7 @@ from articles.extraction import (
 )
 from articles.images import download_images, store_images
 from articles.storage import article_key, store_content, store_metadata
-from articles.urls import extract_domain
+from articles.urls import _is_private_hostname, extract_domain
 
 # Minimum content length (characters) to consider HTML as "real" content.
 # Below this threshold, the page is likely JS-rendered and needs Browser Rendering.
@@ -94,6 +94,15 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
         # Step 2: Fetch page via httpx, following redirects
         async with httpx.AsyncClient(follow_redirects=True) as client:
             html, final_url = await _fetch_page(client, original_url)
+
+            # SSRF check: validate the final URL after redirects
+            from urllib.parse import urlparse
+
+            parsed_final = urlparse(final_url)
+            if parsed_final.hostname and _is_private_hostname(parsed_final.hostname):
+                raise ValueError(
+                    f"Redirect to private/internal URL blocked: {final_url}"
+                )
 
             # Step 3: If content looks JS-heavy, try Browser Rendering
             account_id = getattr(env, "CF_ACCOUNT_ID", None)
