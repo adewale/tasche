@@ -49,6 +49,8 @@ CREATE TABLE IF NOT EXISTS articles (
     markdown_content        TEXT,
     original_status         TEXT DEFAULT 'unknown'
                             CHECK(original_status IN ('available', 'paywalled', 'gone', 'domain_dead', 'unknown')),
+    notes                   TEXT,
+    last_checked_at         TEXT DEFAULT NULL,
     scroll_position         REAL DEFAULT 0,
     reading_progress        REAL DEFAULT 0,
     created_at              TEXT DEFAULT (datetime('now')),

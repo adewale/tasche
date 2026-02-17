@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import HTTPException, Request
 
-from auth.session import COOKIE_NAME, delete_session, get_session
+from auth.session import COOKIE_NAME, delete_session, get_session, refresh_session
 from wrappers import SafeEnv
 
 
@@ -54,5 +54,9 @@ async def get_current_user(request: Request) -> dict[str, Any]:
             # Revoke the session
             await delete_session(env.SESSIONS, session_id)
             raise HTTPException(status_code=401, detail="Access revoked")
+
+    # Refresh session TTL on each authenticated request so active users
+    # are not forced to re-authenticate every 7 days.
+    await refresh_session(env.SESSIONS, session_id, user_data)
 
     return user_data

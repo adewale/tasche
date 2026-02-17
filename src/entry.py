@@ -181,6 +181,54 @@ class Default(WorkerEntrypoint):
         """
         return await asgi.fetch(app, request.js_object, self.env)
 
+    async def scheduled(self, event: object) -> None:
+        """Handle a Cron Trigger event.
+
+        Runs periodic health checks on articles whose original_status is
+        'unknown' or hasn't been checked in 30+ days.
+        """
+        from articles.health import check_original_url
+        from wrappers import d1_rows
+
+        db = self.env.DB
+        now = __import__("datetime").datetime.now(
+            __import__("datetime").timezone.utc
+        ).isoformat()
+
+        rows = d1_rows(
+            await db.prepare(
+                "SELECT id, original_url FROM articles "
+                "WHERE (original_status = 'unknown' "
+                "OR last_checked_at IS NULL "
+                "OR last_checked_at < datetime('now', '-30 days')) "
+                "ORDER BY last_checked_at ASC NULLS FIRST "
+                "LIMIT 10"
+            ).all()
+        )
+
+        checked = 0
+        for row in rows:
+            try:
+                new_status = await check_original_url(row["original_url"])
+            except Exception:
+                new_status = "unknown"
+
+            await (
+                db.prepare(
+                    "UPDATE articles SET original_status = ?, last_checked_at = ?, "
+                    "updated_at = ? WHERE id = ?"
+                )
+                .bind(new_status, now, now, row["id"])
+                .run()
+            )
+            checked += 1
+
+        print(
+            json.dumps(
+                {"event": "scheduled_health_check", "checked": checked}
+            )
+        )
+
     async def queue(self, batch: object) -> None:  # type: ignore[override]
         """Handle a batch of queue messages.
 

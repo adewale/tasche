@@ -60,6 +60,16 @@ async def get_session(kv: Any, session_id: str) -> dict[str, Any] | None:
     return json.loads(raw)
 
 
+async def refresh_session(kv: Any, session_id: str, user_data: dict[str, Any]) -> None:
+    """Refresh a session's TTL by re-writing it to KV.
+
+    Called on each authenticated request to extend the session so that
+    active users are not forced to re-authenticate every 7 days.
+    """
+    key = f"{SESSION_PREFIX}{session_id}"
+    await kv.put(key, json.dumps(user_data), expirationTtl=SESSION_TTL)
+
+
 async def delete_session(kv: Any, session_id: str) -> None:
     """Delete a session from KV.
 

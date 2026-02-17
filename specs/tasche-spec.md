@@ -802,7 +802,7 @@ flowchart TB
 | Feature | Cloudflare Service | Purpose |
 |---------|-------------------|---------|
 | API Backend | Python Workers | Request handling, business logic (FastAPI) |
-| Frontend Hosting | Workers Static Assets | React SPA with PWA support |
+| Frontend Hosting | Workers Static Assets | Preact SPA with PWA support |
 | Database | D1 | Users, articles, tags, metadata |
 | Content Storage | R2 | Archived HTML, Markdown, thumbnails, audio |
 | Session Management | KV | Auth sessions with TTL |
@@ -1074,22 +1074,27 @@ The frontend handles the `?url=` parameter via the same code path as the PWA sha
 
 ### 8.3 Frontend Technology Stack
 
-**Current implementation:** Vanilla JavaScript SPA (~1400 lines) with hash-based routing, served from `./assets/` via Workers Static Assets. No build step required.
+**Current implementation:** Preact SPA built with Vite, using `@preact/signals` for state management and `preact-router` for hash-based navigation. Source lives in `frontend/`, builds to `./assets/` via `vite build`.
 
-**Files:**
+**Source files (`frontend/src/`):**
 
-| File | Lines | Purpose |
-|------|-------|---------|
-| `assets/index.html` | ~36 | App shell, SW registration, meta tags |
-| `assets/static/app.js` | ~1400 | SPA router, views, API client, state |
-| `assets/static/style.css` | ~1100 | Responsive styles, dark theme |
-| `assets/sw.js` | ~220 | Cache strategies, offline queue, sync |
-| `assets/manifest.json` | — | PWA manifest with share target |
-| `assets/bookmarklet.js` | — | `window.open()` template |
+| File / Directory | Purpose |
+|-----------------|---------|
+| `main.jsx` | Entry point, renders App into #app |
+| `app.jsx` | Root component, hash router, auth guard, share target handling |
+| `app.css` | Responsive styles, dark theme |
+| `api.js` | Full API client, offline functions, service worker messaging |
+| `state.js` | Global state via @preact/signals (user, articles, toasts, etc.) |
+| `markdown.js` | Markdown-to-HTML renderer with XSS protection |
+| `utils.js` | Shared utilities (escapeHtml, formatDate, highlightTerms) |
+| `views/` | Library, Reader, Search, Tags, Settings, Login |
+| `components/` | ArticleCard, AudioPlayer, Header, Pagination, TagPicker, Toast |
+| `public/sw.js` | Service worker: 4 cache tiers, LRU eviction, offline sync |
+| `public/manifest.json` | PWA manifest with share target |
 
-**Rationale:** For a personal single-user app, vanilla JS keeps the stack simple — no framework version upgrades, no build pipeline, no `node_modules`. The entire frontend is three authored files (`app.js`, `style.css`, `sw.js`) plus `index.html`.
+**Build:** `cd frontend && npm install && npm run build` outputs to `./assets/`.
 
-**Recommended framework if a rewrite becomes necessary:** If the frontend grows beyond its current scope (complex state management, component reuse across views, design system), migrate to **Preact** (Vite + vite-plugin-pwa):
+**Why Preact:**
 
 | Criterion | Preact | Why it wins |
 |-----------|--------|-------------|
@@ -1101,9 +1106,7 @@ The frontend handles the `?url=` parameter via the same code path as the PWA sha
 | Build pipeline | `vite build --outDir assets` | Single command, drops into existing `wrangler.jsonc` config |
 | Agent implementability | High | JSX is the most reliable output format for coding agents |
 
-**Other strong options:** Svelte 5 / SvelteKit (2–3 KB runtime, native `<audio>` bindings — best for audio player), React/Vite (largest ecosystem, 42 KB overhead).
-
-**Not recommended for this project:** HTMX (requires server for every interaction — incompatible with offline-first), Astro (MPA model breaks persistent audio player and SPA routing), vanilla Web Components without Lit (too low-level for SPA routing + state).
+**Full-page screenshot (`original.webp`):** Spec-optional. Not yet implemented. Would serve as archival fallback for content that Readability fails to extract (infographics, complex layouts). Requires Browser Rendering API access.
 
 ### 8.4 UI Screens & Wireframes
 

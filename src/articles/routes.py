@@ -12,10 +12,10 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 
 from articles.health import check_original_url
-from articles.storage import delete_article_content, get_content
+from articles.storage import delete_article_content, get_content, get_metadata
 from articles.urls import check_duplicate, extract_domain, validate_url
 from auth.dependencies import get_current_user
 from wrappers import _to_js_value, d1_first, d1_rows
@@ -28,7 +28,7 @@ _LIST_COLUMNS = (
     "excerpt, author, word_count, reading_time_minutes, image_count, status, "
     "reading_status, is_favorite, listen_later, audio_key, audio_duration_seconds, "
     "audio_status, html_key, markdown_key, thumbnail_key, original_status, "
-    "scroll_position, reading_progress, created_at, updated_at"
+    "scroll_position, reading_progress, notes, created_at, updated_at"
 )
 
 _VALID_READING_STATUSES = {"unread", "reading", "archived"}
@@ -298,6 +298,31 @@ async def get_article_content(
     return HTMLResponse(content=html_content)
 
 
+@router.get("/{article_id}/metadata")
+async def get_article_metadata(
+    request: Request,
+    article_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Retrieve the article's processing metadata from R2.
+
+    Returns archive timestamp, image count, word count, content hash, and
+    other provenance information stored during article processing.
+    """
+    env = request.scope["env"]
+    db = env.DB
+    r2 = env.CONTENT
+    user_id = user["user_id"]
+
+    await _get_user_article(db, article_id, user_id, fields="id")
+
+    metadata = await get_metadata(r2, article_id)
+    if metadata is None:
+        raise HTTPException(status_code=404, detail="No metadata available")
+
+    return metadata
+
+
 @router.get("/{article_id}/thumbnail")
 async def get_article_thumbnail(
     request: Request,
@@ -332,6 +357,34 @@ async def get_article_thumbnail(
             detail="Thumbnail not found in storage",
         )
 
+    # Stream from R2 body if available, otherwise fall back to arrayBuffer
+    body = getattr(obj, "body", None)
+
+    if body is not None and hasattr(body, "getReader"):
+        async def _stream_thumbnail():
+            reader = body.getReader()
+            try:
+                while True:
+                    result = await reader.read()
+                    done = getattr(result, "done", True)
+                    if done:
+                        break
+                    chunk = getattr(result, "value", None)
+                    if chunk is not None:
+                        if hasattr(chunk, "to_py"):
+                            yield bytes(chunk.to_py())
+                        else:
+                            yield bytes(chunk)
+            finally:
+                reader.releaseLock()
+
+        return StreamingResponse(
+            _stream_thumbnail(),
+            media_type="image/webp",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+
+    # Fallback: load entire buffer (for mocks / non-streaming environments)
     image_data = await obj.arrayBuffer()
     return Response(
         content=bytes(image_data) if not isinstance(image_data, bytes) else image_data,
@@ -365,6 +418,7 @@ async def update_article(
         "scroll_position",
         "reading_progress",
         "title",
+        "notes",
     }
 
     # Validate field lengths

@@ -4,13 +4,19 @@
   "main": "src/entry.py",
   "compatibility_date": "2025-12-01",
   "compatibility_flags": ["python_workers"],
-  "vars": { "ALLOWED_EMAILS": "" },
+  // Default config works with workers.dev — deploy without --env for quick setup.
+  // Use --env production for custom domain deployments.
+  "workers_dev": true,
+  "vars": { "ALLOWED_EMAILS": "", "SITE_URL": "https://tasche.<your-subdomain>.workers.dev" },
   "d1_databases": [{ "binding": "DB" }],
   "r2_buckets": [{ "binding": "CONTENT" }],
   "kv_namespaces": [{ "binding": "SESSIONS" }],
   "queues": {
     "producers": [{ "binding": "ARTICLE_QUEUE", "queue": "tasche-articles" }],
     "consumers": [{ "queue": "tasche-articles", "max_batch_size": 10, "max_batch_timeout": 60 }]
+  },
+  "triggers": {
+    "crons": ["0 3 * * *"]
   },
   "observability": {
     "enabled": true,
@@ -23,12 +29,27 @@
   },
   "env": {
     "production": {
-      "vars": { "SITE_URL": "https://tasche.yourdomain.com" },
+      "workers_dev": false,
+      "vars": { "ALLOWED_EMAILS": "", "SITE_URL": "https://tasche.yourdomain.com" },
+      "d1_databases": [{ "binding": "DB" }],
+      "r2_buckets": [{ "binding": "CONTENT" }],
+      "kv_namespaces": [{ "binding": "SESSIONS" }],
+      "queues": {
+        "producers": [{ "binding": "ARTICLE_QUEUE", "queue": "tasche-articles" }],
+        "consumers": [{ "queue": "tasche-articles", "max_batch_size": 10, "max_batch_timeout": 60 }]
+      },
       "routes": [{ "pattern": "tasche.yourdomain.com", "custom_domain": true }]
     },
     "staging": {
-      "vars": { "SITE_URL": "https://tasche-staging.yourdomain.com" },
-      "routes": [{ "pattern": "tasche-staging.yourdomain.com", "custom_domain": true }]
+      "workers_dev": true,
+      "vars": { "ALLOWED_EMAILS": "", "SITE_URL": "https://tasche-staging.<your-subdomain>.workers.dev" },
+      "d1_databases": [{ "binding": "DB" }],
+      "r2_buckets": [{ "binding": "CONTENT" }],
+      "kv_namespaces": [{ "binding": "SESSIONS" }],
+      "queues": {
+        "producers": [{ "binding": "ARTICLE_QUEUE", "queue": "tasche-articles" }],
+        "consumers": [{ "queue": "tasche-articles", "max_batch_size": 10, "max_batch_timeout": 60 }]
+      }
     }
   }
 }

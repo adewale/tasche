@@ -16,41 +16,44 @@ A self-hosted read-it-later service built on Cloudflare Python Workers. Save art
 
 ## Quick Start (< 5 minutes)
 
-### 1. Deploy to Cloudflare
-
-Click the deploy button above, or deploy manually:
+### Option A: Deploy to workers.dev (fastest)
 
 ```bash
 git clone https://github.com/adewale/tasche.git
 cd tasche
-```
 
-### 2. Build the frontend
-
-```bash
+# Build frontend
 cd frontend && npm install && npm run build && cd ..
-```
 
-### 3. Create a GitHub OAuth App
+# Set your SITE_URL to your workers.dev subdomain
+# Edit wrangler.jsonc: set vars.SITE_URL to "https://tasche.<your-subdomain>.workers.dev"
 
-1. Go to [github.com/settings/developers](https://github.com/settings/developers)
-2. Click **OAuth Apps** > **New OAuth App**
-3. Fill in:
-   - **Application name:** Tasche
-   - **Homepage URL:** `https://tasche.yourdomain.com`
-   - **Authorization callback URL:** `https://tasche.yourdomain.com/api/auth/callback`
-4. Click **Register application** and generate a client secret
-
-### 4. Set secrets
-
-```bash
+# Set GitHub OAuth secrets
 uv run pywrangler secret put GITHUB_CLIENT_ID
 uv run pywrangler secret put GITHUB_CLIENT_SECRET
+
+# Deploy (uses workers.dev URL — no custom domain needed)
+uv run pywrangler deploy
 ```
 
-### 5. Configure your domain
+Create a GitHub OAuth App at [github.com/settings/developers](https://github.com/settings/developers):
+- **Homepage URL:** `https://tasche.<your-subdomain>.workers.dev`
+- **Callback URL:** `https://tasche.<your-subdomain>.workers.dev/api/auth/callback`
 
-Edit `wrangler.jsonc` and update the `production` environment:
+### Option B: Deploy to a custom domain
+
+```bash
+git clone https://github.com/adewale/tasche.git
+cd tasche
+
+# Build frontend
+cd frontend && npm install && npm run build && cd ..
+
+# Configure your domain in wrangler.jsonc production env
+# Edit the "production" section: set SITE_URL and routes pattern
+```
+
+Edit `wrangler.jsonc`:
 
 ```jsonc
 "production": {
@@ -59,13 +62,32 @@ Edit `wrangler.jsonc` and update the `production` environment:
 }
 ```
 
-### 6. Deploy
-
 ```bash
+# Set secrets
+uv run pywrangler secret put GITHUB_CLIENT_ID --env production
+uv run pywrangler secret put GITHUB_CLIENT_SECRET --env production
+
+# Deploy
 uv run pywrangler deploy --env production
 ```
 
-Visit your domain, log in with GitHub, and start saving articles.
+Create a GitHub OAuth App with:
+- **Homepage URL:** `https://tasche.yourdomain.com`
+- **Callback URL:** `https://tasche.yourdomain.com/api/auth/callback`
+
+### Browser Rendering (optional)
+
+For JS-heavy pages, Tasche uses the Cloudflare Browser Rendering REST API for screenshots and content extraction. Without it, article processing falls back to plain HTTP fetches.
+
+To enable:
+1. In the Cloudflare dashboard, go to **Workers & Pages > Browser Rendering**
+2. Enable Browser Rendering for your account
+3. Set your account ID and API token as secrets:
+
+```bash
+uv run pywrangler secret put CF_ACCOUNT_ID
+uv run pywrangler secret put CF_API_TOKEN
+```
 
 ## Development
 

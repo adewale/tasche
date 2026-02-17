@@ -95,6 +95,22 @@ async def store_metadata(r2: Any, article_id: str, metadata: dict[str, Any]) -> 
     return key
 
 
+async def get_metadata(r2: Any, article_id: str) -> dict[str, Any] | None:
+    """Retrieve article metadata JSON from R2.
+
+    Returns
+    -------
+    dict or None
+        The stored metadata dict, or ``None`` if no metadata exists.
+    """
+    key = article_key(article_id, "metadata.json")
+    obj = await r2.get(key)
+    if obj is None:
+        return None
+    raw = await obj.text()
+    return json.loads(raw)
+
+
 async def delete_article_content(r2: Any, article_id: str) -> None:
     """Delete all R2 objects associated with an article.
 

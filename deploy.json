@@ -3,5 +3,12 @@
   "name": "tasche",
   "description": "A self-hosted read-it-later service on Cloudflare Python Workers",
   "main": "src/entry.py",
-  "compatibility_flags": ["python_workers"]
+  "compatibility_flags": ["python_workers"],
+  "d1_databases": [{ "binding": "DB" }],
+  "r2_buckets": [{ "binding": "CONTENT" }],
+  "kv_namespaces": [{ "binding": "SESSIONS" }],
+  "queues": {
+    "producers": [{ "binding": "ARTICLE_QUEUE", "queue": "tasche-articles" }],
+    "consumers": [{ "queue": "tasche-articles" }]
+  }
 }
