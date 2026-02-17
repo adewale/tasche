@@ -6,12 +6,11 @@ audio in R2.
 
 Steps:
  1. Update ``audio_status`` to ``'generating'`` in D1
- 2. Fetch markdown content from R2 (using the article's ``markdown_key``)
- 3. If no markdown in R2, fall back to D1 ``markdown_content`` field
- 4. Call Workers AI ``@cf/deepgram/aura-2-en`` with the text
- 5. Store the audio result to R2 at ``articles/{article_id}/audio.mp3``
- 6. Update D1: ``audio_key``, ``audio_duration_seconds``, ``audio_status = 'ready'``
- 7. On failure: set ``audio_status = 'failed'``
+ 2. Fetch ``markdown_content`` from D1
+ 3. Call Workers AI ``@cf/deepgram/aura-2-en`` with the text
+ 4. Store the audio result to R2 at ``articles/{article_id}/audio.mp3``
+ 5. Update D1: ``audio_key``, ``audio_duration_seconds``, ``audio_status = 'ready'``
+ 6. On failure: set ``audio_status = 'failed'``
 """
 
 from __future__ import annotations
@@ -20,7 +19,7 @@ import json
 import traceback
 from datetime import UTC, datetime
 
-from articles.storage import article_key, get_content
+from articles.storage import article_key
 from wrappers import d1_first
 
 # TTS model identifier
@@ -215,29 +214,22 @@ async def process_tts(article_id: str, env: object, *, user_id: str | None = Non
                 "UPDATE articles SET audio_status = ?, updated_at = ? WHERE id = ?"
             ).bind("generating", _now(), article_id).run()
 
-        # Step 2: Fetch markdown content from R2
+        # Step 2: Fetch markdown content from D1
         if user_id:
             article = d1_first(
                 await db.prepare(
-                    "SELECT markdown_key, markdown_content FROM articles"
+                    "SELECT markdown_content FROM articles"
                     " WHERE id = ? AND user_id = ?"
                 ).bind(article_id, user_id).first()
             )
         else:
             article = d1_first(
                 await db.prepare(
-                    "SELECT markdown_key, markdown_content FROM articles WHERE id = ?"
+                    "SELECT markdown_content FROM articles WHERE id = ?"
                 ).bind(article_id).first()
             )
 
-        markdown_text = None
-
-        if article and article.get("markdown_key"):
-            markdown_text = await get_content(r2, article["markdown_key"])
-
-        # Step 3: Fall back to D1 markdown_content if R2 didn't have it
-        if not markdown_text and article:
-            markdown_text = article.get("markdown_content")
+        markdown_text = article.get("markdown_content") if article else None
 
         if not markdown_text:
             raise ValueError(f"No markdown content found for article {article_id}")

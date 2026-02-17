@@ -50,9 +50,8 @@ When you save a URL, Tasche creates a complete, self-contained archive:
 | `final_url` | After redirects (t.co → real URL) | D1 |
 | `canonical_url` | What the page declares as canonical | D1 |
 | `content.html` | Clean HTML with localized image paths | R2 |
-| `content.md` | Markdown for search and alternative rendering | R2 |
 | `thumbnail.webp` | Above-the-fold screenshot for article cards | R2 |
-| `original.webp` | Full-page scrolling screenshot (optional) | R2 |
+| `original.webp` | Full-page scrolling screenshot for archival | R2 |
 | `images/*.webp` | All article images, converted to WebP | R2 |
 | `metadata.json` | Archive timestamp, image count, provenance | R2 |
 | `audio.mp3` | TTS audio version (only if Listen Later enabled) | R2 |
@@ -72,7 +71,6 @@ When you save a URL, Tasche creates a complete, self-contained archive:
 - Fallback when Readability extraction fails (infographics, complex layouts)
 - Visual proof of what the page looked like when saved
 - Archival value—the web changes and disappears
-- Optional feature (default off, enable in settings for power users)
 
 ### 1.3 Configuration
 
@@ -141,17 +139,16 @@ User clicks "Listen Later"
 │  POST /api/articles/:id/    │
 │       listen-later          │
 │                             │
-│  1. Set listen_later = 1    │
-│  2. Set audio_status =      │
+│  1. Set audio_status =      │
 │     'pending'               │
-│  3. Enqueue TTS job         │
+│  2. Enqueue TTS job         │
 └─────────────────────────────┘
          │
          ▼
 ┌─────────────────────────────────┐
 │  TTS Queue Consumer             │
 │                                 │
-│  1. Fetch markdown from R2      │
+│  1. Fetch markdown from D1      │
 │  2. Strip markdown syntax →     │
 │     plain text (no #, **, [],   │
 │     code blocks, HTML tags)     │
@@ -554,13 +551,12 @@ User saves URL → POST /api/articles
 │  8. Rewrite HTML with local paths   │
 │  9. Convert to Markdown (Turndown)  │
 │ 10. Store content.html → R2         │
-│ 11. Store content.md → R2           │
-│ 12. Store metadata.json → R2        │
-│ 13. Update D1:                      │
+│ 11. Store metadata.json → R2        │
+│ 12. Update D1:                      │
 │     - title, excerpt, word_count    │
 │     - reading_time, status: 'ready' │
 │     - all three URLs                │
-│ 14. Index in FTS5                   │
+│ 13. Index in FTS5                   │
 └─────────────────────────────────────┘
                       │
                       ▼
@@ -834,12 +830,10 @@ flowchart TB
 | `status` | TEXT | — | 'pending', 'processing', 'ready', 'failed' |
 | `reading_status` | TEXT | — | 'unread', 'reading', 'archived' |
 | `is_favorite` | INTEGER | — | 0 or 1 |
-| `listen_later` | INTEGER | — | 0 or 1 — user wants audio version |
 | `audio_key` | TEXT | — | R2 path to audio.mp3 |
 | `audio_duration_seconds` | INTEGER | — | For playlist time budgeting |
 | `audio_status` | TEXT | — | 'pending', 'generating', 'ready', 'failed' |
 | `html_key` | TEXT | — | R2 path to content.html |
-| `markdown_key` | TEXT | — | R2 path to content.md |
 | `thumbnail_key` | TEXT | — | R2 path to thumbnail.webp |
 | `created_at` | TEXT | — | When saved (ISO 8601 with timezone) |
 | `updated_at` | TEXT | — | Last modified (ISO 8601 with timezone) |
@@ -861,18 +855,12 @@ Tag names are validated to max 100 characters at the API boundary.
 
 ### 5.2 R2 Storage Structure
 
-**Dual Content Storage Philosophy:**
+**Content Storage:**
 
 | Location | Content | Purpose |
 |----------|---------|---------|
-| **D1** `markdown_content` | Full Markdown text | FTS5 search indexing, quick access |
+| **D1** `markdown_content` | Full Markdown text | FTS5 search indexing, TTS source |
 | **R2** `content.html` | Clean HTML with styling | Reader mode rendering |
-| **R2** `content.md` | Markdown file | Backup, export, future AI features |
-
-**Why store Markdown in both D1 and R2?**
-- D1: Fast FTS5 search without R2 fetches
-- R2: Permanent backup, file export, AI processing (large context windows)
-- Storage cost is negligible: 10K articles × 50KB markdown = 500MB
 
 **Content formats per consumer:**
 
@@ -881,8 +869,7 @@ Tag names are validated to max 100 characters at the API boundary.
 | Reader view | Clean HTML | R2 `content.html` via `GET /api/articles/:id/content` | Primary display format with local image paths |
 | Reader fallback | Rendered markdown | D1 `markdown_content` | Used when R2 content unavailable |
 | FTS5 search | Markdown text | D1 `markdown_content` | Indexed via FTS5 triggers |
-| TTS | Plain text | Derived from markdown | Strip all markup before sending to TTS model |
-| Export | Markdown file | R2 `content.md` | For backup and external use |
+| TTS | Plain text | Derived from D1 markdown | Strip all markup before sending to TTS model |
 
 **API content endpoint:** `GET /api/articles/:id/content` serves the clean HTML from R2 as `text/html`. The frontend should try this endpoint first and fall back to rendering `markdown_content` if it returns 404 or fails.
 
@@ -912,11 +899,11 @@ GitHub OAuth requires these endpoints:
 10. Set HTTP-only cookie with session ID
 11. Redirect to app
 
-### 5.2 Whitelist Configuration (Optional)
+### 5.2 Whitelist Configuration
 
 If `ALLOWED_EMAILS` is set in `wrangler.toml`, only those emails can access the app.
 
-If empty or not set, any authenticated GitHub user can access the application.
+If `ALLOWED_EMAILS` is empty or not set, any authenticated GitHub user can access the application. Deployments should always configure `ALLOWED_EMAILS` to restrict access to intended users.
 
 **Session revocation:** The whitelist MUST be re-checked on every authenticated request, not just at login. If a user's email is removed from `ALLOWED_EMAILS`, their existing sessions are invalidated on the next request — the session is deleted from KV and a 401 is returned. See §9.6.
 
@@ -1104,7 +1091,7 @@ The frontend handles the `?url=` parameter via the same code path as the PWA sha
 | Build pipeline | `vite build --outDir assets` | Single command, drops into existing `wrangler.jsonc` config |
 | Agent implementability | High | JSX is the most reliable output format for coding agents |
 
-**Full-page screenshot (`original.webp`):** Spec-optional. Not yet implemented. Would serve as archival fallback for content that Readability fails to extract (infographics, complex layouts). Requires Browser Rendering API access.
+**Full-page screenshot (`original.webp`):** Required. Captures a full-page scrolling screenshot via Browser Rendering API during article processing. Serves as archival fallback for content that Readability fails to extract (infographics, complex layouts).
 
 ### 8.4 UI Screens & Wireframes
 
@@ -1547,7 +1534,7 @@ Each milestone is a **vertical slice** — it delivers a complete, end-to-end us
 | URL health checker | Backend | Cron Trigger or Durable Objects alarm periodically HEAD-checks original URLs, updates `original_status` |
 | Status indicators in reader | Frontend | Show status badge: "Original is gone. Good thing you saved it." / "Original requires subscription" / etc. |
 | `metadata.json` per article | Backend | Store archive timestamp, image count, provenance in R2 alongside content |
-| Full-page screenshot (optional) | Backend | Store `original.webp` via Browser Rendering for archival fallback |
+| Full-page screenshot | Backend | Store `original.webp` via Browser Rendering for archival fallback |
 
 **Acceptance test:** User opens an article whose original URL returns 404. Reader view shows the article content intact with a "Original no longer available" badge. `metadata.json` exists in R2 with archive provenance.
 

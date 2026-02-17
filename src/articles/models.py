@@ -27,12 +27,10 @@ class ArticleRow(TypedDict, total=False):
     status: str
     reading_status: str
     is_favorite: int
-    listen_later: int
     audio_key: str | None
     audio_duration_seconds: int | None
     audio_status: str | None
     html_key: str | None
-    markdown_key: str | None
     thumbnail_key: str | None
     markdown_content: str | None
     original_status: str

@@ -38,13 +38,11 @@ CREATE TABLE IF NOT EXISTS articles (
     reading_status          TEXT DEFAULT 'unread'
                             CHECK(reading_status IN ('unread', 'reading', 'archived')),
     is_favorite             INTEGER DEFAULT 0,
-    listen_later            INTEGER DEFAULT 0,
     audio_key               TEXT,
     audio_duration_seconds  INTEGER,
     audio_status            TEXT DEFAULT NULL
                             CHECK(audio_status IS NULL OR audio_status IN ('pending', 'generating', 'ready', 'failed')),
     html_key                TEXT,
-    markdown_key            TEXT,
     thumbnail_key           TEXT,
     markdown_content        TEXT,
     original_status         TEXT DEFAULT 'unknown'

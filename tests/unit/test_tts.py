@@ -106,7 +106,7 @@ class TestListenLater:
         assert data["id"] == "art_tts1"
         assert data["audio_status"] == "pending"
 
-        # Verify D1 UPDATE was called with listen_later and audio_status
+        # Verify D1 UPDATE was called with audio_status
         update_calls = [
             (sql, params)
             for sql, params in db.executed
@@ -114,7 +114,6 @@ class TestListenLater:
         ]
         assert len(update_calls) >= 1
         update_sql = update_calls[0][0]
-        assert "listen_later = 1" in update_sql
         assert "audio_status = 'pending'" in update_sql
 
         # Verify queue message was sent
@@ -369,12 +368,12 @@ class TestGetAudio:
 
 
 class TestTTSProcessing:
-    async def test_happy_path_from_r2_markdown(self) -> None:
-        """TTS processing fetches markdown from R2, calls AI, stores audio."""
+    async def test_happy_path_from_d1_markdown(self) -> None:
+        """TTS processing fetches markdown from D1, calls AI, stores audio."""
         article = ArticleFactory.create(
             id="art_proc1",
             user_id="user_001",
-            markdown_key="articles/art_proc1/content.md",
+            markdown_content="# Hello World\n\nThis is test content.",
         )
 
         db = _TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
@@ -382,9 +381,6 @@ class TestTTSProcessing:
         fake_audio = b"\xff\xfb\x90\x00" + b"\x00" * 200
         ai = MockAI(response=fake_audio)
         env = MockEnv(db=db, content=r2, ai=ai)
-
-        # Store markdown in R2
-        await r2.put("articles/art_proc1/content.md", "# Hello World\n\nThis is test content.")
 
         from tts.processing import process_tts
 
@@ -411,17 +407,16 @@ class TestTTSProcessing:
         final_sql, final_params = ready_updates[-1]
         assert "articles/art_proc1/audio.mp3" in final_params
 
-    async def test_falls_back_to_d1_markdown(self) -> None:
-        """TTS processing uses D1 markdown_content when R2 has no markdown."""
+    async def test_uses_d1_markdown_content(self) -> None:
+        """TTS processing uses D1 markdown_content for speech generation."""
         article = ArticleFactory.create(
             id="art_proc2",
             user_id="user_001",
-            markdown_key=None,
             markdown_content="# Fallback Content\n\nThis came from D1.",
         )
 
         db = _TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
-        r2 = MockR2()  # No markdown in R2
+        r2 = MockR2()
         fake_audio = b"\xff\xfb\x90\x00" + b"\x00" * 100
         ai = MockAI(response=fake_audio)
         env = MockEnv(db=db, content=r2, ai=ai)
@@ -430,7 +425,7 @@ class TestTTSProcessing:
 
         await process_tts("art_proc2", env)
 
-        # Verify AI was called with the D1 fallback content
+        # Verify AI was called with the D1 content
         assert len(ai.calls) == 1
         assert "Fallback Content" in ai.calls[0]["text"]
 
@@ -442,15 +437,13 @@ class TestTTSProcessing:
         article = ArticleFactory.create(
             id="art_proc3",
             user_id="user_001",
-            markdown_key="articles/art_proc3/content.md",
+            markdown_content="Some markdown content here.",
         )
 
         db = _TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
         r2 = MockR2()
         ai = MockAI(response=b"fake-audio")
         env = MockEnv(db=db, content=r2, ai=ai)
-
-        await r2.put("articles/art_proc3/content.md", "Some markdown content here.")
 
         from tts.processing import process_tts
 
@@ -474,7 +467,6 @@ class TestTTSProcessingFailure:
         article = ArticleFactory.create(
             id="art_fail1",
             user_id="user_001",
-            markdown_key=None,
             markdown_content=None,
         )
 
@@ -500,12 +492,11 @@ class TestTTSProcessingFailure:
         article = ArticleFactory.create(
             id="art_fail2",
             user_id="user_001",
-            markdown_key="articles/art_fail2/content.md",
+            markdown_content="Some content for TTS.",
         )
 
         db = _TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
         r2 = MockR2()
-        await r2.put("articles/art_fail2/content.md", "Some content for TTS.")
 
         # Create an AI mock that raises an error
         ai = MockAI()

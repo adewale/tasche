@@ -15,10 +15,9 @@ Steps:
  8. Rewrite HTML image paths to local R2 paths
  9. Convert to Markdown
 10. Store content.html to R2
-11. Store content.md to R2
-12. Store metadata.json to R2
-13. Update D1 with all metadata
-14. FTS5 indexing (handled automatically by D1 triggers)
+11. Store metadata.json to R2
+12. Update D1 with all metadata
+13. FTS5 indexing (handled automatically by D1 triggers)
 """
 
 from __future__ import annotations
@@ -156,10 +155,9 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
         word_count = count_words(markdown)
         reading_time = calculate_reading_time(word_count)
 
-        # Steps 10-11: Store content.html and content.md to R2
-        keys = await store_content(r2, article_id, clean_html, markdown)
+        # Step 10: Store content.html to R2
+        keys = await store_content(r2, article_id, clean_html)
         html_key = keys["html_key"]
-        markdown_key = keys["markdown_key"]
 
         # Step 12: Store metadata.json to R2
         content_hash = hashlib.sha256(clean_html.encode("utf-8")).hexdigest()
@@ -197,7 +195,6 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
                 final_url = ?,
                 canonical_url = ?,
                 html_key = ?,
-                markdown_key = ?,
                 thumbnail_key = ?,
                 image_count = ?,
                 markdown_content = ?,
@@ -215,7 +212,6 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
                 final_url,
                 canonical_url,
                 html_key,
-                markdown_key,
                 thumbnail_key,
                 len(image_map),
                 markdown,

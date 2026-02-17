@@ -262,8 +262,6 @@ class StatefulMockD1(MockD1):
                         article["is_favorite"] = params[idx]
                         break
                     idx += 1
-            if "LISTEN_LATER = 1" in sql_upper:
-                article["listen_later"] = 1
             if "AUDIO_STATUS" in sql_upper:
                 if "AUDIO_STATUS = 'PENDING'" in sql_upper:
                     article["audio_status"] = "pending"

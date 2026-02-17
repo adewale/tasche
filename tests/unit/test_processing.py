@@ -149,8 +149,8 @@ class TestProcessArticleHappyPath:
 
         assert "articles/art_002/content.html" in r2._store
 
-    async def test_stores_content_md_in_r2(self) -> None:
-        """content.md is stored in R2 under the correct key."""
+    async def test_does_not_store_content_md_in_r2(self) -> None:
+        """Markdown is stored only in D1, not in R2."""
         db = _TrackingD1()
         r2 = MockR2()
         env = MockEnv(db=db, content=r2)
@@ -162,7 +162,7 @@ class TestProcessArticleHappyPath:
 
             await process_article("art_003", "https://example.com/article", env)
 
-        assert "articles/art_003/content.md" in r2._store
+        assert "articles/art_003/content.md" not in r2._store
 
     async def test_stores_metadata_json_in_r2(self) -> None:
         """metadata.json is stored in R2 with correct article metadata."""
@@ -277,7 +277,6 @@ class TestProcessArticleD1Updates:
             "final_url",
             "canonical_url",
             "html_key",
-            "markdown_key",
             "thumbnail_key",
             "image_count",
             "markdown_content",

@@ -24,8 +24,8 @@ def article_key(article_id: str, filename: str) -> str:
     return f"articles/{article_id}/{filename}"
 
 
-async def store_content(r2: Any, article_id: str, html: str, markdown: str) -> dict[str, str]:
-    """Store HTML and Markdown content in R2.
+async def store_content(r2: Any, article_id: str, html: str) -> dict[str, str]:
+    """Store HTML content in R2.
 
     Parameters
     ----------
@@ -35,21 +35,17 @@ async def store_content(r2: Any, article_id: str, html: str, markdown: str) -> d
         The article's unique identifier.
     html:
         The article's HTML content.
-    markdown:
-        The article's Markdown content.
 
     Returns
     -------
     dict
-        A dict with ``html_key`` and ``markdown_key`` entries.
+        A dict with ``html_key`` entry.
     """
     html_k = article_key(article_id, "content.html")
-    markdown_k = article_key(article_id, "content.md")
 
     await r2.put(html_k, html)
-    await r2.put(markdown_k, markdown)
 
-    return {"html_key": html_k, "markdown_key": markdown_k}
+    return {"html_key": html_k}
 
 
 async def get_content(r2: Any, key: str) -> str | None:

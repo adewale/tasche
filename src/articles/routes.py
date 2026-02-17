@@ -26,8 +26,8 @@ router = APIRouter()
 _LIST_COLUMNS = (
     "id, user_id, original_url, final_url, canonical_url, domain, title, "
     "excerpt, author, word_count, reading_time_minutes, image_count, status, "
-    "reading_status, is_favorite, listen_later, audio_key, audio_duration_seconds, "
-    "audio_status, html_key, markdown_key, thumbnail_key, original_status, "
+    "reading_status, is_favorite, audio_key, audio_duration_seconds, "
+    "audio_status, html_key, thumbnail_key, original_status, "
     "scroll_position, reading_progress, created_at, updated_at"
 )
 

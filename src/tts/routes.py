@@ -27,7 +27,7 @@ async def listen_later(
 ) -> dict[str, Any]:
     """Queue a TTS generation job for an article.
 
-    Sets ``listen_later = 1`` and ``audio_status = 'pending'`` in D1, then
+    Sets ``audio_status = 'pending'`` in D1, then
     enqueues a ``tts_generation`` message to ``ARTICLE_QUEUE``.
 
     Returns 202 Accepted with the article ID and audio status.
@@ -59,10 +59,10 @@ async def listen_later(
     # Only enqueue if audio_status is NULL or 'failed'
     now = datetime.now(UTC).isoformat()
 
-    # Update D1: set listen_later and audio_status
+    # Update D1: set audio_status
     await (
         db.prepare(
-            "UPDATE articles SET listen_later = 1, audio_status = 'pending', "
+            "UPDATE articles SET audio_status = 'pending', "
             "updated_at = ? WHERE id = ? AND user_id = ?"
         )
         .bind(now, article_id, user_id)
