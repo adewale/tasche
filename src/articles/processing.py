@@ -9,7 +9,7 @@ Steps:
  2. Fetch page via httpx (follow redirects, capture final_url)
  3. Try Browser Rendering scrape if content looks JS-heavy
  4. Extract canonical_url from HTML
- 5. Generate thumbnail via Browser Rendering screenshot API
+ 5. Screenshots via Browser Rendering (thumbnail + full-page archival)
  6. Extract article content via readability
  7. Download and store images
  8. Rewrite HTML image paths to local R2 paths
@@ -118,9 +118,11 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
             canonical_url = extract_canonical_url(html) or final_url
             domain = extract_domain(final_url)
 
-            # Step 5: Thumbnail via Browser Rendering screenshot
+            # Step 5: Screenshots via Browser Rendering
             thumbnail_key = None
+            original_key = None
             if account_id and api_token:
+                # 5a: Thumbnail (above-the-fold crop)
                 try:
                     thumb_data = await screenshot(
                         client,
@@ -133,7 +135,23 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
                     thumbnail_key = article_key(article_id, "thumbnail.webp")
                     await r2.put(thumbnail_key, thumb_data)
                 except BrowserRenderingError:
-                    pass  # Thumbnail is optional
+                    pass  # Thumbnail is best-effort
+
+                # 5b: Full-page archival screenshot
+                try:
+                    full_data = await screenshot(
+                        client,
+                        final_url,
+                        account_id,
+                        api_token,
+                        viewport_width=1200,
+                        viewport_height=800,
+                        full_page=True,
+                    )
+                    original_key = article_key(article_id, "original.webp")
+                    await r2.put(original_key, full_data)
+                except BrowserRenderingError:
+                    pass  # Full-page screenshot is best-effort
 
             # Step 6: Extract article content via readability
             article = extract_article(html)
@@ -196,6 +214,7 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
                 canonical_url = ?,
                 html_key = ?,
                 thumbnail_key = ?,
+                original_key = ?,
                 image_count = ?,
                 markdown_content = ?,
                 status = ?,
@@ -213,6 +232,7 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
                 canonical_url,
                 html_key,
                 thumbnail_key,
+                original_key,
                 len(image_map),
                 markdown,
                 "ready",

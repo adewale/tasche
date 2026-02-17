@@ -32,6 +32,7 @@ class ArticleRow(TypedDict, total=False):
     audio_status: str | None
     html_key: str | None
     thumbnail_key: str | None
+    original_key: str | None
     markdown_content: str | None
     original_status: str
     last_checked_at: str | None

@@ -27,7 +27,7 @@ _LIST_COLUMNS = (
     "id, user_id, original_url, final_url, canonical_url, domain, title, "
     "excerpt, author, word_count, reading_time_minutes, image_count, status, "
     "reading_status, is_favorite, audio_key, audio_duration_seconds, "
-    "audio_status, html_key, thumbnail_key, original_status, "
+    "audio_status, html_key, thumbnail_key, original_key, original_status, "
     "scroll_position, reading_progress, created_at, updated_at"
 )
 
@@ -380,6 +380,76 @@ async def get_article_thumbnail(
 
         return StreamingResponse(
             _stream_thumbnail(),
+            media_type="image/webp",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+
+    # Fallback: load entire buffer (for mocks / non-streaming environments)
+    image_data = await obj.arrayBuffer()
+    return Response(
+        content=bytes(image_data) if not isinstance(image_data, bytes) else image_data,
+        media_type="image/webp",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
+@router.get("/{article_id}/screenshot")
+async def get_article_screenshot(
+    request: Request,
+    article_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> Response:
+    """Serve the article's full-page archival screenshot from R2.
+
+    Returns the full-page WebP screenshot stored during article processing.
+    Falls back to 404 if no screenshot is available.
+    """
+    env = request.scope["env"]
+    db = env.DB
+    r2 = env.CONTENT
+    user_id = user["user_id"]
+
+    article = await _get_user_article(
+        db,
+        article_id,
+        user_id,
+        fields="id, original_key",
+    )
+
+    original_key = article.get("original_key")
+    if not original_key:
+        raise HTTPException(status_code=404, detail="No screenshot available")
+
+    obj = await r2.get(original_key)
+    if obj is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Screenshot not found in storage",
+        )
+
+    # Stream from R2 body if available, otherwise fall back to arrayBuffer
+    body = getattr(obj, "body", None)
+
+    if body is not None and hasattr(body, "getReader"):
+        async def _stream_screenshot():
+            reader = body.getReader()
+            try:
+                while True:
+                    result = await reader.read()
+                    done = getattr(result, "done", True)
+                    if done:
+                        break
+                    chunk = getattr(result, "value", None)
+                    if chunk is not None:
+                        if hasattr(chunk, "to_py"):
+                            yield bytes(chunk.to_py())
+                        else:
+                            yield bytes(chunk)
+            finally:
+                reader.releaseLock()
+
+        return StreamingResponse(
+            _stream_screenshot(),
             media_type="image/webp",
             headers={"Cache-Control": "public, max-age=86400"},
         )

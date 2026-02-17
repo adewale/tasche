@@ -835,6 +835,7 @@ flowchart TB
 | `audio_status` | TEXT | — | 'pending', 'generating', 'ready', 'failed' |
 | `html_key` | TEXT | — | R2 path to content.html |
 | `thumbnail_key` | TEXT | — | R2 path to thumbnail.webp |
+| `original_key` | TEXT | — | R2 path to original.webp (full-page screenshot) |
 | `created_at` | TEXT | — | When saved (ISO 8601 with timezone) |
 | `updated_at` | TEXT | — | Last modified (ISO 8601 with timezone) |
 

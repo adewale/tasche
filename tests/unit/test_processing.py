@@ -187,6 +187,136 @@ class TestProcessArticleHappyPath:
 
 
 # =========================================================================
+# test_process_article — full-page screenshot
+# =========================================================================
+
+
+class TestProcessArticleScreenshot:
+    async def test_captures_full_page_screenshot_when_browser_rendering_available(
+        self,
+    ) -> None:
+        """When CF_ACCOUNT_ID and CF_API_TOKEN are set, a full-page screenshot is stored."""
+        db = _TrackingD1()
+        r2 = MockR2()
+        env = MockEnv(db=db, content=r2)
+        env.CF_ACCOUNT_ID = "test-account"
+        env.CF_API_TOKEN = "test-token"
+
+        mock_client = _make_mock_client()
+        # Mock the screenshot function to return fake image data
+        fake_thumb = b"THUMB_DATA"
+        fake_fullpage = b"FULLPAGE_DATA"
+        call_count = {"n": 0}
+
+        async def _mock_screenshot(client, url, account_id, api_token, **kwargs):
+            call_count["n"] += 1
+            if kwargs.get("full_page"):
+                return fake_fullpage
+            return fake_thumb
+
+        with (
+            patch("articles.processing.httpx.AsyncClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_mock_screenshot),
+        ):
+            from articles.processing import process_article
+
+            await process_article("art_ss", "https://example.com/article", env)
+
+        # Verify both screenshots were stored in R2
+        assert "articles/art_ss/thumbnail.webp" in r2._store
+        assert r2._store["articles/art_ss/thumbnail.webp"] == fake_thumb
+        assert "articles/art_ss/original.webp" in r2._store
+        assert r2._store["articles/art_ss/original.webp"] == fake_fullpage
+
+    async def test_original_key_in_d1_update(self) -> None:
+        """The final D1 UPDATE includes original_key field."""
+        db = _TrackingD1()
+        r2 = MockR2()
+        env = MockEnv(db=db, content=r2)
+        env.CF_ACCOUNT_ID = "test-account"
+        env.CF_API_TOKEN = "test-token"
+
+        mock_client = _make_mock_client()
+
+        async def _mock_screenshot(client, url, account_id, api_token, **kwargs):
+            return b"SCREENSHOT_DATA"
+
+        with (
+            patch("articles.processing.httpx.AsyncClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_mock_screenshot),
+        ):
+            from articles.processing import process_article
+
+            await process_article("art_okf", "https://example.com/article", env)
+
+        # Find the big UPDATE statement
+        update_stmts = [
+            (sql, params)
+            for sql, params in db.executed
+            if sql.strip().startswith("UPDATE") and "title" in sql
+        ]
+        assert len(update_stmts) >= 1
+        sql, params = update_stmts[-1]
+        assert "original_key" in sql
+        assert "articles/art_okf/original.webp" in params
+
+    async def test_no_screenshot_without_browser_rendering(self) -> None:
+        """Without CF_ACCOUNT_ID/CF_API_TOKEN, no screenshots are captured."""
+        db = _TrackingD1()
+        r2 = MockR2()
+        env = MockEnv(db=db, content=r2)
+        # No CF_ACCOUNT_ID or CF_API_TOKEN set
+
+        mock_client = _make_mock_client()
+
+        with patch("articles.processing.httpx.AsyncClient", return_value=mock_client):
+            from articles.processing import process_article
+
+            await process_article("art_noss", "https://example.com/article", env)
+
+        # No screenshot files in R2
+        assert "articles/art_noss/thumbnail.webp" not in r2._store
+        assert "articles/art_noss/original.webp" not in r2._store
+
+    async def test_full_page_screenshot_failure_non_fatal(self) -> None:
+        """If full-page screenshot fails, processing still succeeds."""
+        db = _TrackingD1()
+        r2 = MockR2()
+        env = MockEnv(db=db, content=r2)
+        env.CF_ACCOUNT_ID = "test-account"
+        env.CF_API_TOKEN = "test-token"
+
+        mock_client = _make_mock_client()
+
+        from articles.browser_rendering import BrowserRenderingError
+
+        async def _mock_screenshot(client, url, account_id, api_token, **kwargs):
+            if kwargs.get("full_page"):
+                raise BrowserRenderingError("Timeout on full-page")
+            return b"THUMB_DATA"
+
+        with (
+            patch("articles.processing.httpx.AsyncClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_mock_screenshot),
+        ):
+            from articles.processing import process_article
+
+            await process_article("art_sserr", "https://example.com/article", env)
+
+        # Thumbnail was stored, but original was not
+        assert "articles/art_sserr/thumbnail.webp" in r2._store
+        assert "articles/art_sserr/original.webp" not in r2._store
+
+        # Article should still be 'ready'
+        ready_updates = [
+            (sql, params)
+            for sql, params in db.executed
+            if "status" in sql and "ready" in str(params) and "title" in sql
+        ]
+        assert len(ready_updates) >= 1
+
+
+# =========================================================================
 # test_process_article — failure handling
 # =========================================================================
 
@@ -278,6 +408,7 @@ class TestProcessArticleD1Updates:
             "canonical_url",
             "html_key",
             "thumbnail_key",
+            "original_key",
             "image_count",
             "markdown_content",
             "status",

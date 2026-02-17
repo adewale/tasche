@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS articles (
                             CHECK(audio_status IS NULL OR audio_status IN ('pending', 'generating', 'ready', 'failed')),
     html_key                TEXT,
     thumbnail_key           TEXT,
+    original_key            TEXT,
     markdown_content        TEXT,
     original_status         TEXT DEFAULT 'unknown'
                             CHECK(original_status IN ('available', 'paywalled', 'gone', 'domain_dead', 'unknown')),
