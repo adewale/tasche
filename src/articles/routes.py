@@ -28,7 +28,7 @@ _LIST_COLUMNS = (
     "excerpt, author, word_count, reading_time_minutes, image_count, status, "
     "reading_status, is_favorite, listen_later, audio_key, audio_duration_seconds, "
     "audio_status, html_key, markdown_key, thumbnail_key, original_status, "
-    "scroll_position, reading_progress, notes, created_at, updated_at"
+    "scroll_position, reading_progress, created_at, updated_at"
 )
 
 _VALID_READING_STATUSES = {"unread", "reading", "archived"}
@@ -418,15 +418,11 @@ async def update_article(
         "scroll_position",
         "reading_progress",
         "title",
-        "notes",
     }
 
     # Validate field lengths
     if "title" in body and isinstance(body["title"], str) and len(body["title"]) > 500:
         raise HTTPException(status_code=400, detail="Title must not exceed 500 characters")
-    if "notes" in body and isinstance(body["notes"], str) and len(body["notes"]) > 10000:
-        raise HTTPException(status_code=400, detail="Notes must not exceed 10000 characters")
-
     # Validate enum fields
     if "reading_status" in body and body["reading_status"] not in _VALID_READING_STATUSES:
         raise HTTPException(

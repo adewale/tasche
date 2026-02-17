@@ -841,14 +841,12 @@ flowchart TB
 | `html_key` | TEXT | — | R2 path to content.html |
 | `markdown_key` | TEXT | — | R2 path to content.md |
 | `thumbnail_key` | TEXT | — | R2 path to thumbnail.webp |
-| `notes` | TEXT | 10000 | User notes on the article |
 | `created_at` | TEXT | — | When saved (ISO 8601 with timezone) |
 | `updated_at` | TEXT | — | Last modified (ISO 8601 with timezone) |
 
 **Input validation:** All user-supplied text fields MUST be validated at the API boundary:
 - `url`: max 2048 characters, must be `http` or `https` scheme
 - `title`: max 500 characters
-- `notes`: max 10000 characters
 - Return 400 with a clear error message when limits are exceeded
 
 **Uniqueness:** A `UNIQUE(user_id, original_url)` index prevents duplicate articles per user. The API should return 409 Conflict when a duplicate is detected.
