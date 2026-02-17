@@ -234,3 +234,63 @@ The spec described FTS5 search but not how to handle FTS5-specific query syntax 
 
 ### 8. Specify Cross-Origin Cookie Behavior for Integrations
 The spec described the bookmarklet and share target but not how authentication works cross-origin. SameSite cookie behavior should have been analyzed when specifying the bookmarklet flow.
+
+---
+
+## Structuring Specs for Coding Agents
+
+The following lessons were discovered after v0.1.0 when reviewing why the project was initially perceived as "backend-complete, frontend-missing" — even though a frontend MVP existed. The root cause was spec structure, not implementation quality.
+
+### 19. Vertical Slices Beat Horizontal Layers
+
+The original spec had no explicit phases. The implicit structure was horizontal: "build all API endpoints" → "build the frontend." This encouraged depth-first backend work. When phases 1–6 were all backend, the frontend didn't appear until Phase 7 — meaning no user could actually use the app until 7/9ths of the work was done.
+
+**Better structure:** Each milestone should be a vertical slice that delivers an end-to-end user capability across all layers (API, storage, frontend, tests). For example: "Save a URL and see it in a list" touches the API, D1, Queue, and a minimal list UI — all in one slice.
+
+**Lesson:** Structure specs as vertical slices, not horizontal layers. A coding agent will complete whatever slice you define — if the slice is "build all API endpoints," that's exactly what you'll get, with no way for a user to verify the result.
+
+### 20. Define "Done" as a User Journey, Not a Component
+
+The original spec defined features by component ("Articles table has these fields", "FTS5 search uses INNER JOIN"). This made it easy to verify that code exists, but hard to verify that a user can actually accomplish anything.
+
+**Better structure:** Each milestone should have a user journey sentence: *"I open Tasche, see article cards with thumbnails, tap one, and read it."* If the user can't perform this journey end-to-end, the milestone isn't done — regardless of how many tests pass.
+
+**Lesson:** Acceptance criteria should be user journeys, not technical checklists. "239 tests passing" is not the same as "a user can save and read an article."
+
+### 21. Specify the Frontend Stack with the Same Precision as the Backend
+
+The original spec gave the backend precise technology choices: FastAPI, D1, R2, KV, python-readability, httpx. The frontend got "Progressive Web App" with aspirational descriptions of offline caching and audio playback, but no framework, no file structure, no build tool, no component model.
+
+A coding agent gravitates toward what's most precisely defined. The backend had SQL schemas, exact endpoint signatures, and status enum values. The frontend had prose paragraphs.
+
+**Lesson:** Specify the frontend stack explicitly: framework (or explicit "vanilla JS" with rationale), routing approach, state management pattern, build tool, output directory, and file structure. A spec that's precise about the backend and vague about the frontend will produce exactly a backend.
+
+### 22. Include UI Wireframes, Not Just Data Flow Diagrams
+
+The original spec had excellent architecture diagrams (Mermaid flowcharts, ASCII system diagrams, data flow tables). But it had zero UI wireframes. A coding agent can implement an API from a schema, but it can't implement a UI from a description like "article cards show thumbnails."
+
+**Better structure:** ASCII wireframes for each screen showing layout structure, component hierarchy, and what data appears where. These don't need to be pixel-perfect — they just need to make the agent's output verifiable.
+
+**Lesson:** Include at least one wireframe per screen/view. Wireframes are to frontend specs what SQL schemas are to backend specs — they make the expected output concrete and verifiable.
+
+### 23. Phased Milestones Need Explicit Dependency Graphs
+
+The original spec had implicit phase references ("Phase 2: auth router", "Phase 5: tags router") embedded in code comments, but never defined a milestone list, dependency graph, or completion criteria. This meant there was no way to know what "v0.1.0" actually included, and no way to prioritize remaining work.
+
+**Better structure:** A numbered milestone list where each milestone has: (1) a name, (2) a user journey as acceptance criteria, (3) a task table showing what to build in each layer, and (4) a dependency graph showing which milestones can run in parallel.
+
+**Lesson:** Make milestones explicit. If they're not written down, they don't exist — and a coding agent will simply work through the spec top-to-bottom, building whatever it encounters first.
+
+### 24. Specs That Are Precise About the Backend and Vague About the Frontend Will Get Exactly a Backend
+
+This is the meta-lesson that encompasses all the above. The original spec had:
+- 14-step processing pipeline with numbered steps ← precise
+- SQL schemas with field types and max lengths ← precise
+- Endpoint tables with methods and purposes ← precise
+- "PWA with offline support" ← vague
+- "Audio player with play/pause, skip, speed" ← vague
+- "Article cards show thumbnails" ← vague
+
+The implementation perfectly reflected this asymmetry: the backend was robust, tested, and hardened. The frontend existed but was perceived as incomplete because the spec never defined what "complete" looked like for the frontend.
+
+**Lesson:** Measure the precision of your spec across all layers. If the backend section has tables, schemas, and exact values, the frontend section needs wireframes, component specs, and state management patterns. Asymmetric precision produces asymmetric results.

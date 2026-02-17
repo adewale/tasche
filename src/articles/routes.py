@@ -12,8 +12,9 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 
+from articles.health import check_original_url
 from articles.storage import delete_article_content, get_content
 from articles.urls import check_duplicate, extract_domain, validate_url
 from auth.dependencies import get_current_user
@@ -34,13 +35,14 @@ _VALID_READING_STATUSES = {"unread", "reading", "archived"}
 
 
 async def _get_user_article(
-    db: Any, article_id: str, user_id: str, fields: str = "*",
+    db: Any,
+    article_id: str,
+    user_id: str,
+    fields: str = "*",
 ) -> dict[str, Any]:
     """Fetch an article by ID for a user, or raise 404."""
     article = d1_first(
-        await db.prepare(
-            f"SELECT {fields} FROM articles WHERE id = ? AND user_id = ?"
-        )
+        await db.prepare(f"SELECT {fields} FROM articles WHERE id = ? AND user_id = ?")
         .bind(article_id, user_id)
         .first()
     )
@@ -115,12 +117,14 @@ async def create_article(
         raise
 
     # Enqueue processing job
-    message = _to_js_value({
-        "type": "article_processing",
-        "article_id": article_id,
-        "url": url,
-        "user_id": user_id,
-    })
+    message = _to_js_value(
+        {
+            "type": "article_processing",
+            "article_id": article_id,
+            "url": url,
+            "user_id": user_id,
+        }
+    )
     await env.ARTICLE_QUEUE.send(message)
 
     return {"id": article_id, "status": "pending"}
@@ -132,6 +136,7 @@ async def list_articles(
     status: str | None = Query(default=None),
     reading_status: str | None = Query(default=None),
     is_favorite: bool | None = Query(default=None),
+    audio_status: str | None = Query(default=None),
     tag: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
@@ -140,8 +145,8 @@ async def list_articles(
     """List the authenticated user's articles.
 
     Supports optional filtering by ``status``, ``reading_status``,
-    ``is_favorite``, and ``tag``.  Results are ordered by ``created_at DESC``
-    and paginated via ``limit`` and ``offset``.
+    ``is_favorite``, ``audio_status``, and ``tag``.  Results are ordered by
+    ``created_at DESC`` and paginated via ``limit`` and ``offset``.
     """
     env = request.scope["env"]
     db = env.DB
@@ -162,10 +167,12 @@ async def list_articles(
         where_clauses.append("is_favorite = ?")
         params.append(1 if is_favorite else 0)
 
+    if audio_status is not None:
+        where_clauses.append("audio_status = ?")
+        params.append(audio_status)
+
     if tag is not None:
-        where_clauses.append(
-            "id IN (SELECT article_id FROM article_tags WHERE tag_id = ?)"
-        )
+        where_clauses.append("id IN (SELECT article_id FROM article_tags WHERE tag_id = ?)")
         params.append(tag)
 
     where = " AND ".join(where_clauses)
@@ -177,6 +184,70 @@ async def list_articles(
 
     results = await db.prepare(sql).bind(*params).all()
     return d1_rows(results)
+
+
+@router.post("/batch-check-originals")
+async def batch_check_originals(
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Check original URLs for articles that haven't been checked recently.
+
+    Selects up to 10 articles where ``original_status = 'unknown'`` or
+    ``last_checked_at`` is older than 30 days, performs a HEAD request
+    against each original URL, and updates the ``original_status`` and
+    ``last_checked_at`` fields in D1.
+
+    Returns a summary with the number of articles checked and individual
+    results.
+    """
+    env = request.scope["env"]
+    db = env.DB
+    user_id = user["user_id"]
+
+    results_list = d1_rows(
+        await db.prepare(
+            "SELECT id, original_url FROM articles WHERE user_id = ? "
+            "AND (original_status = 'unknown' "
+            "OR last_checked_at IS NULL "
+            "OR last_checked_at < datetime('now', '-30 days')) "
+            "ORDER BY last_checked_at ASC NULLS FIRST "
+            "LIMIT 10"
+        )
+        .bind(user_id)
+        .all()
+    )
+
+    checked: list[dict[str, str]] = []
+    now = datetime.now(UTC).isoformat()
+
+    for row in results_list:
+        article_id = row["id"]
+        original_url = row["original_url"]
+
+        try:
+            new_status = await check_original_url(original_url)
+        except Exception:
+            new_status = "unknown"
+
+        await (
+            db.prepare(
+                "UPDATE articles SET original_status = ?, last_checked_at = ?, "
+                "updated_at = ? WHERE id = ? AND user_id = ?"
+            )
+            .bind(new_status, now, now, article_id, user_id)
+            .run()
+        )
+
+        checked.append(
+            {
+                "article_id": article_id,
+                "original_url": original_url,
+                "original_status": new_status,
+            }
+        )
+
+    return {"checked": len(checked), "results": checked}
 
 
 @router.get("/{article_id}")
@@ -227,6 +298,48 @@ async def get_article_content(
     return HTMLResponse(content=html_content)
 
 
+@router.get("/{article_id}/thumbnail")
+async def get_article_thumbnail(
+    request: Request,
+    article_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> Response:
+    """Serve the article's thumbnail image from R2.
+
+    Returns the thumbnail WebP image stored during article processing.
+    Falls back to 404 if no thumbnail is available.
+    """
+    env = request.scope["env"]
+    db = env.DB
+    r2 = env.CONTENT
+    user_id = user["user_id"]
+
+    article = await _get_user_article(
+        db,
+        article_id,
+        user_id,
+        fields="id, thumbnail_key",
+    )
+
+    thumbnail_key = article.get("thumbnail_key")
+    if not thumbnail_key:
+        raise HTTPException(status_code=404, detail="No thumbnail available")
+
+    obj = await r2.get(thumbnail_key)
+    if obj is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Thumbnail not found in storage",
+        )
+
+    image_data = await obj.arrayBuffer()
+    return Response(
+        content=bytes(image_data) if not isinstance(image_data, bytes) else image_data,
+        media_type="image/webp",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
 @router.patch("/{article_id}")
 async def update_article(
     request: Request,
@@ -247,7 +360,11 @@ async def update_article(
 
     body = await request.json()
     updatable_fields = {
-        "reading_status", "is_favorite", "scroll_position", "reading_progress", "title",
+        "reading_status",
+        "is_favorite",
+        "scroll_position",
+        "reading_progress",
+        "title",
     }
 
     # Validate field lengths
@@ -319,3 +436,48 @@ async def delete_article(
         .bind(article_id, user_id)
         .run()
     )
+
+
+@router.post("/{article_id}/check-original")
+async def check_original(
+    request: Request,
+    article_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Check if the original URL is still accessible and update original_status.
+
+    Performs an HTTP HEAD request against the article's ``original_url``,
+    classifies the result, and updates the ``original_status`` and
+    ``last_checked_at`` fields in D1.
+
+    Returns the article ID and the new ``original_status``.
+    """
+    env = request.scope["env"]
+    db = env.DB
+    user_id = user["user_id"]
+
+    article = await _get_user_article(
+        db,
+        article_id,
+        user_id,
+        fields="id, original_url",
+    )
+
+    original_url = article.get("original_url", "")
+    new_status = await check_original_url(original_url)
+    now = datetime.now(UTC).isoformat()
+
+    await (
+        db.prepare(
+            "UPDATE articles SET original_status = ?, last_checked_at = ?, "
+            "updated_at = ? WHERE id = ? AND user_id = ?"
+        )
+        .bind(new_status, now, now, article_id, user_id)
+        .run()
+    )
+
+    return {
+        "article_id": article_id,
+        "original_status": new_status,
+        "last_checked_at": now,
+    }

@@ -23,6 +23,7 @@ Steps:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import traceback
 from datetime import UTC, datetime
@@ -87,9 +88,11 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
 
     try:
         # Step 1: Update status to 'processing'
-        await db.prepare(
-            "UPDATE articles SET status = ?, updated_at = ? WHERE id = ?"
-        ).bind("processing", _now(), article_id).run()
+        await (
+            db.prepare("UPDATE articles SET status = ?, updated_at = ? WHERE id = ?")
+            .bind("processing", _now(), article_id)
+            .run()
+        )
 
         # Step 2: Fetch page via httpx, following redirects
         async with httpx.AsyncClient(follow_redirects=True) as client:
@@ -100,9 +103,7 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
 
             parsed_final = urlparse(final_url)
             if parsed_final.hostname and _is_private_hostname(parsed_final.hostname):
-                raise ValueError(
-                    f"Redirect to private/internal URL blocked: {final_url}"
-                )
+                raise ValueError(f"Redirect to private/internal URL blocked: {final_url}")
 
             # Step 3: If content looks JS-heavy, try Browser Rendering
             account_id = getattr(env, "CF_ACCOUNT_ID", None)
@@ -161,23 +162,32 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
         markdown_key = keys["markdown_key"]
 
         # Step 12: Store metadata.json to R2
-        await store_metadata(r2, article_id, {
-            "article_id": article_id,
-            "original_url": original_url,
-            "final_url": final_url,
-            "canonical_url": canonical_url,
-            "domain": domain,
-            "title": title,
-            "author": author,
-            "word_count": word_count,
-            "reading_time_minutes": reading_time,
-            "image_count": len(image_map),
-            "archived_at": _now(),
-        })
+        content_hash = hashlib.sha256(clean_html.encode("utf-8")).hexdigest()
+        extraction_method = "readability"
+        await store_metadata(
+            r2,
+            article_id,
+            {
+                "article_id": article_id,
+                "archived_at": _now(),
+                "original_url": original_url,
+                "final_url": final_url,
+                "canonical_url": canonical_url,
+                "domain": domain,
+                "title": title,
+                "author": author,
+                "word_count": word_count,
+                "reading_time_minutes": reading_time,
+                "image_count": len(image_map),
+                "extraction_method": extraction_method,
+                "content_hash": content_hash,
+            },
+        )
 
         # Step 13: Update D1 with all metadata
-        await db.prepare(
-            """UPDATE articles SET
+        await (
+            db.prepare(
+                """UPDATE articles SET
                 title = ?,
                 excerpt = ?,
                 author = ?,
@@ -194,35 +204,40 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
                 status = ?,
                 updated_at = ?
             WHERE id = ?"""
-        ).bind(
-            title,
-            excerpt,
-            author,
-            word_count,
-            reading_time,
-            domain,
-            final_url,
-            canonical_url,
-            html_key,
-            markdown_key,
-            thumbnail_key,
-            len(image_map),
-            markdown,
-            "ready",
-            _now(),
-            article_id,
-        ).run()
+            )
+            .bind(
+                title,
+                excerpt,
+                author,
+                word_count,
+                reading_time,
+                domain,
+                final_url,
+                canonical_url,
+                html_key,
+                markdown_key,
+                thumbnail_key,
+                len(image_map),
+                markdown,
+                "ready",
+                _now(),
+                article_id,
+            )
+            .run()
+        )
 
         # Step 14: FTS5 indexing is handled by D1 triggers automatically.
 
         print(
-            json.dumps({
-                "event": "article_processed",
-                "article_id": article_id,
-                "status": "ready",
-                "word_count": word_count,
-                "image_count": len(image_map),
-            })
+            json.dumps(
+                {
+                    "event": "article_processed",
+                    "article_id": article_id,
+                    "status": "ready",
+                    "word_count": word_count,
+                    "image_count": len(image_map),
+                }
+            )
         )
 
     except (
@@ -233,34 +248,42 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
     ):
         # Transient network errors — let propagate for queue retry
         print(
-            json.dumps({
-                "event": "article_processing_failed",
-                "article_id": article_id,
-                "error": traceback.format_exc(),
-                "retryable": True,
-            })
+            json.dumps(
+                {
+                    "event": "article_processing_failed",
+                    "article_id": article_id,
+                    "error": traceback.format_exc(),
+                    "retryable": True,
+                }
+            )
         )
         raise
     except Exception:
         # Permanent errors (HTTP 4xx, invalid content, etc.) — mark as failed
         print(
-            json.dumps({
-                "event": "article_processing_failed",
-                "article_id": article_id,
-                "error": traceback.format_exc(),
-            })
-        )
-        try:
-            await db.prepare(
-                "UPDATE articles SET status = ?, updated_at = ? WHERE id = ?"
-            ).bind("failed", _now(), article_id).run()
-        except Exception:
-            print(
-                json.dumps({
-                    "event": "article_status_update_failed",
+            json.dumps(
+                {
+                    "event": "article_processing_failed",
                     "article_id": article_id,
                     "error": traceback.format_exc(),
-                })
+                }
+            )
+        )
+        try:
+            await (
+                db.prepare("UPDATE articles SET status = ?, updated_at = ? WHERE id = ?")
+                .bind("failed", _now(), article_id)
+                .run()
+            )
+        except Exception:
+            print(
+                json.dumps(
+                    {
+                        "event": "article_status_update_failed",
+                        "article_id": article_id,
+                        "error": traceback.format_exc(),
+                    }
+                )
             )
 
 
@@ -284,10 +307,7 @@ async def _fetch_page(
         url,
         timeout=30.0,
         headers={
-            "User-Agent": (
-                "Mozilla/5.0 (compatible; Tasche/1.0; "
-                "+https://github.com/tasche)"
-            ),
+            "User-Agent": ("Mozilla/5.0 (compatible; Tasche/1.0; +https://github.com/tasche)"),
         },
     )
     resp.raise_for_status()

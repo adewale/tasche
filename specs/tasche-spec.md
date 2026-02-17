@@ -1072,6 +1072,197 @@ javascript:void(window.open('https://tasche.example.com/?url='
 
 The frontend handles the `?url=` parameter via the same code path as the PWA share target — both result in a same-origin API call with valid session cookies.
 
+### 8.3 Frontend Technology Stack
+
+**Current implementation:** Vanilla JavaScript SPA (~1400 lines) with hash-based routing, served from `./assets/` via Workers Static Assets. No build step required.
+
+**Files:**
+
+| File | Lines | Purpose |
+|------|-------|---------|
+| `assets/index.html` | ~36 | App shell, SW registration, meta tags |
+| `assets/static/app.js` | ~1400 | SPA router, views, API client, state |
+| `assets/static/style.css` | ~1100 | Responsive styles, dark theme |
+| `assets/sw.js` | ~220 | Cache strategies, offline queue, sync |
+| `assets/manifest.json` | — | PWA manifest with share target |
+| `assets/bookmarklet.js` | — | `window.open()` template |
+
+**Rationale:** For a personal single-user app, vanilla JS keeps the stack simple — no framework version upgrades, no build pipeline, no `node_modules`. The entire frontend is three authored files (`app.js`, `style.css`, `sw.js`) plus `index.html`.
+
+**Recommended framework if a rewrite becomes necessary:** If the frontend grows beyond its current scope (complex state management, component reuse across views, design system), migrate to **Preact** (Vite + vite-plugin-pwa):
+
+| Criterion | Preact | Why it wins |
+|-----------|--------|-------------|
+| Runtime size | 4 KB gzipped | 10x smaller than React (42 KB) |
+| API compatibility | React-compatible | Largest ecosystem of patterns and examples |
+| State management | Preact Signals (built-in) | No external deps (no Redux/Zustand) |
+| PWA tooling | `vite-plugin-pwa` + Workbox | Zero-config SW generation, `injectManifest` for custom logic |
+| Cloudflare deployment | Proven | Official Pages guide + example repos |
+| Build pipeline | `vite build --outDir assets` | Single command, drops into existing `wrangler.jsonc` config |
+| Agent implementability | High | JSX is the most reliable output format for coding agents |
+
+**Other strong options:** Svelte 5 / SvelteKit (2–3 KB runtime, native `<audio>` bindings — best for audio player), React/Vite (largest ecosystem, 42 KB overhead).
+
+**Not recommended for this project:** HTMX (requires server for every interaction — incompatible with offline-first), Astro (MPA model breaks persistent audio player and SPA routing), vanilla Web Components without Lit (too low-level for SPA routing + state).
+
+### 8.4 UI Screens & Wireframes
+
+Each screen below is a route in the SPA. The wireframes show layout structure, not pixel-perfect design.
+
+**Library View** (`#/` — default route)
+
+```
+┌─────────────────────────────────────────────────┐
+│  Tasche                          [+Save] [⚙]    │
+├─────────────────────────────────────────────────┤
+│  [All] [Unread] [Reading] [Archived] [♥] [🎧]  │
+│  ┌─────────────────────┐ ┌─────────────────────┐│
+│  │ ┌──────┐            │ │ ┌──────┐            ││
+│  │ │thumb │ Title...   │ │ │thumb │ Title...   ││
+│  │ │ nail │ domain.com │ │ │ nail │ domain.com ││
+│  │ └──────┘ 6 min read │ │ └──────┘ 4 min read ││
+│  │ [tag1] [tag2]       │ │ [tag3]              ││
+│  │ ♥  🎧              │ │                      ││
+│  └─────────────────────┘ └─────────────────────┘│
+│  ┌─────────────────────┐ ┌─────────────────────┐│
+│  │ ...more cards...    │ │ ...more cards...    ││
+│  └─────────────────────┘ └─────────────────────┘│
+│  ┌─────────────────────────────────────────────┐│
+│  │ [← Prev]              Page 1 of 5 [Next →]  ││
+│  └─────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────┘
+```
+
+- Filter tabs: `All` (default), `Unread`, `Reading`, `Archived`, `♥` (favorites), `🎧` (listen later queue — articles with `audio_status = 'ready'`)
+- Each card shows: thumbnail image (from `thumbnail_key`), title, domain, reading time, tags as colored chips, favorite/audio status icons
+- Card shows processing spinner overlay when `status` is `pending` or `processing`
+- `[+Save]` opens inline form: URL input + Save button
+- `[⚙]` navigates to settings/bookmarklet view
+
+**Reader View** (`#/article/:id`)
+
+```
+┌─────────────────────────────────────────────────┐
+│  [← Back]  domain.com              [♥] [🎧] [⋮]│
+├─────────────────────────────────────────────────┤
+│                                                  │
+│  Article Title                                   │
+│  By Author Name · 6 min read                     │
+│  [tag1] [tag2] [+ Add tag]                       │
+│                                                  │
+│  ─────────────────────────────────────────────── │
+│                                                  │
+│  Article content rendered as clean HTML from R2. │
+│  Images display inline from R2 local paths.      │
+│  Falls back to rendered markdown if R2 fails.    │
+│                                                  │
+│  ...                                             │
+│                                                  │
+├─────────────────────────────────────────────────┤
+│  Status: Unread · [Mark as Reading] [Archive]    │
+│  Original: ✓ Available  [View Original ↗]        │
+│                                                  │
+│ ┌───────────────────────────────────────────────┐│
+│ │ ▶ 0:00 ━━━━━━━━━━━━━━━━━━━━ 12:34  1x  [⏪⏩]││
+│ └───────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────┘
+```
+
+- Content loaded from `GET /api/articles/:id/content` (R2 HTML), fallback to rendering `markdown_content`
+- Tag picker: shows current tags + `[+ Add tag]` dropdown to add/remove
+- Audio player (bottom bar): only visible when `audio_status = 'ready'`. Play/pause, seek bar, skip ±15s, speed control (0.75x–2x). Uses Media Session API for lock screen controls.
+- `[♥]` toggles favorite, `[🎧]` triggers Listen Later (shows spinner if pending/generating)
+- `[⋮]` menu: Delete article, View original, Copy URL
+- Original status indicator: shows `original_status` with appropriate message (see §7.7)
+- Scroll position saved on navigate away (percentage-based), restored on return
+
+**Search View** (`#/search`)
+
+```
+┌─────────────────────────────────────────────────┐
+│  [← Back]  Search                                │
+├─────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────┐│
+│  │ 🔍 Search your articles...                  ││
+│  └─────────────────────────────────────────────┘│
+│                                                  │
+│  3 results for "machine learning"                │
+│                                                  │
+│  ┌─────────────────────────────────────────────┐│
+│  │ Introduction to **Machine Learning**         ││
+│  │ blog.example.com · 8 min · Jan 2026         ││
+│  │ "...neural networks enable **machine**       ││
+│  │  **learning** at scale across..."            ││
+│  └─────────────────────────────────────────────┘│
+│  ┌─────────────────────────────────────────────┐│
+│  │ ...more results (highlight matching terms)  ││
+│  └─────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────┘
+```
+
+- Search input with debounced query (300ms)
+- Results show: title with highlighted matches, domain, reading time, date
+- Snippet with highlighted matching terms from article content
+- Results ordered by FTS5 relevance (`rank`), not recency
+
+**Tags View** (`#/tags`)
+
+```
+┌─────────────────────────────────────────────────┐
+│  [← Back]  Tags                                  │
+├─────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────┐│
+│  │ + New tag name...                    [Add]  ││
+│  └─────────────────────────────────────────────┘│
+│                                                  │
+│  [machine-learning] (12 articles)        [✕]    │
+│  [cloudflare] (8 articles)               [✕]    │
+│  [rust] (5 articles)                     [✕]    │
+│  [reading-list] (3 articles)             [✕]    │
+│                                                  │
+│  Tap a tag to filter your library.               │
+└─────────────────────────────────────────────────┘
+```
+
+- Create new tags inline
+- Each tag shows article count
+- Tap tag → navigate to library filtered by that tag
+- `[✕]` deletes tag (with confirmation)
+
+**Settings / Bookmarklet View** (`#/settings`)
+
+```
+┌─────────────────────────────────────────────────┐
+│  [← Back]  Settings                              │
+├─────────────────────────────────────────────────┤
+│                                                  │
+│  Bookmarklet                                     │
+│  Drag this to your bookmarks bar:                │
+│  ┌─────────────────────────────────────────────┐│
+│  │  📎 Save to Tasche                          ││
+│  └─────────────────────────────────────────────┘│
+│                                                  │
+│  Logged in as: user@example.com                  │
+│  [Log out]                                       │
+│                                                  │
+└─────────────────────────────────────────────────┘
+```
+
+**Audio Player Component** (persistent bottom bar in reader)
+
+```
+┌───────────────────────────────────────────────────┐
+│ ▶  │ ⏪15s │ 2:34 ━━━━━●━━━━━━━━━ 12:34 │ ⏩15s │ 1x │
+└───────────────────────────────────────────────────┘
+```
+
+- Play/pause toggle
+- Skip backward/forward 15 seconds
+- Seek bar with current time / total duration
+- Playback speed: cycle through 0.75x → 1x → 1.25x → 1.5x → 2x
+- Media Session API: lock screen shows article title, play/pause, skip controls
+- Background playback: audio continues when screen is off or app is backgrounded
+
 ---
 
 ## 9. Security Requirements
@@ -1305,6 +1496,99 @@ For testing with actual bindings (D1, R2, KV), run the worker locally with `uv r
 | API | Endpoints return correct status codes and shapes | Integration tests against local dev server |
 | Auth | Session creation, validation, expiry | Integration tests |
 | Queue | Message format, consumer handles errors gracefully | Unit tests for handler logic |
+
+---
+
+---
+
+## 14. Implementation Milestones
+
+Each milestone is a **vertical slice** — it delivers a complete, end-to-end user-facing capability across all layers (API, storage, frontend, tests). Milestones are not horizontal layers ("build all the API, then build all the frontend").
+
+**Definition of "done":** Each milestone has a user journey sentence that describes what a real user can do when the milestone is complete. If the user can't perform the journey end-to-end, the milestone is not done.
+
+### Completed Milestones (v0.1.0)
+
+| Phase | Name | Vertical Slice | Done |
+|-------|------|---------------|------|
+| 1 | Foundation | Project setup, FFI boundary layer (`wrappers.py`), D1 schema, entry point, test infrastructure | ✅ |
+| 2 | Authentication | GitHub OAuth login → KV session → protected API routes → login/logout UI | ✅ |
+| 3 | Save & Read | POST URL → article created in D1 → queue message → list articles → view article in browser | ✅ |
+| 4 | Content Pipeline | Queue consumer fetches page → readability extraction → images to WebP → HTML+MD in R2 → FTS5 index → article displays in reader | ✅ |
+| 5 | Search & Tags | Search box → FTS5 query → ranked results displayed · Create tags → assign to articles → filter library by tag | ✅ |
+| 6 | Listen Later | Click headphone icon → TTS queued → Workers AI generates audio → audio player appears in reader view | ✅ |
+| 7 | Frontend MVP | Vanilla JS SPA: library grid, reader view, search, tags, audio player, offline mutation queue, bookmarklet, share target | ✅ |
+| 8 | Observability | Wide events middleware emits one JSON log line per request with full context | ✅ |
+| 9 | Hardening | 28 security and edge-case fixes: SSRF, FTS5 injection, input validation, TTS idempotency, queue retry, cookie behavior | ✅ |
+
+### Phase 10: Polished Reading Experience
+
+**User journey:** *"I open Tasche on my phone. Article cards show thumbnails and tags at a glance. I tap one and read it. I tap the headphone icon — audio generates. I lock my screen and keep listening with lock-screen controls."*
+
+| Task | Layer | Details |
+|------|-------|---------|
+| Thumbnails on article cards | Frontend | Render `<img>` from `thumbnail_key` on each library card |
+| Tags on article cards | Frontend + API | Fetch article tags, render colored chips on each card |
+| Processing status indicator | Frontend | Show spinner overlay on cards where `status` is `pending` or `processing` |
+| Listen Later queue tab | Frontend | Add `🎧` filter tab showing articles where `audio_status = 'ready'` |
+| Media Session API | Frontend | Register media session handlers for lock screen play/pause/skip controls |
+| Search term highlighting | Frontend | Bold matching terms in search result titles and snippets |
+
+**Acceptance test:** User saves a URL, sees it appear with a processing spinner, spinner resolves to thumbnail + tags. User taps headphone icon, locks screen, and controls audio from lock screen.
+
+### Phase 11: Your Articles Survive
+
+**User journey:** *"I saved an article six months ago. The original site is now gone. I open the article in Tasche — it's fully readable with all images. A subtle indicator says 'Original no longer available. Good thing you saved it.'"*
+
+| Task | Layer | Details |
+|------|-------|---------|
+| `original_status` column | D1 migration | Add field to articles table: `available`, `paywalled`, `gone`, `domain_dead`, `unknown` |
+| URL health checker | Backend | Cron Trigger or Durable Objects alarm periodically HEAD-checks original URLs, updates `original_status` |
+| Status indicators in reader | Frontend | Show status badge: "Original is gone. Good thing you saved it." / "Original requires subscription" / etc. |
+| `metadata.json` per article | Backend | Store archive timestamp, image count, provenance in R2 alongside content |
+| Full-page screenshot (optional) | Backend | Store `original.webp` via Browser Rendering for archival fallback |
+
+**Acceptance test:** User opens an article whose original URL returns 404. Reader view shows the article content intact with a "Original no longer available" badge. `metadata.json` exists in R2 with archive provenance.
+
+### Phase 12: True Offline
+
+**User journey:** *"I'm on a plane with no WiFi. I open Tasche, see my library, read two articles I saved earlier, and listen to a podcast version of a third. When I land and reconnect, my reading progress syncs automatically."*
+
+| Task | Layer | Details |
+|------|-------|---------|
+| "Save for offline" button | Frontend + SW | Per-article button caches R2 content to service worker cache |
+| "Download for offline listening" | Frontend + SW | Per-article button caches audio MP3 to service worker cache |
+| Cache size management | SW | LRU eviction policy, configurable max cache size |
+| Offline sync verification | Integration test | Test: go offline → read article → update progress → go online → verify sync |
+| Offline indicator polish | Frontend | Clear online/offline status in header, toast when sync completes |
+
+**Acceptance test:** User taps "Save for offline" on three articles and "Download audio" on one. User enables airplane mode. All three articles load, audio plays. User makes progress, disables airplane mode, verifies progress synced.
+
+### Phase 13: Deploy & Ship
+
+**User journey:** *"I find Tasche on GitHub, click 'Deploy to Cloudflare', authorize my Cloudflare account, set two GitHub OAuth secrets, and start saving articles within 5 minutes."*
+
+| Task | Layer | Details |
+|------|-------|---------|
+| `deploy.json` | Deployment | "Deploy to Cloudflare" button configuration for GitHub README |
+| README setup guide | Docs | Step-by-step walkthrough: fork → deploy → create GitHub OAuth app → set secrets → use |
+| Real PWA icons | Assets | Replace placeholder PNGs with properly designed icons (192px, 512px) |
+| Integration tests | Testing | HTTP tests against `pywrangler dev` verifying save → process → read → search flow |
+| Security audit | All | Final pass: review all user inputs, all outbound fetches, all cookie settings |
+
+**Acceptance test:** A new user follows the README, deploys in under 5 minutes, saves their first article via the bookmarklet, and reads it in the PWA.
+
+### Milestone Dependency Graph
+
+```
+Phase 10 (Polish)  ──┐
+                     ├──→ Phase 13 (Deploy & Ship)
+Phase 11 (Survive) ──┤
+                     │
+Phase 12 (Offline) ──┘
+```
+
+Phases 10, 11, and 12 are independent and can be worked on in parallel. Phase 13 depends on all three being complete (the app should be fully functional before the deploy-to-Cloudflare experience is finalized).
 
 ---
 

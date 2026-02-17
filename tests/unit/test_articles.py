@@ -358,6 +358,118 @@ class TestDeleteArticle:
 
 
 # ---------------------------------------------------------------------------
+# GET /api/articles/{article_id}/thumbnail — Serve thumbnail
+# ---------------------------------------------------------------------------
+
+
+class TestGetArticleThumbnail:
+    async def test_returns_thumbnail_image(self) -> None:
+        """GET /api/articles/{id}/thumbnail returns WebP image from R2."""
+        article = ArticleFactory.create(
+            id="art_thumb", user_id="user_001",
+            thumbnail_key="articles/art_thumb/thumbnail.webp",
+        )
+
+        def execute(sql: str, params: list) -> list:
+            if "id = ?" in sql and params[0] == "art_thumb":
+                return [article]
+            return []
+
+        db = MockD1(execute=execute)
+        r2 = MockR2()
+        env = MockEnv(db=db, content=r2)
+
+        # Put a fake WebP image in R2
+        await r2.put("articles/art_thumb/thumbnail.webp", b"\x00WEBP_IMAGE_DATA")
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get(
+            "/api/articles/art_thumb/thumbnail",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "image/webp"
+        assert resp.headers["cache-control"] == "public, max-age=86400"
+        assert resp.content == b"\x00WEBP_IMAGE_DATA"
+
+    async def test_returns_404_when_no_thumbnail_key(self) -> None:
+        """GET /api/articles/{id}/thumbnail returns 404 when thumbnail_key is null."""
+        article = ArticleFactory.create(
+            id="art_nothumb", user_id="user_001", thumbnail_key=None,
+        )
+
+        def execute(sql: str, params: list) -> list:
+            if "id = ?" in sql and params[0] == "art_nothumb":
+                return [article]
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get(
+            "/api/articles/art_nothumb/thumbnail",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 404
+
+    async def test_returns_404_when_r2_object_missing(self) -> None:
+        """GET /api/articles/{id}/thumbnail returns 404 when R2 object is gone."""
+        article = ArticleFactory.create(
+            id="art_gone", user_id="user_001",
+            thumbnail_key="articles/art_gone/thumbnail.webp",
+        )
+
+        def execute(sql: str, params: list) -> list:
+            if "id = ?" in sql and params[0] == "art_gone":
+                return [article]
+            return []
+
+        db = MockD1(execute=execute)
+        r2 = MockR2()  # Empty R2 — no object stored
+        env = MockEnv(db=db, content=r2)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get(
+            "/api/articles/art_gone/thumbnail",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# GET /api/articles?audio_status=... — Filter by audio_status
+# ---------------------------------------------------------------------------
+
+
+class TestFilterByAudioStatus:
+    async def test_filters_by_audio_status(self) -> None:
+        """GET /api/articles?audio_status=ready includes audio_status filter in query."""
+        captured: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            captured.append({"sql": sql, "params": params})
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        client.get(
+            "/api/articles?audio_status=ready",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        select_calls = [c for c in captured if "SELECT" in c["sql"]]
+        assert len(select_calls) >= 1
+        assert "audio_status = ?" in select_calls[0]["sql"]
+        assert "ready" in select_calls[0]["params"]
+
+
+# ---------------------------------------------------------------------------
 # Authentication enforcement
 # ---------------------------------------------------------------------------
 

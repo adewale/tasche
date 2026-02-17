@@ -36,6 +36,7 @@ class ArticleRow(TypedDict, total=False):
     thumbnail_key: str | None
     markdown_content: str | None
     original_status: str
+    last_checked_at: str | None
     scroll_position: float
     reading_progress: float
     created_at: str

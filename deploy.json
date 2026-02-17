@@ -1,0 +1,7 @@
+{
+  "$schema": "https://workers.cloudflare.com/schemas/deploy.json",
+  "name": "tasche",
+  "description": "A self-hosted read-it-later service on Cloudflare Python Workers",
+  "main": "src/entry.py",
+  "compatibility_flags": ["python_workers"]
+}

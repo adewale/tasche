@@ -339,11 +339,81 @@ input, textarea {
   text-decoration: none;
   color: inherit;
   display: block;
+  position: relative;
+  overflow: hidden;
+}
+
+.article-card--processing {
+  opacity: 0.8;
 }
 
 .article-card:hover {
   box-shadow: var(--shadow-lg);
   text-decoration: none;
+}
+
+/* Article card body — thumbnail + content side by side */
+.article-card-body {
+  display: flex;
+  gap: 12px;
+}
+
+.article-card-content {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Thumbnail */
+.article-card-thumbnail {
+  flex-shrink: 0;
+  width: 72px;
+  height: 72px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg-secondary);
+}
+
+.article-card-thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.article-card-thumbnail--placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+/* Processing overlay */
+.processing-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  z-index: 10;
+  border-radius: var(--radius);
+}
+
+.processing-overlay .spinner {
+  width: 28px;
+  height: 28px;
+  border-color: rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+}
+
+.processing-overlay-text {
+  color: #fff;
+  font-size: 0.8125rem;
+  font-weight: 500;
 }
 
 .article-card-title {
@@ -522,6 +592,82 @@ input, textarea {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 16px;
+}
+
+/* ---------------------------------------------------------------------------
+   Original Status Badge
+   --------------------------------------------------------------------------- */
+
+.original-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.original-status a {
+  font-weight: 600;
+}
+
+.original-status--available {
+  background: #e8f5e9;
+  color: #2e7d32;
+  border: 1px solid #c8e6c9;
+}
+
+.original-status--paywalled {
+  background: #fff8e1;
+  color: #f57f17;
+  border: 1px solid #ffecb3;
+}
+
+.original-status--gone {
+  background: #fff3e0;
+  color: #e65100;
+  border: 1px solid #ffe0b2;
+}
+
+.original-status--domain_dead {
+  background: #ffebee;
+  color: #c62828;
+  border: 1px solid #ffcdd2;
+}
+
+.original-status--unknown {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+
+@media (prefers-color-scheme: dark) {
+  .original-status--available {
+    background: #1b3a20;
+    color: #66bb6a;
+    border-color: #2e5a33;
+  }
+
+  .original-status--paywalled {
+    background: #3a3000;
+    color: #ffd54f;
+    border-color: #5a4a00;
+  }
+
+  .original-status--gone {
+    background: #3a2000;
+    color: #ffab40;
+    border-color: #5a3800;
+  }
+
+  .original-status--domain_dead {
+    background: #3a1010;
+    color: #ef5350;
+    border-color: #5a2020;
+  }
 }
 
 .reader-content {
@@ -776,6 +922,11 @@ input, textarea {
   text-decoration: none;
 }
 
+.article-card-tags .tag-chip {
+  padding: 2px 8px;
+  font-size: 0.6875rem;
+}
+
 .tag-chip-remove {
   font-size: 0.875rem;
   line-height: 1;
@@ -836,6 +987,21 @@ input, textarea {
   font-size: 0.875rem;
   color: var(--text-secondary);
   margin-bottom: 16px;
+}
+
+/* Search term highlighting */
+mark {
+  background: var(--warning);
+  color: #000;
+  padding: 1px 2px;
+  border-radius: 2px;
+}
+
+@media (prefers-color-scheme: dark) {
+  mark {
+    background: #665200;
+    color: #ffd54f;
+  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -941,6 +1107,11 @@ input, textarea {
 .toast.info {
   background: var(--accent);
   color: #fff;
+}
+
+.toast-fade-out {
+  opacity: 0;
+  transition: opacity 0.3s;
 }
 
 @keyframes toast-in {
@@ -1087,6 +1258,11 @@ input, textarea {
   .article-card-title {
     font-size: 1.0625rem;
   }
+
+  .article-card-thumbnail {
+    width: 88px;
+    height: 88px;
+  }
 }
 
 @media (min-width: 768px) {
@@ -1097,6 +1273,87 @@ input, textarea {
   .header-logo {
     font-size: 1.375rem;
   }
+}
+
+/* ---------------------------------------------------------------------------
+   Offline Features
+   --------------------------------------------------------------------------- */
+
+/* "Save for offline" / "Download audio" buttons */
+.offline-btn {
+  background: var(--bg-secondary);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.offline-btn:hover {
+  background: var(--border);
+  text-decoration: none;
+}
+
+.offline-btn--saved {
+  background: var(--success);
+  color: #fff;
+  border-color: var(--success);
+}
+
+.offline-btn--saved:hover {
+  background: var(--success);
+  opacity: 0.9;
+}
+
+.offline-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+/* Small offline indicator on article cards */
+.offline-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--success);
+  color: #fff;
+  font-size: 0.625rem;
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/* Offline badge (dot) next to the header logo */
+.offline-badge {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.offline-badge--offline {
+  background: var(--warning);
+  animation: pulse-badge 1.5s ease-in-out infinite;
+}
+
+.offline-badge--syncing {
+  background: var(--accent);
+  animation: pulse-badge 0.8s ease-in-out infinite;
+}
+
+@keyframes pulse-badge {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* Sync status text in header */
+.sync-status {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  animation: pulse-badge 1s ease-in-out infinite;
 }
 
 /* Account for audio player height when visible */
