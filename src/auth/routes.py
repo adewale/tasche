@@ -137,10 +137,15 @@ async def callback(request: Request) -> RedirectResponse:
     username = github_user.get("login", "")
     avatar_url = github_user.get("avatar_url", "")
 
-    # --- Check ALLOWED_EMAILS whitelist ---
+    # --- Check ALLOWED_EMAILS whitelist (required) ---
     allowed_raw = env.get("ALLOWED_EMAILS", "")
     allowed_emails = _parse_allowed_emails(allowed_raw)
-    if allowed_emails and email not in allowed_emails:
+    if not allowed_emails:
+        raise HTTPException(
+            status_code=403,
+            detail="ALLOWED_EMAILS is not configured. Set it in wrangler.jsonc.",
+        )
+    if email not in allowed_emails:
         raise HTTPException(status_code=403, detail="Email not authorized")
 
     # --- Upsert user in D1 ---

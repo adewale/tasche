@@ -244,7 +244,7 @@ class MockEnv:
         sessions: MockKV | None = None,
         article_queue: MockQueue | None = None,
         ai: MockAI | None = None,
-        allowed_emails: str = "",
+        allowed_emails: str = "test@example.com",
         site_url: str = "https://tasche.test",
         github_client_id: str = "test_client_id",
         github_client_secret: str = "test_client_secret",

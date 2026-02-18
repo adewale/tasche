@@ -902,9 +902,9 @@ GitHub OAuth requires these endpoints:
 
 ### 5.2 Whitelist Configuration
 
-If `ALLOWED_EMAILS` is set in `wrangler.toml`, only those emails can access the app.
+`ALLOWED_EMAILS` must be set in `wrangler.jsonc` as a comma-separated list of authorized email addresses.
 
-If `ALLOWED_EMAILS` is empty or not set, any authenticated GitHub user can access the application. Deployments should always configure `ALLOWED_EMAILS` to restrict access to intended users.
+If `ALLOWED_EMAILS` is empty or not set, authentication is rejected with a 403 error. This prevents accidental open access.
 
 **Session revocation:** The whitelist MUST be re-checked on every authenticated request, not just at login. If a user's email is removed from `ALLOWED_EMAILS`, their existing sessions are invalidated on the next request — the session is deleted from KV and a 401 is returned. See §9.6.
 

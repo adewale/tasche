@@ -79,8 +79,7 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
         The URL originally submitted by the user.
     env:
         Worker environment object with ``DB`` (D1), ``CONTENT`` (R2),
-        and optionally ``CF_ACCOUNT_ID`` / ``CF_API_TOKEN`` for Browser
-        Rendering.
+        ``CF_ACCOUNT_ID``, and ``CF_API_TOKEN`` for Browser Rendering.
     """
     db = env.DB  # type: ignore[attr-defined]
     r2 = env.CONTENT  # type: ignore[attr-defined]
@@ -107,8 +106,13 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
             # Step 3: If content looks JS-heavy, try Browser Rendering
             account_id = getattr(env, "CF_ACCOUNT_ID", None)
             api_token = getattr(env, "CF_API_TOKEN", None)
+            if not account_id or not api_token:
+                raise ValueError(
+                    "CF_ACCOUNT_ID and CF_API_TOKEN must be configured. "
+                    "Set them via `wrangler secret put`."
+                )
 
-            if _is_js_heavy(html) and account_id and api_token:
+            if _is_js_heavy(html):
                 try:
                     html = await scrape(client, final_url, account_id, api_token)
                 except BrowserRenderingError:
@@ -121,37 +125,37 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
             # Step 5: Screenshots via Browser Rendering
             thumbnail_key = None
             original_key = None
-            if account_id and api_token:
-                # 5a: Thumbnail (above-the-fold crop)
-                try:
-                    thumb_data = await screenshot(
-                        client,
-                        final_url,
-                        account_id,
-                        api_token,
-                        viewport_width=1200,
-                        viewport_height=630,
-                    )
-                    thumbnail_key = article_key(article_id, "thumbnail.webp")
-                    await r2.put(thumbnail_key, thumb_data)
-                except BrowserRenderingError:
-                    pass  # Thumbnail is best-effort
 
-                # 5b: Full-page archival screenshot
-                try:
-                    full_data = await screenshot(
-                        client,
-                        final_url,
-                        account_id,
-                        api_token,
-                        viewport_width=1200,
-                        viewport_height=800,
-                        full_page=True,
-                    )
-                    original_key = article_key(article_id, "original.webp")
-                    await r2.put(original_key, full_data)
-                except BrowserRenderingError:
-                    pass  # Full-page screenshot is best-effort
+            # 5a: Thumbnail (above-the-fold crop)
+            try:
+                thumb_data = await screenshot(
+                    client,
+                    final_url,
+                    account_id,
+                    api_token,
+                    viewport_width=1200,
+                    viewport_height=630,
+                )
+                thumbnail_key = article_key(article_id, "thumbnail.webp")
+                await r2.put(thumbnail_key, thumb_data)
+            except BrowserRenderingError:
+                pass  # Per-URL failures are non-fatal
+
+            # 5b: Full-page archival screenshot
+            try:
+                full_data = await screenshot(
+                    client,
+                    final_url,
+                    account_id,
+                    api_token,
+                    viewport_width=1200,
+                    viewport_height=800,
+                    full_page=True,
+                )
+                original_key = article_key(article_id, "original.webp")
+                await r2.put(original_key, full_data)
+            except BrowserRenderingError:
+                pass  # Per-URL failures are non-fatal
 
             # Step 6: Extract article content via readability
             article = extract_article(html)

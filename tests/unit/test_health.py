@@ -21,7 +21,12 @@ from fastapi.testclient import TestClient
 from src.articles.routes import router
 from src.auth.session import COOKIE_NAME, create_session
 from tests.conftest import ArticleFactory, MockD1, MockEnv, MockQueue, MockR2
-from tests.unit.test_processing import _make_mock_client, _TrackingD1
+from tests.unit.test_processing import (
+    _browser_env,
+    _make_mock_client,
+    _noop_screenshot,
+    _TrackingD1,
+)
 
 # =========================================================================
 # Helpers
@@ -450,11 +455,14 @@ class TestMetadataJsonEnhanced:
         """metadata.json includes a sha256 content_hash field."""
         db = _TrackingD1()
         r2 = MockR2()
-        env = MockEnv(db=db, content=r2)
+        env = _browser_env(MockEnv(db=db, content=r2))
 
         mock_client = _make_mock_client()
 
-        with patch("articles.processing.httpx.AsyncClient", return_value=mock_client):
+        with (
+            patch("articles.processing.httpx.AsyncClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+        ):
             from articles.processing import process_article
 
             await process_article("art_hash", "https://example.com/article", env)
@@ -470,11 +478,14 @@ class TestMetadataJsonEnhanced:
         """metadata.json includes extraction_method field set to 'readability'."""
         db = _TrackingD1()
         r2 = MockR2()
-        env = MockEnv(db=db, content=r2)
+        env = _browser_env(MockEnv(db=db, content=r2))
 
         mock_client = _make_mock_client()
 
-        with patch("articles.processing.httpx.AsyncClient", return_value=mock_client):
+        with (
+            patch("articles.processing.httpx.AsyncClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+        ):
             from articles.processing import process_article
 
             await process_article("art_method", "https://example.com/article", env)
@@ -488,11 +499,14 @@ class TestMetadataJsonEnhanced:
         """metadata.json includes an archived_at timestamp."""
         db = _TrackingD1()
         r2 = MockR2()
-        env = MockEnv(db=db, content=r2)
+        env = _browser_env(MockEnv(db=db, content=r2))
 
         mock_client = _make_mock_client()
 
-        with patch("articles.processing.httpx.AsyncClient", return_value=mock_client):
+        with (
+            patch("articles.processing.httpx.AsyncClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+        ):
             from articles.processing import process_article
 
             await process_article("art_ts", "https://example.com/article", env)
@@ -508,11 +522,14 @@ class TestMetadataJsonEnhanced:
         """metadata.json contains all required provenance fields."""
         db = _TrackingD1()
         r2 = MockR2()
-        env = MockEnv(db=db, content=r2)
+        env = _browser_env(MockEnv(db=db, content=r2))
 
         mock_client = _make_mock_client()
 
-        with patch("articles.processing.httpx.AsyncClient", return_value=mock_client):
+        with (
+            patch("articles.processing.httpx.AsyncClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+        ):
             from articles.processing import process_article
 
             await process_article("art_all", "https://example.com/article", env)

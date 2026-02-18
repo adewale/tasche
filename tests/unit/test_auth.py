@@ -186,8 +186,8 @@ class TestSessionRevocation:
         resp = client.get("/me", cookies={COOKIE_NAME: session_id})
         assert resp.status_code == 200
 
-    async def test_allows_session_when_allowlist_empty(self) -> None:
-        """When ALLOWED_EMAILS is empty, no revocation check is performed."""
+    async def test_rejects_session_when_allowlist_empty(self) -> None:
+        """When ALLOWED_EMAILS is empty, access is denied (whitelist is required)."""
         env = MockEnv(allowed_emails="")
         user_data = {
             "user_id": "u1",
@@ -201,7 +201,7 @@ class TestSessionRevocation:
         app = _make_app_with_env(env)
         client = TestClient(app)
         resp = client.get("/me", cookies={COOKIE_NAME: session_id})
-        assert resp.status_code == 200
+        assert resp.status_code == 401
 
 
 class TestAllowedEmailsParsing:
@@ -317,7 +317,7 @@ class TestCallbackCsrfState:
 
         mock_cls = _mock_github_responses(
             token_data={"access_token": "gho_test"},
-            user_data={"id": 1, "login": "user", "email": "u@e.com", "avatar_url": ""},
+            user_data={"id": 1, "login": "user", "email": "test@example.com", "avatar_url": ""},
         )
 
         app = _make_auth_app(env)
@@ -458,8 +458,8 @@ class TestCallbackRejectsUnauthorizedEmail:
         assert resp.status_code == 302
         assert resp.headers["location"] == "/"
 
-    async def test_allows_any_email_when_allowlist_empty(self) -> None:
-        """When ALLOWED_EMAILS is empty, any authenticated user is accepted."""
+    async def test_rejects_when_allowlist_empty(self) -> None:
+        """When ALLOWED_EMAILS is empty, auth is rejected (whitelist required)."""
         db = MockD1(execute=lambda sql, params: [])
         env = MockEnv(allowed_emails="", db=db)
         state = await _setup_oauth_state(env)
@@ -481,7 +481,7 @@ class TestCallbackRejectsUnauthorizedEmail:
                 f"/api/auth/callback?code=test_code&state={state}",
                 follow_redirects=False,
             )
-        assert resp.status_code == 302
+        assert resp.status_code == 403
 
 
 class TestCallbackPrivateEmail:

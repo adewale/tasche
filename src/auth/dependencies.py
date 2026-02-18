@@ -43,17 +43,19 @@ async def get_current_user(request: Request) -> dict[str, Any]:
     if user_data is None:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
 
-    # Re-check ALLOWED_EMAILS to handle revocation
+    # Re-check ALLOWED_EMAILS to handle revocation (whitelist is required)
     safe_env = SafeEnv(env)
     allowed_raw = safe_env.get("ALLOWED_EMAILS", "")
     allowed_emails = _parse_allowed_emails(allowed_raw)
 
-    if allowed_emails:
-        user_email = user_data.get("email", "")
-        if user_email not in allowed_emails:
-            # Revoke the session
-            await delete_session(env.SESSIONS, session_id)
-            raise HTTPException(status_code=401, detail="Access revoked")
+    if not allowed_emails:
+        await delete_session(env.SESSIONS, session_id)
+        raise HTTPException(status_code=401, detail="ALLOWED_EMAILS is not configured")
+
+    user_email = user_data.get("email", "")
+    if user_email not in allowed_emails:
+        await delete_session(env.SESSIONS, session_id)
+        raise HTTPException(status_code=401, detail="Access revoked")
 
     # Refresh session TTL on each authenticated request so active users
     # are not forced to re-authenticate every 7 days.

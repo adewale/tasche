@@ -77,6 +77,18 @@ def _make_mock_response(
     return resp
 
 
+async def _noop_screenshot(client, url, account_id, api_token, **kwargs):
+    """Mock screenshot that returns fake image data."""
+    return b"FAKE_SCREENSHOT"
+
+
+def _browser_env(env: MockEnv) -> MockEnv:
+    """Add Browser Rendering config to a MockEnv."""
+    env.CF_ACCOUNT_ID = "test-account"
+    env.CF_API_TOKEN = "test-token"
+    return env
+
+
 def _make_mock_client(
     page_response: MagicMock | None = None,
     image_response: MagicMock | None = None,
@@ -115,11 +127,14 @@ class TestProcessArticleHappyPath:
         """On successful processing, article status is updated to 'ready'."""
         db = _TrackingD1()
         r2 = MockR2()
-        env = MockEnv(db=db, content=r2)
+        env = _browser_env(MockEnv(db=db, content=r2))
 
         mock_client = _make_mock_client()
 
-        with patch("articles.processing.httpx.AsyncClient", return_value=mock_client):
+        with (
+            patch("articles.processing.httpx.AsyncClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+        ):
             from articles.processing import process_article
 
             await process_article("art_001", "https://example.com/article", env)
@@ -138,11 +153,14 @@ class TestProcessArticleHappyPath:
         """content.html is stored in R2 under the correct key."""
         db = _TrackingD1()
         r2 = MockR2()
-        env = MockEnv(db=db, content=r2)
+        env = _browser_env(MockEnv(db=db, content=r2))
 
         mock_client = _make_mock_client()
 
-        with patch("articles.processing.httpx.AsyncClient", return_value=mock_client):
+        with (
+            patch("articles.processing.httpx.AsyncClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+        ):
             from articles.processing import process_article
 
             await process_article("art_002", "https://example.com/article", env)
@@ -153,11 +171,14 @@ class TestProcessArticleHappyPath:
         """Markdown is stored only in D1, not in R2."""
         db = _TrackingD1()
         r2 = MockR2()
-        env = MockEnv(db=db, content=r2)
+        env = _browser_env(MockEnv(db=db, content=r2))
 
         mock_client = _make_mock_client()
 
-        with patch("articles.processing.httpx.AsyncClient", return_value=mock_client):
+        with (
+            patch("articles.processing.httpx.AsyncClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+        ):
             from articles.processing import process_article
 
             await process_article("art_003", "https://example.com/article", env)
@@ -168,11 +189,14 @@ class TestProcessArticleHappyPath:
         """metadata.json is stored in R2 with correct article metadata."""
         db = _TrackingD1()
         r2 = MockR2()
-        env = MockEnv(db=db, content=r2)
+        env = _browser_env(MockEnv(db=db, content=r2))
 
         mock_client = _make_mock_client()
 
-        with patch("articles.processing.httpx.AsyncClient", return_value=mock_client):
+        with (
+            patch("articles.processing.httpx.AsyncClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+        ):
             from articles.processing import process_article
 
             await process_article("art_004", "https://example.com/article", env)
@@ -260,8 +284,8 @@ class TestProcessArticleScreenshot:
         assert "original_key" in sql
         assert "articles/art_okf/original.webp" in params
 
-    async def test_no_screenshot_without_browser_rendering(self) -> None:
-        """Without CF_ACCOUNT_ID/CF_API_TOKEN, no screenshots are captured."""
+    async def test_fails_without_browser_rendering_config(self) -> None:
+        """Without CF_ACCOUNT_ID/CF_API_TOKEN, processing fails."""
         db = _TrackingD1()
         r2 = MockR2()
         env = MockEnv(db=db, content=r2)
@@ -274,9 +298,13 @@ class TestProcessArticleScreenshot:
 
             await process_article("art_noss", "https://example.com/article", env)
 
-        # No screenshot files in R2
-        assert "articles/art_noss/thumbnail.webp" not in r2._store
-        assert "articles/art_noss/original.webp" not in r2._store
+        # Article should be marked as 'failed'
+        failed_updates = [
+            (sql, params)
+            for sql, params in db.executed
+            if "status" in sql and "failed" in str(params)
+        ]
+        assert len(failed_updates) >= 1
 
     async def test_full_page_screenshot_failure_non_fatal(self) -> None:
         """If full-page screenshot fails, processing still succeeds."""
@@ -378,11 +406,14 @@ class TestProcessArticleD1Updates:
         """The final D1 UPDATE includes all required metadata fields."""
         db = _TrackingD1()
         r2 = MockR2()
-        env = MockEnv(db=db, content=r2)
+        env = _browser_env(MockEnv(db=db, content=r2))
 
         mock_client = _make_mock_client()
 
-        with patch("articles.processing.httpx.AsyncClient", return_value=mock_client):
+        with (
+            patch("articles.processing.httpx.AsyncClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+        ):
             from articles.processing import process_article
 
             await process_article("art_fields", "https://example.com/article", env)
@@ -420,11 +451,14 @@ class TestProcessArticleD1Updates:
         """The first D1 operation sets status to 'processing'."""
         db = _TrackingD1()
         r2 = MockR2()
-        env = MockEnv(db=db, content=r2)
+        env = _browser_env(MockEnv(db=db, content=r2))
 
         mock_client = _make_mock_client()
 
-        with patch("articles.processing.httpx.AsyncClient", return_value=mock_client):
+        with (
+            patch("articles.processing.httpx.AsyncClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+        ):
             from articles.processing import process_article
 
             await process_article("art_proc", "https://example.com/article", env)
