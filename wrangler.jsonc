@@ -8,9 +8,9 @@
   // Use --env production for custom domain deployments.
   "workers_dev": true,
   "vars": { "ALLOWED_EMAILS": "", "SITE_URL": "https://tasche.<your-subdomain>.workers.dev" },
-  "d1_databases": [{ "binding": "DB" }],
-  "r2_buckets": [{ "binding": "CONTENT" }],
-  "kv_namespaces": [{ "binding": "SESSIONS" }],
+  "d1_databases": [{ "binding": "DB", "database_name": "tasche-db", "database_id": "7f0dfc00-1891-4d8a-9876-03dbd8cf6804" }],
+  "r2_buckets": [{ "binding": "CONTENT", "bucket_name": "tasche-content" }],
+  "kv_namespaces": [{ "binding": "SESSIONS", "id": "7ca9ebd65b3e40638ec32f5c635483de" }],
   "queues": {
     "producers": [{ "binding": "ARTICLE_QUEUE", "queue": "tasche-articles" }],
     "consumers": [{ "queue": "tasche-articles", "max_batch_size": 10, "max_batch_timeout": 60 }]
