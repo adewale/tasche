@@ -101,8 +101,15 @@ def _to_py_safe(value: Any, depth: int = 0) -> Any:
         # Use the built-in .to_py() first — it handles most cases.
         try:
             converted = value.to_py()
-        except Exception:
-            return value
+        except Exception as exc:
+            import json as _json
+
+            print(
+                _json.dumps(
+                    {"event": "ffi_conversion_error", "error": str(exc)[:200]}
+                )
+            )
+            return None
 
         # to_py() may return nested JsProxy objects inside dicts/lists;
         # recurse to clean them up.
@@ -158,7 +165,7 @@ def _to_js_value(value: Any) -> Any:
         return to_js(value, dict_converter=js.Object.fromEntries)
 
     if isinstance(value, (list, tuple)):
-        return to_js(value)
+        return to_js(value, dict_converter=js.Object.fromEntries)
 
     # Primitives (str, int, float, bool) cross the FFI boundary as-is.
     return value

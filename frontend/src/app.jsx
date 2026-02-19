@@ -1,3 +1,4 @@
+import { Component } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 
 import { Toast } from './components/Toast.jsx';
@@ -33,6 +34,29 @@ function AuthGuard({ component: Component, ...props }) {
     return <Login />;
   }
   return <Component {...props} />;
+}
+
+class ErrorBoundary extends Component {
+  state = { error: null };
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: '2rem', textAlign: 'center' }}>
+          <h2>Something went wrong</h2>
+          <p>{this.state.error.message}</p>
+          <button onClick={() => { this.setState({ error: null }); window.location.hash = '#/'; }}>
+            Reload
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 export function App() {
@@ -120,7 +144,9 @@ export function App() {
 
   return (
     <div id="app">
-      <AppRouter />
+      <ErrorBoundary>
+        <AppRouter />
+      </ErrorBoundary>
       <Toast />
       <AudioPlayer />
     </div>

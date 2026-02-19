@@ -84,6 +84,21 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
     db = env.DB  # type: ignore[attr-defined]
     r2 = env.CONTENT  # type: ignore[attr-defined]
 
+    # Pre-initialise variables that are assigned inside the httpx block but
+    # referenced after it.  This prevents UnboundLocalError when an exception
+    # occurs before these variables are assigned.
+    image_map: dict[str, str] = {}
+    clean_html: str = ""
+    final_url: str = original_url
+    canonical_url: str = ""
+    domain: str = ""
+    title: str = ""
+    excerpt: str = ""
+    author: str | None = None
+    thumbnail_key: str | None = None
+    original_key: str | None = None
+    markdown: str = ""
+
     try:
         # Step 1: Update status to 'processing'
         await (
@@ -323,6 +338,8 @@ async def _fetch_page(
     httpx.HTTPStatusError
         When the response status is 4xx or 5xx.
     """
+    _MAX_CONTENT_LENGTH = 10_485_760  # 10 MB
+
     resp = await client.get(
         url,
         timeout=30.0,
@@ -331,6 +348,23 @@ async def _fetch_page(
         },
     )
     resp.raise_for_status()
+
+    # Validate Content-Length before reading body into memory
+    content_length = resp.headers.get("content-length")
+    if content_length is not None and int(content_length) > _MAX_CONTENT_LENGTH:
+        raise ValueError(
+            f"Response too large: Content-Length {content_length} exceeds "
+            f"limit of {_MAX_CONTENT_LENGTH} bytes"
+        )
+
+    # Validate Content-Type before reading body into memory
+    content_type = resp.headers.get("content-type", "")
+    mime = content_type.split(";")[0].strip().lower()
+    if mime and mime not in ("text/html", "application/xhtml+xml"):
+        raise ValueError(
+            f"Unexpected Content-Type '{mime}': expected text/html or application/xhtml+xml"
+        )
+
     return resp.text, str(resp.url)
 
 

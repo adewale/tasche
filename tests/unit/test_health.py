@@ -15,51 +15,41 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.articles.routes import router
-from src.auth.session import COOKIE_NAME, create_session
-from tests.conftest import ArticleFactory, MockD1, MockEnv, MockQueue, MockR2
-from tests.unit.test_processing import (
+from src.auth.session import COOKIE_NAME
+from tests.conftest import (
+    ArticleFactory,
+    MockD1,
+    MockEnv,
+    MockQueue,
+    MockR2,
     _browser_env,
     _make_mock_client,
+    _make_test_app,
     _noop_screenshot,
-    _TrackingD1,
+)
+from tests.conftest import (
+    TrackingD1 as _TrackingD1,
+)
+from tests.conftest import (
+    _authenticated_client as _authenticated_client_base,
 )
 
 # =========================================================================
 # Helpers
 # =========================================================================
 
-_USER_DATA: dict[str, Any] = {
-    "user_id": "user_001",
-    "email": "test@example.com",
-    "username": "tester",
-    "avatar_url": "https://github.com/avatar.png",
-    "created_at": "2025-01-01T00:00:00",
-}
+_ROUTERS = ((router, "/api/articles"),)
 
 
-def _make_app(env: Any) -> FastAPI:
-    """Create a FastAPI app with the articles router and env injection."""
-    test_app = FastAPI()
-
-    @test_app.middleware("http")
-    async def inject_env(request, call_next):
-        request.scope["env"] = env
-        return await call_next(request)
-
-    test_app.include_router(router, prefix="/api/articles")
-    return test_app
+def _make_app(env):
+    return _make_test_app(env, *_ROUTERS)
 
 
 async def _authenticated_client(env: MockEnv) -> tuple[TestClient, str]:
-    """Create a test client with a valid session cookie."""
-    session_id = await create_session(env.SESSIONS, _USER_DATA)
-    app = _make_app(env)
-    client = TestClient(app, raise_server_exceptions=False)
-    return client, session_id
+    return await _authenticated_client_base(env, *_ROUTERS)
 
 
 # =========================================================================

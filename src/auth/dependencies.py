@@ -10,15 +10,14 @@ from typing import Any
 
 from fastapi import HTTPException, Request
 
-from auth.session import COOKIE_NAME, delete_session, get_session, refresh_session
+from auth.session import (
+    COOKIE_NAME,
+    delete_session,
+    get_session,
+    parse_allowed_emails,
+    refresh_session,
+)
 from wrappers import SafeEnv
-
-
-def _parse_allowed_emails(raw: str) -> set[str]:
-    """Parse a comma-separated list of allowed emails into a set."""
-    if not raw:
-        return set()
-    return {email.strip() for email in raw.split(",") if email.strip()}
 
 
 async def get_current_user(request: Request) -> dict[str, Any]:
@@ -46,19 +45,23 @@ async def get_current_user(request: Request) -> dict[str, Any]:
     # Re-check ALLOWED_EMAILS to handle revocation (whitelist is required)
     safe_env = SafeEnv(env)
     allowed_raw = safe_env.get("ALLOWED_EMAILS", "")
-    allowed_emails = _parse_allowed_emails(allowed_raw)
+    allowed_emails = parse_allowed_emails(allowed_raw)
 
     if not allowed_emails:
         await delete_session(env.SESSIONS, session_id)
         raise HTTPException(status_code=401, detail="ALLOWED_EMAILS is not configured")
 
     user_email = user_data.get("email", "")
-    if user_email not in allowed_emails:
+    if user_email.lower() not in allowed_emails:
         await delete_session(env.SESSIONS, session_id)
         raise HTTPException(status_code=401, detail="Access revoked")
 
     # Refresh session TTL on each authenticated request so active users
     # are not forced to re-authenticate every 7 days.
     await refresh_session(env.SESSIONS, session_id, user_data)
+
+    # Store user_id on request.state so the observability middleware can
+    # read it without a separate KV lookup.
+    request.state.user_id = user_data.get("user_id")
 
     return user_data

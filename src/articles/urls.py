@@ -6,6 +6,7 @@ checking across the three URL columns in the articles table.
 
 from __future__ import annotations
 
+import ipaddress
 from typing import Any
 from urllib.parse import urlparse
 
@@ -35,7 +36,7 @@ def _is_private_hostname(hostname: str) -> bool:
     if hostname in _BLOCKED_HOSTNAMES:
         return True
 
-    # Check IP-based patterns
+    # Check IP-based patterns (manual octet check for IPv4)
     parts = hostname.split(".")
     if len(parts) == 4:
         try:
@@ -60,6 +61,27 @@ def _is_private_hostname(hostname: str) -> bool:
                 return True
         except (ValueError, IndexError):
             pass
+
+    # Use the ipaddress module to catch IPv6, IPv6-mapped IPv4 (e.g.
+    # ::ffff:127.0.0.1), and any other numeric address formats that the
+    # manual octet check above does not cover.
+    try:
+        addr = ipaddress.ip_address(hostname)
+        if addr.is_private or addr.is_loopback or addr.is_reserved or addr.is_link_local:
+            return True
+        # IPv6-mapped IPv4: check the embedded IPv4 address as well
+        if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped:
+            mapped = addr.ipv4_mapped
+            if (
+                mapped.is_private
+                or mapped.is_loopback
+                or mapped.is_reserved
+                or mapped.is_link_local
+            ):
+                return True
+    except ValueError:
+        # Not a valid IP literal — it's a hostname, which is fine
+        pass
 
     return False
 

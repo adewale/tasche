@@ -75,7 +75,19 @@ async def listen_later(
         "article_id": article_id,
         "user_id": user_id,
     })
-    await env.ARTICLE_QUEUE.send(message)
+    try:
+        await env.ARTICLE_QUEUE.send(message)
+    except Exception:
+        # Roll back D1 status on queue failure
+        await (
+            db.prepare(
+                "UPDATE articles SET audio_status = NULL, updated_at = ? "
+                "WHERE id = ? AND user_id = ?"
+            )
+            .bind(now, article_id, user_id)
+            .run()
+        )
+        raise HTTPException(status_code=503, detail="Failed to enqueue TTS job")
 
     return {"id": article_id, "audio_status": "pending"}
 
@@ -143,13 +155,21 @@ async def get_audio(
             finally:
                 reader.releaseLock()
 
+        headers = {}
+        content_length = getattr(audio_obj, "size", None)
+        if content_length is not None:
+            headers["Content-Length"] = str(content_length)
+
         return StreamingResponse(
             _stream_body(),
             media_type="audio/mpeg",
+            headers=headers,
         )
 
     # Fallback: load entire buffer (for mocks / non-streaming environments)
     audio_bytes = await audio_obj.arrayBuffer()
+    if hasattr(audio_bytes, "to_py"):
+        audio_bytes = bytes(audio_bytes.to_py())
 
     async def _stream():
         yield audio_bytes

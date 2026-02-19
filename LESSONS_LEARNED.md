@@ -103,10 +103,11 @@ Each phase was implemented by a sub-agent, then audited by a separate sub-agent.
 
 ## Final Stats
 
-- **Total test count:** 239 tests passing (203 original + 36 new)
+- **Total test count:** 280 tests passing
 - **Lint:** `ruff check src/ tests/` — all clean
 - **Total audit iterations:** 17 (9 initial audits + 8 re-audits after fixes)
 - **Phases 8 and 9 passed audit on first attempt** — all others required one fix cycle
+- **UI audit (v0.2):** 17 LLM tells identified and fixed; Worker-first routing adopted
 
 ## Patterns Discovered
 
@@ -281,7 +282,34 @@ The original spec had implicit phase references ("Phase 2: auth router", "Phase 
 
 **Lesson:** Make milestones explicit. If they're not written down, they don't exist — and a coding agent will simply work through the spec top-to-bottom, building whatever it encounters first.
 
-### 24. Specs That Are Precise About the Backend and Vague About the Frontend Will Get Exactly a Backend
+### 24. SPA Asset Routing Silently Swallows API Navigation Requests
+
+The `not_found_handling: "single-page-application"` setting in Cloudflare Workers assets config intercepts ALL browser navigation requests (`Sec-Fetch-Mode: navigate`) to paths that don't match a file, and serves `index.html` instead. This silently broke `/api/auth/login` — the only API route accessed via an `<a>` tag rather than JavaScript `fetch()`.
+
+Three things conspired to hide the bug:
+1. **Unit tests bypass the asset layer** — TestClient talks directly to FastAPI, so the routing conflict is invisible.
+2. **`curl` doesn't reproduce it** — curl doesn't send `Sec-Fetch-Mode: navigate`, so the asset layer doesn't intercept.
+3. **Only one route was affected** — every other API call uses JS `fetch()`, which doesn't trigger navigation mode.
+
+The fix was architectural: use the ASSETS binding so the Worker runs first and routes `/api/*` to FastAPI before the asset layer ever sees the request. SPA fallback is now explicit code in the Worker's `fetch()` handler, not an implicit config flag that can't distinguish API routes from page routes.
+
+**Lesson:** When mixing API routes with SPA static assets on Cloudflare Workers, always use Worker-first routing (ASSETS binding). Never rely on `not_found_handling: "single-page-application"` — it cannot distinguish between client-side routes and server-side API endpoints. Test navigation flows with a real browser, not `curl`.
+
+### 25. LLM-Generated UI Has Recognisable Tells
+
+An audit of the Tasche frontend identified 17 telltale signs of LLM-generated UI: emoji as icons (render inconsistently across platforms), ornate ASCII-art CSS comment blocks, hand-rolled utilities that mimic Tailwind, unused CSS for features that were never implemented (modal styles with `window.confirm()` usage), marketing taglines as UI copy, installed-but-unused npm dependencies (`preact-router` in package.json while using a hand-rolled router), duplicate logic across components, hardcoded Apple HIG colour values, a hand-rolled markdown renderer that misses edge cases, and inline styles mixed with CSS classes.
+
+The fixes: inline SVG icons (no dependency), `marked` library (8KB, handles all edge cases), removed unused deps, deduplicated shared logic, shifted the colour palette, stripped ornate comments.
+
+**Lesson:** LLM-generated UIs are functional but generic. The strongest tells are: emoji as icons, marketing copy where functional text belongs, generating "complete" design systems (modals, utilities) that go unused, and including dependencies that are never imported. An audit pass specifically looking for these patterns is worthwhile before shipping.
+
+### 26. Cookie `secure` Flag Must Match the Protocol
+
+The session cookie was set with `secure: True` unconditionally, which means browsers reject it over plain `http://localhost`. This makes local development impossible — OAuth completes but the session cookie is silently dropped.
+
+**Lesson:** Derive the `secure` flag from `SITE_URL` — `True` when it starts with `https://`, `False` otherwise. This is a single line of code but completely blocks local testing if missed.
+
+### 27. Specs That Are Precise About the Backend and Vague About the Frontend Will Get Exactly a Backend
 
 This is the meta-lesson that encompasses all the above. The original spec had:
 - 14-step processing pipeline with numbered steps ← precise

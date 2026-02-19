@@ -1,5 +1,9 @@
--- Add last_checked_at column to track when the original URL was last health-checked.
--- The original_status column already exists from 0001_initial.sql; this migration
--- adds the timestamp needed for periodic re-checking of original URLs.
+-- Migration 0003: original_status additions
+--
+-- This migration originally added last_checked_at, but that column is
+-- already defined in 0001_initial.sql (line 51). The ALTER TABLE has been
+-- removed to avoid a "duplicate column name" error on fresh deploys.
+--
+-- last_checked_at already defined in 0001_initial.sql
 
-ALTER TABLE articles ADD COLUMN last_checked_at TEXT DEFAULT NULL;
+-- No-op: all columns from this migration are present in the initial schema.

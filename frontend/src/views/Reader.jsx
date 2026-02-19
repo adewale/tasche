@@ -1,8 +1,12 @@
-import { useState, useEffect, useRef } from 'preact/hooks';
+import { useState, useEffect } from 'preact/hooks';
 import { Header } from '../components/Header.jsx';
 import { TagPicker } from '../components/TagPicker.jsx';
 import { playAudio } from '../components/AudioPlayer.jsx';
 import { currentArticle, addToast } from '../state.js';
+import {
+  IconArrowLeft, IconStar, IconExternalLink, IconPlay,
+  IconHeadphones, IconClock, IconDownload, IconCheck,
+} from '../components/Icons.jsx';
 import {
   getArticle,
   getArticleContent,
@@ -14,6 +18,7 @@ import {
   saveAudioOffline,
   isOfflineCached,
 } from '../api.js';
+import DOMPurify from 'dompurify';
 import { renderMarkdown } from '../markdown.js';
 import { escapeHtml } from '../utils.js';
 
@@ -26,19 +31,35 @@ export function Reader({ id }) {
   const [offlineStatus, setOfflineStatus] = useState({ cached: false, hasContent: false, hasAudio: false });
   const [savingOffline, setSavingOffline] = useState(false);
   const [savingAudioOffline, setSavingAudioOffline] = useState(false);
-  const scrollTimerRef = useRef(null);
 
   useEffect(() => {
-    loadArticle();
-    // Check offline cache status
-    isOfflineCached(id).then(function (status) {
+    const currentId = id;
+    let scrollTimer = null;
+
+    function handleScroll() {
+      if (scrollTimer) clearTimeout(scrollTimer);
+      scrollTimer = setTimeout(function () {
+        if (currentId !== id) return;
+        const scrollTop = window.scrollY || document.documentElement.scrollTop;
+        const docHeight =
+          document.documentElement.scrollHeight - document.documentElement.clientHeight;
+        if (docHeight <= 0) return;
+        const progress = Math.min(1, Math.max(0, scrollTop / docHeight));
+        updateArticle(currentId, {
+          scroll_position: Math.round(progress * 10000) / 10000,
+          reading_progress: Math.round(progress * 100) / 100,
+        }).catch(function () {});
+      }, 1000);
+    }
+
+    loadArticle(currentId, handleScroll);
+    isOfflineCached(currentId).then(function (status) {
       setOfflineStatus(status);
     });
 
-    // Listen for SW messages about offline save results
     function handleSWMessage(event) {
       if (!event.data) return;
-      if (event.data.type === 'OFFLINE_SAVED' && event.data.articleId === id) {
+      if (event.data.type === 'OFFLINE_SAVED' && event.data.articleId === currentId) {
         if (event.data.what === 'content') {
           setOfflineStatus(function (prev) { return { ...prev, cached: true, hasContent: true }; });
           setSavingOffline(false);
@@ -49,7 +70,7 @@ export function Reader({ id }) {
           addToast('Audio downloaded for offline listening', 'success');
         }
       }
-      if (event.data.type === 'OFFLINE_SAVE_ERROR' && event.data.articleId === id) {
+      if (event.data.type === 'OFFLINE_SAVE_ERROR' && event.data.articleId === currentId) {
         if (event.data.what === 'content') {
           setSavingOffline(false);
           addToast('Failed to save for offline', 'error');
@@ -64,10 +85,11 @@ export function Reader({ id }) {
       navigator.serviceWorker.addEventListener('message', handleSWMessage);
     }
 
-    return () => {
-      // Clean up scroll tracking
-      if (scrollTimerRef.current) {
-        clearTimeout(scrollTimerRef.current);
+    window.addEventListener('scroll', handleScroll);
+
+    return function () {
+      if (scrollTimer) {
+        clearTimeout(scrollTimer);
       }
       window.removeEventListener('scroll', handleScroll);
       if ('serviceWorker' in navigator) {
@@ -76,67 +98,45 @@ export function Reader({ id }) {
     };
   }, [id]);
 
-  async function loadArticle() {
+  async function loadArticle(currentId, handleScroll) {
     try {
-      const art = await getArticle(id);
+      const art = await getArticle(currentId);
       setArticle(art);
       currentArticle.value = art;
 
-      // Determine content to show: try R2 HTML first, fall back to markdown
       let html = '';
-      const r2Html = await getArticleContent(id);
+      const r2Html = await getArticleContent(currentId);
       if (r2Html) {
-        html = r2Html;
+        html = DOMPurify.sanitize(r2Html);
       } else if (art.markdown_content) {
         html = renderMarkdown(art.markdown_content);
       } else if (art.excerpt) {
         html = '<p>' + escapeHtml(art.excerpt) + '</p>';
       } else if (art.status === 'pending') {
-        html = '<p class="text-muted">Article is being processed. Refresh in a moment.</p>';
+        html = '<p style="color:var(--text-muted)">Article is being processed. Refresh in a moment.</p>';
       } else {
         html =
-          '<p class="text-muted">No content available. <a href="' +
+          '<p style="color:var(--text-muted)">No content available. <a href="' +
           escapeHtml(art.original_url) +
-          '" target="_blank" rel="noopener">View original</a></p>';
+          '" target="_blank" rel="noopener noreferrer">View original</a></p>';
       }
       setContentHtml(html);
 
-      // Mark as reading if currently unread
       if (art.reading_status === 'unread') {
-        updateArticle(id, { reading_status: 'reading' }).catch(() => {});
+        updateArticle(currentId, { reading_status: 'reading' }).catch(function () {});
       }
 
-      // Restore scroll position
       if (art.scroll_position && parseFloat(art.scroll_position) > 0) {
-        setTimeout(() => {
+        setTimeout(function () {
           const pct = parseFloat(art.scroll_position);
           const docHeight =
             document.documentElement.scrollHeight - document.documentElement.clientHeight;
-          const targetScroll = pct * docHeight;
-          window.scrollTo(0, targetScroll);
+          window.scrollTo(0, pct * docHeight);
         }, 100);
       }
-
-      // Set up scroll tracking
-      window.addEventListener('scroll', handleScroll);
     } catch (e) {
       setLoadError(e.message);
     }
-  }
-
-  function handleScroll() {
-    if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
-    scrollTimerRef.current = setTimeout(() => {
-      const scrollTop = window.scrollY || document.documentElement.scrollTop;
-      const docHeight =
-        document.documentElement.scrollHeight - document.documentElement.clientHeight;
-      if (docHeight <= 0) return;
-      const progress = Math.min(1, Math.max(0, scrollTop / docHeight));
-      updateArticle(id, {
-        scroll_position: Math.round(progress * 10000) / 10000,
-        reading_progress: Math.round(progress * 100) / 100,
-      }).catch(() => {});
-    }, 1000);
   }
 
   async function handleFavorite() {
@@ -155,8 +155,8 @@ export function Reader({ id }) {
       await updateArticle(id, { reading_status: e.target.value });
       setArticle({ ...article, reading_status: e.target.value });
       addToast('Status updated', 'success');
-    } catch (e2) {
-      addToast(e2.message, 'error');
+    } catch (err) {
+      addToast(err.message, 'error');
     }
   }
 
@@ -225,7 +225,7 @@ export function Reader({ id }) {
           <div class="empty-state">
             <div class="empty-state-title">Could not load article</div>
             <div class="empty-state-text">{loadError}</div>
-            <a href="#/" class="btn btn-secondary mt-4">
+            <a href="#/" class="btn btn-secondary" style={{ marginTop: '16px' }}>
               Back to articles
             </a>
           </div>
@@ -270,7 +270,7 @@ export function Reader({ id }) {
       <main class="main-content">
         <div class="reader-header">
           <a href="#/" class="reader-back">
-            {'\u2190'} Back to articles
+            <IconArrowLeft /> Back to articles
           </a>
           <h1 class="reader-title">{article.title || 'Untitled'}</h1>
           <div class="reader-meta">
@@ -279,7 +279,7 @@ export function Reader({ id }) {
             )}
             {article.domain && (
               <span class="reader-meta-item">
-                <a href={article.original_url} target="_blank" rel="noopener">
+                <a href={article.original_url} target="_blank" rel="noopener noreferrer">
                   {article.domain}
                 </a>
               </span>
@@ -295,8 +295,8 @@ export function Reader({ id }) {
             {ostatus === 'available' && (
               <span>
                 Original available{' '}
-                <a href={article.original_url} target="_blank" rel="noopener">
-                  View Original {'\u2197'}
+                <a href={article.original_url} target="_blank" rel="noopener noreferrer">
+                  View Original <IconExternalLink />
                 </a>
               </span>
             )}
@@ -327,11 +327,10 @@ export function Reader({ id }) {
               class={'btn btn-sm ' + (isFav ? 'btn-primary' : 'btn-secondary')}
               onClick={handleFavorite}
             >
-              {isFav ? '\u2605 Favorited' : '\u2606 Favorite'}
+              <IconStar filled={!!isFav} size={14} /> {isFav ? 'Favorited' : 'Favorite'}
             </button>
             <select
-              class="input"
-              style="width:auto;padding:4px 10px;font-size:0.8125rem;"
+              class="input input-inline-select"
               value={statusClass}
               onChange={handleStatusChange}
             >
@@ -347,12 +346,12 @@ export function Reader({ id }) {
               {savingOffline
                 ? 'Saving...'
                 : offlineStatus.hasContent
-                  ? '\u2713 Saved offline'
-                  : '\u2913 Save for offline'}
+                  ? <><IconCheck size={14} /> Saved offline</>
+                  : <><IconDownload size={14} /> Save for offline</>}
             </button>
             {hasAudio && (
               <button class="btn btn-sm btn-secondary" onClick={handlePlayAudio}>
-                {'\u25B6'} Listen
+                <IconPlay size={14} /> Listen
               </button>
             )}
             {hasAudio && (
@@ -364,27 +363,27 @@ export function Reader({ id }) {
                 {savingAudioOffline
                   ? 'Downloading...'
                   : offlineStatus.hasAudio
-                    ? '\u2713 Audio offline'
-                    : '\u2913 Download audio'}
+                    ? <><IconCheck size={14} /> Audio offline</>
+                    : <><IconDownload size={14} /> Download audio</>}
               </button>
             )}
             {canRequestAudio && (
               <button class="btn btn-sm btn-secondary" onClick={handleListenLater}>
-                {'\uD83C\uDFA7'} Listen Later
+                <IconHeadphones size={14} /> Listen Later
               </button>
             )}
             {audioPending && (
-              <span class="btn btn-sm btn-secondary" disabled>
-                {'\u23F3'} Generating audio...
-              </span>
+              <button class="btn btn-sm btn-secondary" disabled>
+                <IconClock size={14} /> Generating audio...
+              </button>
             )}
             <a
               href={article.original_url}
               target="_blank"
-              rel="noopener"
+              rel="noopener noreferrer"
               class="btn btn-sm btn-secondary"
             >
-              {'\u2197'} Original
+              <IconExternalLink /> Original
             </a>
             <button class="btn btn-sm btn-danger" onClick={handleDelete}>
               Delete

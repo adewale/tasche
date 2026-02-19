@@ -22,6 +22,53 @@ from wrappers import _to_js_value, d1_first, d1_rows
 
 router = APIRouter()
 
+
+async def _stream_r2_object(
+    r2_obj: Any,
+    media_type: str,
+    cache_control: str = "public, max-age=86400",
+) -> Response:
+    """Stream an R2 object as an HTTP response.
+
+    Tries to use the R2 ReadableStream body for true streaming.  Falls back to
+    loading the entire buffer via ``arrayBuffer()`` for mock / non-streaming
+    environments.
+    """
+    body = getattr(r2_obj, "body", None)
+
+    if body is not None and hasattr(body, "getReader"):
+
+        async def _stream():
+            reader = body.getReader()
+            try:
+                while True:
+                    result = await reader.read()
+                    done = getattr(result, "done", True)
+                    if done:
+                        break
+                    chunk = getattr(result, "value", None)
+                    if chunk is not None:
+                        if hasattr(chunk, "to_py"):
+                            yield bytes(chunk.to_py())
+                        else:
+                            yield bytes(chunk)
+            finally:
+                reader.releaseLock()
+
+        return StreamingResponse(
+            _stream(),
+            media_type=media_type,
+            headers={"Cache-Control": cache_control},
+        )
+
+    # Fallback: load entire buffer (for mocks / non-streaming environments)
+    image_data = await r2_obj.arrayBuffer()
+    return Response(
+        content=bytes(image_data) if not isinstance(image_data, bytes) else image_data,
+        media_type=media_type,
+        headers={"Cache-Control": cache_control},
+    )
+
 # Column list for the list endpoint — excludes large fields like markdown_content.
 _LIST_COLUMNS = (
     "id, user_id, original_url, final_url, canonical_url, domain, title, "
@@ -32,6 +79,8 @@ _LIST_COLUMNS = (
 )
 
 _VALID_READING_STATUSES = {"unread", "reading", "archived"}
+_VALID_STATUSES = {"pending", "processing", "ready", "failed"}
+_VALID_AUDIO_STATUSES = {"pending", "generating", "ready", "failed"}
 
 
 async def _get_user_article(
@@ -40,7 +89,14 @@ async def _get_user_article(
     user_id: str,
     fields: str = "*",
 ) -> dict[str, Any]:
-    """Fetch an article by ID for a user, or raise 404."""
+    """Fetch an article by ID for a user, or raise 404.
+
+    .. warning::
+
+        The *fields* parameter is interpolated directly into the SQL query.
+        It must **never** contain user-supplied input.  Only pass hard-coded
+        column lists defined in this module.
+    """
     article = d1_first(
         await db.prepare(f"SELECT {fields} FROM articles WHERE id = ? AND user_id = ?")
         .bind(article_id, user_id)
@@ -125,7 +181,25 @@ async def create_article(
             "user_id": user_id,
         }
     )
-    await env.ARTICLE_QUEUE.send(message)
+    try:
+        await env.ARTICLE_QUEUE.send(message)
+    except Exception as exc:
+        # Mark article as failed if we cannot enqueue the processing job
+        fail_now = datetime.now(UTC).isoformat()
+        try:
+            await (
+                db.prepare(
+                    "UPDATE articles SET status = ?, updated_at = ? WHERE id = ?"
+                )
+                .bind("failed", fail_now, article_id)
+                .run()
+            )
+        except Exception:
+            pass  # Best-effort status update
+        raise HTTPException(
+            status_code=503,
+            detail="Failed to enqueue article for processing",
+        ) from exc
 
     return {"id": article_id, "status": "pending"}
 
@@ -151,6 +225,23 @@ async def list_articles(
     env = request.scope["env"]
     db = env.DB
     user_id = user["user_id"]
+
+    # Validate enum query parameters
+    if status is not None and status not in _VALID_STATUSES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"status must be one of: {', '.join(sorted(_VALID_STATUSES))}",
+        )
+    if reading_status is not None and reading_status not in _VALID_READING_STATUSES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"reading_status must be one of: {', '.join(sorted(_VALID_READING_STATUSES))}",
+        )
+    if audio_status is not None and audio_status not in _VALID_AUDIO_STATUSES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"audio_status must be one of: {', '.join(sorted(_VALID_AUDIO_STATUSES))}",
+        )
 
     where_clauses = ["user_id = ?"]
     params: list[Any] = [user_id]
@@ -295,7 +386,13 @@ async def get_article_content(
     if html_content is None:
         raise HTTPException(status_code=404, detail="Content not found in storage")
 
-    return HTMLResponse(content=html_content)
+    response = HTMLResponse(content=html_content)
+    # Restrictive CSP prevents scripts in fetched article HTML from executing,
+    # even if DOMPurify is bypassed.
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; img-src * data:; style-src 'unsafe-inline'"
+    )
+    return response
 
 
 @router.get("/{article_id}/metadata")
@@ -357,40 +454,7 @@ async def get_article_thumbnail(
             detail="Thumbnail not found in storage",
         )
 
-    # Stream from R2 body if available, otherwise fall back to arrayBuffer
-    body = getattr(obj, "body", None)
-
-    if body is not None and hasattr(body, "getReader"):
-        async def _stream_thumbnail():
-            reader = body.getReader()
-            try:
-                while True:
-                    result = await reader.read()
-                    done = getattr(result, "done", True)
-                    if done:
-                        break
-                    chunk = getattr(result, "value", None)
-                    if chunk is not None:
-                        if hasattr(chunk, "to_py"):
-                            yield bytes(chunk.to_py())
-                        else:
-                            yield bytes(chunk)
-            finally:
-                reader.releaseLock()
-
-        return StreamingResponse(
-            _stream_thumbnail(),
-            media_type="image/webp",
-            headers={"Cache-Control": "public, max-age=86400"},
-        )
-
-    # Fallback: load entire buffer (for mocks / non-streaming environments)
-    image_data = await obj.arrayBuffer()
-    return Response(
-        content=bytes(image_data) if not isinstance(image_data, bytes) else image_data,
-        media_type="image/webp",
-        headers={"Cache-Control": "public, max-age=86400"},
-    )
+    return await _stream_r2_object(obj, media_type="image/webp")
 
 
 @router.get("/{article_id}/screenshot")
@@ -427,40 +491,7 @@ async def get_article_screenshot(
             detail="Screenshot not found in storage",
         )
 
-    # Stream from R2 body if available, otherwise fall back to arrayBuffer
-    body = getattr(obj, "body", None)
-
-    if body is not None and hasattr(body, "getReader"):
-        async def _stream_screenshot():
-            reader = body.getReader()
-            try:
-                while True:
-                    result = await reader.read()
-                    done = getattr(result, "done", True)
-                    if done:
-                        break
-                    chunk = getattr(result, "value", None)
-                    if chunk is not None:
-                        if hasattr(chunk, "to_py"):
-                            yield bytes(chunk.to_py())
-                        else:
-                            yield bytes(chunk)
-            finally:
-                reader.releaseLock()
-
-        return StreamingResponse(
-            _stream_screenshot(),
-            media_type="image/webp",
-            headers={"Cache-Control": "public, max-age=86400"},
-        )
-
-    # Fallback: load entire buffer (for mocks / non-streaming environments)
-    image_data = await obj.arrayBuffer()
-    return Response(
-        content=bytes(image_data) if not isinstance(image_data, bytes) else image_data,
-        media_type="image/webp",
-        headers={"Cache-Control": "public, max-age=86400"},
-    )
+    return await _stream_r2_object(obj, media_type="image/webp")
 
 
 @router.patch("/{article_id}")
@@ -501,6 +532,20 @@ async def update_article(
         )
     if "is_favorite" in body and body["is_favorite"] not in (0, 1, True, False):
         raise HTTPException(status_code=422, detail="is_favorite must be 0 or 1")
+    if "reading_progress" in body:
+        rp = body["reading_progress"]
+        if isinstance(rp, (int, float)) and not (0.0 <= rp <= 1.0):
+            raise HTTPException(
+                status_code=422,
+                detail="reading_progress must be between 0.0 and 1.0",
+            )
+    if "scroll_position" in body:
+        sp = body["scroll_position"]
+        if isinstance(sp, (int, float)) and sp < 0:
+            raise HTTPException(
+                status_code=422,
+                detail="scroll_position must be >= 0",
+            )
 
     set_clauses: list[str] = []
     params: list[Any] = []

@@ -18,6 +18,15 @@ from bs4 import BeautifulSoup
 
 from articles.urls import _is_private_hostname
 
+# Mapping of MIME types to file extensions for stored images
+_MIME_TO_EXT: dict[str, str] = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+    "image/svg+xml": ".svg",
+}
+
 
 async def download_images(
     client: httpx.AsyncClient,
@@ -135,10 +144,22 @@ async def store_images(
     for img in images:
         url = img["url"]
         data = img["data"]
+        content_type = img.get("content_type", "")
+
+        # Determine file extension from Content-Type
+        ext = _MIME_TO_EXT.get(content_type, "")
+        if not ext:
+            # Fall back to the original URL extension, or .bin as last resort
+            path = urlparse(url).path
+            dot_pos = path.rfind(".")
+            ext = path[dot_pos:].lower() if dot_pos != -1 else ".bin"
+            # Sanitise: keep only short, alphanumeric extensions
+            if len(ext) > 5 or not ext[1:].isalnum():
+                ext = ".bin"
 
         # Deterministic hash from original URL
         url_hash = hashlib.sha256(url.encode()).hexdigest()[:16]
-        r2_key = f"articles/{article_id}/images/{url_hash}.webp"
+        r2_key = f"articles/{article_id}/images/{url_hash}{ext}"
 
         await r2.put(r2_key, data)
         image_map[url] = r2_key

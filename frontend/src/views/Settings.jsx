@@ -1,20 +1,11 @@
 import { Header } from '../components/Header.jsx';
-import { user, addToast } from '../state.js';
-import { logout as apiLogout } from '../api.js';
+import { user } from '../state.js';
+import { performLogout } from '../api.js';
 import { getBookmarkletCode } from '../utils.js';
+import { IconBookmark } from '../components/Icons.jsx';
 
 export function Settings() {
   const u = user.value;
-
-  async function handleLogout() {
-    try {
-      await apiLogout();
-    } catch (e) {
-      // ignore
-    }
-    user.value = null;
-    window.location.hash = '#/login';
-  }
 
   return (
     <>
@@ -22,27 +13,27 @@ export function Settings() {
       <main class="main-content">
         <h2 class="section-title">Settings</h2>
 
-        <div class="mt-4">
+        <div style={{ marginTop: '16px' }}>
           <h3 class="section-title">Bookmarklet</h3>
-          <p class="text-muted mb-4" style="font-size:0.875rem">
+          <p class="bookmarklet-hint">
             Drag this link to your bookmarks bar to save articles from any page:
           </p>
           <a
             href={getBookmarkletCode()}
             class="btn btn-secondary"
-            onClick={(e) => e.preventDefault()}
+            onClick={function (e) { e.preventDefault(); }}
           >
-            {'\uD83D\uDCCC'} Save to Tasche
+            <IconBookmark /> Save to Tasche
           </a>
         </div>
 
-        <div class="mt-8">
+        <div style={{ marginTop: '32px' }}>
           {u && (
-            <p style="font-size:0.875rem;margin-bottom:16px;">
+            <p class="settings-detail">
               Logged in as: <strong>{u.email || u.username || 'Unknown'}</strong>
             </p>
           )}
-          <button class="btn btn-secondary" onClick={handleLogout}>
+          <button class="btn btn-secondary" onClick={performLogout}>
             Log out
           </button>
         </div>

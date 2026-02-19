@@ -12,6 +12,7 @@ Covers:
 from __future__ import annotations
 
 import json
+import random
 from typing import Any
 from unittest.mock import patch
 
@@ -129,9 +130,7 @@ class TestWideEventRequiredFields:
         """request_id should come from cf-ray header when present."""
         app = _make_app()
         client = TestClient(app, raise_server_exceptions=False)
-        events = _capture_events(
-            capsys, client, "get", "/ok", headers={"cf-ray": "abc123-IAD"}
-        )
+        events = _capture_events(capsys, client, "get", "/ok", headers={"cf-ray": "abc123-IAD"})
 
         event = events[-1]
         assert event["request_id"] == "abc123-IAD"
@@ -235,7 +234,7 @@ class TestUserIdExtraction:
         assert event["user.id"] is None
 
     async def test_user_id_present_when_authenticated(self, capsys) -> None:
-        """user.id is populated from the session when a valid cookie is set."""
+        """user.id is populated from request.state when set by auth dependency."""
         env = MockEnv()
         user_data = {
             "user_id": "u42",
@@ -246,10 +245,30 @@ class TestUserIdExtraction:
         }
         session_id = await create_session(env.SESSIONS, user_data)
 
-        app = _make_app(env=env)
-        client = TestClient(app, raise_server_exceptions=False)
+        # Build a custom app where the route sets request.state.user_id
+        # (simulating what get_current_user does in real handlers).
+        test_app = FastAPI()
+
+        @test_app.middleware("http")
+        async def inject_env(request: Request, call_next):
+            request.scope["env"] = env
+            return await call_next(request)
+
+        test_app.add_middleware(ObservabilityMiddleware)
+
+        @test_app.get("/authenticated")
+        async def authenticated_route(request: Request):
+            from src.auth.session import get_session as _get_session
+
+            sid = request.cookies.get(COOKIE_NAME)
+            data = await _get_session(env.SESSIONS, sid)
+            if data:
+                request.state.user_id = data.get("user_id")
+            return {"status": "ok"}
+
+        client = TestClient(test_app, raise_server_exceptions=False)
         events = _capture_events(
-            capsys, client, "get", "/ok", cookies={COOKIE_NAME: session_id}
+            capsys, client, "get", "/authenticated", cookies={COOKIE_NAME: session_id}
         )
 
         event = events[-1]
@@ -297,6 +316,8 @@ class TestTailSampling:
 
     def test_slow_request_at_boundary_not_always_sampled(self) -> None:
         """Requests with duration_ms == 2000 are not considered slow (> 2000)."""
+        # Seed random for deterministic behavior
+        random.seed(123)
         event = {"status_code": 200, "duration_ms": 2000, "outcome": "success"}
         # At exactly 2000ms, the slow check does NOT trigger (> not >=),
         # so it falls through to random sampling.  With a 5% sample rate,
@@ -306,6 +327,8 @@ class TestTailSampling:
 
     def test_success_fast_request_sampled_at_low_rate(self) -> None:
         """Successful fast requests are sampled at ~5% (not all, not none)."""
+        # Seed random for deterministic behavior
+        random.seed(42)
         event = {"status_code": 200, "duration_ms": 50, "outcome": "success"}
         results = [_should_sample(event) for _ in range(2000)]
         sampled_count = sum(results)

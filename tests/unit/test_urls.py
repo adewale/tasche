@@ -109,6 +109,21 @@ class TestSsrfProtection:
         with pytest.raises(ValueError, match="private"):
             validate_url("https://metadata.google.internal/")
 
+    def test_blocks_ipv6_loopback(self) -> None:
+        """URLs with IPv6 loopback [::1] are rejected."""
+        with pytest.raises(ValueError, match="private"):
+            validate_url("https://[::1]/admin")
+
+    def test_blocks_ipv6_mapped_ipv4_loopback(self) -> None:
+        """URLs with IPv6-mapped IPv4 loopback [::ffff:127.0.0.1] are rejected."""
+        with pytest.raises(ValueError, match="private"):
+            validate_url("https://[::ffff:127.0.0.1]/")
+
+    def test_blocks_ipv6_mapped_ipv4_private(self) -> None:
+        """URLs with IPv6-mapped IPv4 private [::ffff:10.0.0.1] are rejected."""
+        with pytest.raises(ValueError, match="private"):
+            validate_url("https://[::ffff:10.0.0.1]/internal")
+
     def test_allows_public_ip(self) -> None:
         """Public IP addresses are allowed."""
         result = validate_url("https://8.8.8.8/dns")

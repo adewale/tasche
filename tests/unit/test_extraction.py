@@ -89,6 +89,8 @@ class TestExtractArticle:
         assert "excerpt" in result
         assert result["title"]  # non-empty
         assert result["html"]  # non-empty
+        # Phase E: verify extracted title matches expected value
+        assert result["title"] == "My Great Article"
 
     def test_excerpt_is_plain_text(self) -> None:
         """The excerpt should be plain text without HTML tags."""
@@ -219,10 +221,7 @@ class TestRewriteImagePaths:
 
     def test_handles_multiple_images(self) -> None:
         """Rewrites multiple images in a single HTML string."""
-        html = (
-            '<img src="https://a.com/1.jpg">'
-            '<img src="https://b.com/2.jpg">'
-        )
+        html = '<img src="https://a.com/1.jpg"><img src="https://b.com/2.jpg">'
         image_map = {
             "https://a.com/1.jpg": "articles/x/images/aaa.webp",
             "https://b.com/2.jpg": "articles/x/images/bbb.webp",

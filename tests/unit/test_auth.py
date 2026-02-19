@@ -15,13 +15,14 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.auth.dependencies import get_current_user
-from src.auth.routes import OAUTH_STATE_PREFIX, _parse_allowed_emails, router
+from src.auth.routes import OAUTH_STATE_PREFIX, router
 from src.auth.session import (
     COOKIE_NAME,
     SESSION_PREFIX,
     create_session,
     delete_session,
     get_session,
+    parse_allowed_emails,
 )
 from tests.conftest import MockD1, MockEnv, MockKV
 
@@ -206,21 +207,21 @@ class TestSessionRevocation:
 
 class TestAllowedEmailsParsing:
     def test_empty_string_returns_empty_set(self) -> None:
-        assert _parse_allowed_emails("") == set()
+        assert parse_allowed_emails("") == set()
 
     def test_single_email(self) -> None:
-        assert _parse_allowed_emails("a@b.com") == {"a@b.com"}
+        assert parse_allowed_emails("a@b.com") == {"a@b.com"}
 
     def test_comma_separated(self) -> None:
-        result = _parse_allowed_emails("a@b.com,c@d.com,e@f.com")
+        result = parse_allowed_emails("a@b.com,c@d.com,e@f.com")
         assert result == {"a@b.com", "c@d.com", "e@f.com"}
 
     def test_strips_whitespace(self) -> None:
-        result = _parse_allowed_emails("  a@b.com , c@d.com  ,  e@f.com  ")
+        result = parse_allowed_emails("  a@b.com , c@d.com  ,  e@f.com  ")
         assert result == {"a@b.com", "c@d.com", "e@f.com"}
 
     def test_ignores_empty_entries(self) -> None:
-        result = _parse_allowed_emails("a@b.com,,c@d.com,")
+        result = parse_allowed_emails("a@b.com,,c@d.com,")
         assert result == {"a@b.com", "c@d.com"}
 
 
@@ -608,3 +609,132 @@ class TestSessionEndpoint:
 
         resp = client.get("/api/auth/session", cookies={COOKIE_NAME: "expired_id"})
         assert resp.status_code == 401
+
+
+# =========================================================================
+# Case-insensitive email matching
+# =========================================================================
+
+
+class TestCaseInsensitiveEmail:
+    async def test_case_insensitive_email(self) -> None:
+        """Email matching ignores case during callback."""
+        db = MockD1(execute=lambda sql, params: [])
+        env = MockEnv(
+            allowed_emails="Test@Example.Com",
+            db=db,
+        )
+        state = await _setup_oauth_state(env)
+
+        mock_cls = _mock_github_responses(
+            token_data={"access_token": "gho_test_token"},
+            user_data={
+                "id": 12345,
+                "login": "testuser",
+                "email": "test@example.com",
+                "avatar_url": "https://github.com/avatar.png",
+            },
+        )
+
+        app = _make_auth_app(env)
+        client = TestClient(app, raise_server_exceptions=False)
+        with patch("src.auth.routes.httpx.AsyncClient", mock_cls):
+            resp = client.get(
+                f"/api/auth/callback?code=test_code&state={state}",
+                follow_redirects=False,
+            )
+        assert resp.status_code == 302
+
+    async def test_case_insensitive_email_session_check(self) -> None:
+        """Session email check is case-insensitive (via parse_allowed_emails)."""
+        env = MockEnv(allowed_emails="Test@Example.Com")
+        user_data = {
+            "user_id": "u1",
+            "email": "test@example.com",
+            "username": "tester",
+            "avatar_url": "https://avatar.url",
+            "created_at": "2025-01-01T00:00:00",
+        }
+        session_id = await create_session(env.SESSIONS, user_data)
+
+        app = _make_app_with_env(env)
+        client = TestClient(app)
+        resp = client.get("/me", cookies={COOKIE_NAME: session_id})
+        assert resp.status_code == 200
+
+
+# =========================================================================
+# Empty email from GitHub
+# =========================================================================
+
+
+class TestEmptyEmailReturns400:
+    async def test_empty_email_returns_400(self) -> None:
+        """400 when GitHub returns no email (public or private)."""
+        env = MockEnv(allowed_emails="test@example.com")
+        state = await _setup_oauth_state(env)
+
+        mock_cls = _mock_github_responses(
+            token_data={"access_token": "gho_test"},
+            user_data={
+                "id": 1,
+                "login": "user",
+                "email": None,
+                "avatar_url": "",
+            },
+            emails_data=[],
+        )
+
+        app = _make_auth_app(env)
+        client = TestClient(app, raise_server_exceptions=False)
+        with patch("src.auth.routes.httpx.AsyncClient", mock_cls):
+            resp = client.get(
+                f"/api/auth/callback?code=test_code&state={state}",
+                follow_redirects=False,
+            )
+        assert resp.status_code == 400
+        assert "email" in resp.json()["detail"].lower()
+
+
+# =========================================================================
+# GitHub error field in token response
+# =========================================================================
+
+
+class TestGitHubErrorFieldInTokenResponse:
+    async def test_github_error_field_in_token_response(self) -> None:
+        """200 with {"error": "bad_verification_code"} returns 400."""
+        env = MockEnv()
+        state = await _setup_oauth_state(env)
+
+        mock_cls = _mock_github_responses(
+            token_data={"error": "bad_verification_code"},
+            user_data={},
+        )
+
+        app = _make_auth_app(env)
+        client = TestClient(app, raise_server_exceptions=False)
+        with patch("src.auth.routes.httpx.AsyncClient", mock_cls):
+            resp = client.get(
+                f"/api/auth/callback?code=test_code&state={state}",
+                follow_redirects=False,
+            )
+        assert resp.status_code == 400
+        assert "bad_verification_code" in resp.json()["detail"]
+
+
+# =========================================================================
+# Missing GITHUB_CLIENT_ID
+# =========================================================================
+
+
+class TestMissingGitHubClientId:
+    def test_missing_github_client_id_login_returns_500(self) -> None:
+        """GET /login returns 500 when GITHUB_CLIENT_ID is not configured."""
+        env = MockEnv(github_client_id="")
+        app = _make_auth_app(env)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        resp = client.get("/api/auth/login", follow_redirects=False)
+        assert resp.status_code == 500
+        assert "GITHUB_CLIENT_ID" in resp.json()["detail"]

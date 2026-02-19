@@ -37,8 +37,10 @@ except ImportError:
     asgi = None  # type: ignore[assignment]
 
 from fastapi import FastAPI  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
 from observability import ObservabilityMiddleware  # noqa: E402
+from security import SecurityHeadersMiddleware  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # FastAPI application
@@ -51,10 +53,32 @@ app = FastAPI(
 )
 
 # ---------------------------------------------------------------------------
-# Observability middleware (Phase 8) — added before routers so it wraps all
-# routes and emits one wide event (canonical log line) per request.
+# Middleware stack — order matters!
+#
+# FastAPI's add_middleware() prepends each middleware, so the LAST one added
+# becomes the OUTERMOST layer.  We want:
+#   1. ObservabilityMiddleware  (outermost — logs every request)
+#   2. SecurityHeadersMiddleware
+#   3. CORSMiddleware           (innermost — adds CORS before security headers)
+#
+# Therefore we add them in reverse order: CORS first, security second,
+# observability last.
 # ---------------------------------------------------------------------------
 
+# 3. CORSMiddleware (innermost) — covers local dev; same-origin production
+#    requests don't trigger CORS preflight.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
+    allow_headers=["Content-Type"],
+)
+
+# 2. SecurityHeadersMiddleware — appends security headers to all responses.
+app.add_middleware(SecurityHeadersMiddleware)
+
+# 1. ObservabilityMiddleware (outermost) — emits one wide event per request.
 app.add_middleware(ObservabilityMiddleware)
 
 # ---------------------------------------------------------------------------
@@ -138,13 +162,13 @@ async def _handle_tts_generation(message_body: dict, env: object) -> None:
     article_id = message_body.get("article_id")
     user_id = message_body.get("user_id")
 
-    if not article_id:
+    if not article_id or not user_id:
         print(
             json.dumps({
                 "event": "tts_generation",
                 "article_id": article_id,
                 "status": "skipped",
-                "reason": "missing article_id",
+                "reason": "missing article_id or user_id",
             })
         )
         return
@@ -173,13 +197,30 @@ class Default(WorkerEntrypoint):
     async def fetch(self, request: object) -> object:  # type: ignore[override]
         """Handle an incoming HTTP request.
 
-        Parameters
-        ----------
-        request:
-            The incoming ``Request`` object from the Workers runtime.  We pass
-            ``request.js_object`` (the raw JS Request) to the ASGI adapter.
+        API routes (``/api/``) are handled by the FastAPI app via ASGI.
+        All other requests are served from static assets (ASSETS binding),
+        with a fallback to ``/index.html`` for SPA client-side routing.
         """
-        return await asgi.fetch(app, request.js_object, self.env)
+        from js import URL  # type: ignore[import-not-found]
+        from js import Request as JsRequest  # type: ignore[import-not-found]
+
+        url = URL.new(request.url)
+        path = url.pathname
+
+        # API routes → FastAPI
+        if path.startswith("/api/"):
+            return await asgi.fetch(app, request.js_object, self.env)
+
+        # Static assets → ASSETS binding with SPA fallback
+        asset_resp = await self.env.ASSETS.fetch(request.js_object)
+        if asset_resp.status != 404:
+            return asset_resp
+
+        # SPA fallback: serve index.html for unmatched paths
+        # Construct a proper Request to preserve headers (e.g. Accept, cookies)
+        index_url = URL.new("/index.html", request.url)
+        index_request = JsRequest.new(index_url, request.js_object)
+        return await self.env.ASSETS.fetch(index_request)
 
     async def scheduled(self, event: object) -> None:
         """Handle a Cron Trigger event.
@@ -187,47 +228,57 @@ class Default(WorkerEntrypoint):
         Runs periodic health checks on articles whose original_status is
         'unknown' or hasn't been checked in 30+ days.
         """
-        from articles.health import check_original_url
-        from wrappers import d1_rows
+        from datetime import UTC, datetime
 
-        db = self.env.DB
-        now = __import__("datetime").datetime.now(
-            __import__("datetime").timezone.utc
-        ).isoformat()
+        try:
+            from articles.health import check_original_url
+            from wrappers import d1_rows
 
-        rows = d1_rows(
-            await db.prepare(
-                "SELECT id, original_url FROM articles "
-                "WHERE (original_status = 'unknown' "
-                "OR last_checked_at IS NULL "
-                "OR last_checked_at < datetime('now', '-30 days')) "
-                "ORDER BY last_checked_at ASC NULLS FIRST "
-                "LIMIT 10"
-            ).all()
-        )
+            db = self.env.DB
 
-        checked = 0
-        for row in rows:
-            try:
-                new_status = await check_original_url(row["original_url"])
-            except Exception:
-                new_status = "unknown"
+            rows = d1_rows(
+                await db.prepare(
+                    "SELECT id, original_url FROM articles "
+                    "WHERE (original_status = 'unknown' "
+                    "OR last_checked_at IS NULL "
+                    "OR last_checked_at < datetime('now', '-30 days')) "
+                    "ORDER BY last_checked_at ASC NULLS FIRST "
+                    "LIMIT 10"
+                ).all()
+            )
 
-            await (
-                db.prepare(
-                    "UPDATE articles SET original_status = ?, last_checked_at = ?, "
-                    "updated_at = ? WHERE id = ?"
+            checked = 0
+            for row in rows:
+                try:
+                    new_status = await check_original_url(row["original_url"])
+                except Exception:
+                    new_status = "unknown"
+
+                now = datetime.now(UTC).isoformat()
+                await (
+                    db.prepare(
+                        "UPDATE articles SET original_status = ?, last_checked_at = ?, "
+                        "updated_at = ? WHERE id = ?"
+                    )
+                    .bind(new_status, now, now, row["id"])
+                    .run()
                 )
-                .bind(new_status, now, now, row["id"])
-                .run()
-            )
-            checked += 1
+                checked += 1
 
-        print(
-            json.dumps(
-                {"event": "scheduled_health_check", "checked": checked}
+            print(
+                json.dumps(
+                    {"event": "scheduled_health_check", "checked": checked}
+                )
             )
-        )
+        except Exception:
+            print(
+                json.dumps(
+                    {
+                        "event": "scheduled_error",
+                        "error": traceback.format_exc()[-1000:],
+                    }
+                )
+            )
 
     async def queue(self, batch: object) -> None:  # type: ignore[override]
         """Handle a batch of queue messages.
@@ -274,7 +325,7 @@ class Default(WorkerEntrypoint):
                     json.dumps(
                         {
                             "event": "queue_error",
-                            "error": traceback.format_exc(),
+                            "error": traceback.format_exc()[-1000:],
                         }
                     )
                 )

@@ -63,7 +63,7 @@ export function TagPicker({ articleId }) {
 
   return (
     <div>
-      <div class="flex flex-wrap gap-2 mt-4">
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '16px' }}>
         {articleTags.map((t) => (
           <span class="tag-chip" key={t.id}>
             {t.name}

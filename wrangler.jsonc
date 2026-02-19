@@ -25,10 +25,15 @@
   },
   "assets": {
     "directory": "./assets",
-    "not_found_handling": "single-page-application"
+    "not_found_handling": "none",
+    "binding": "ASSETS"
   },
   "env": {
     "production": {
+      // TODO: Set production-specific database_id, KV id, and queue name
+      // - d1_databases[].database_id must point to the production D1 instance
+      // - kv_namespaces[].id must point to the production KV namespace
+      // - queues producer/consumer "queue" should use a production-specific name (e.g. "tasche-articles-prod")
       "workers_dev": false,
       "vars": { "ALLOWED_EMAILS": "", "SITE_URL": "https://tasche.yourdomain.com" },
       "d1_databases": [{ "binding": "DB" }],
@@ -41,6 +46,10 @@
       "routes": [{ "pattern": "tasche.yourdomain.com", "custom_domain": true }]
     },
     "staging": {
+      // TODO: Set staging-specific database_id, KV id, and queue name
+      // - d1_databases[].database_id must point to the staging D1 instance
+      // - kv_namespaces[].id must point to the staging KV namespace
+      // - queues producer/consumer "queue" should use a staging-specific name (e.g. "tasche-articles-staging")
       "workers_dev": true,
       "vars": { "ALLOWED_EMAILS": "", "SITE_URL": "https://tasche-staging.<your-subdomain>.workers.dev" },
       "d1_databases": [{ "binding": "DB" }],

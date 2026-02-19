@@ -8,45 +8,33 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.auth.session import COOKIE_NAME, create_session
+from src.auth.session import COOKIE_NAME
 from src.search.routes import router
-from tests.conftest import ArticleFactory, MockD1, MockEnv
+from tests.conftest import (
+    ArticleFactory,
+    MockD1,
+    MockEnv,
+    _make_test_app,
+)
+from tests.conftest import (
+    _authenticated_client as _authenticated_client_base,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-_USER_DATA: dict[str, Any] = {
-    "user_id": "user_001",
-    "email": "test@example.com",
-    "username": "tester",
-    "avatar_url": "https://github.com/avatar.png",
-    "created_at": "2025-01-01T00:00:00",
-}
+_ROUTERS = ((router, "/api/search"),)
 
 
-def _make_app(env: Any) -> FastAPI:
-    """Create a FastAPI app with the search router and env injection."""
-    test_app = FastAPI()
-
-    @test_app.middleware("http")
-    async def inject_env(request, call_next):
-        request.scope["env"] = env
-        return await call_next(request)
-
-    test_app.include_router(router, prefix="/api/search")
-    return test_app
+def _make_app(env):
+    return _make_test_app(env, *_ROUTERS)
 
 
 async def _authenticated_client(env: MockEnv) -> tuple[TestClient, str]:
-    """Create a test client with a valid session cookie."""
-    session_id = await create_session(env.SESSIONS, _USER_DATA)
-    app = _make_app(env)
-    client = TestClient(app, raise_server_exceptions=False)
-    return client, session_id
+    return await _authenticated_client_base(env, *_ROUTERS)
 
 
 # ---------------------------------------------------------------------------
@@ -272,6 +260,61 @@ class TestFts5Sanitization:
         )
 
         assert resp.status_code == 422
+
+
+class TestFts5SpecialCharsSanitized:
+    async def test_quotes_do_not_crash(self) -> None:
+        """Query with double quotes does not crash FTS5."""
+        db = MockD1(execute=lambda sql, params: [])
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get(
+            '/api/search?q="hello"',
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        # Should either return 200 (empty results) or 422 (sanitized away)
+        assert resp.status_code in (200, 422)
+
+    async def test_parentheses_do_not_crash(self) -> None:
+        """Query with parentheses does not crash FTS5."""
+        db = MockD1(execute=lambda sql, params: [])
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get(
+            "/api/search?q=(test)+AND+(other)",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code in (200, 422)
+
+    async def test_asterisks_and_special_chars_sanitized(self) -> None:
+        """Query with *, (, ), " mixed with words is sanitized properly."""
+        captured: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            captured.append({"sql": sql, "params": params})
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get(
+            "/api/search?q=test*+hello(world)",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 200
+        # Verify the query was sanitized (no raw special chars in the MATCH param)
+        select_calls = [c for c in captured if "SELECT" in c["sql"]]
+        if select_calls:
+            query_param = select_calls[0]["params"][0]
+            assert "*" not in query_param
+            assert "(" not in query_param
+            assert ")" not in query_param
 
 
 class TestSearchAuthRequired:

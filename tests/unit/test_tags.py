@@ -8,46 +8,36 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.auth.session import COOKIE_NAME, create_session
+from src.auth.session import COOKIE_NAME
 from src.tags.routes import article_tags_router, router
-from tests.conftest import ArticleFactory, MockD1, MockEnv
+from tests.conftest import (
+    ArticleFactory,
+    MockD1,
+    MockEnv,
+    _make_test_app,
+)
+from tests.conftest import (
+    _authenticated_client as _authenticated_client_base,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-_USER_DATA: dict[str, Any] = {
-    "user_id": "user_001",
-    "email": "test@example.com",
-    "username": "tester",
-    "avatar_url": "https://github.com/avatar.png",
-    "created_at": "2025-01-01T00:00:00",
-}
+_ROUTERS = (
+    (router, "/api/tags"),
+    (article_tags_router, "/api/articles"),
+)
 
 
-def _make_app(env: Any) -> FastAPI:
-    """Create a FastAPI app with the tags routers and env injection."""
-    test_app = FastAPI()
-
-    @test_app.middleware("http")
-    async def inject_env(request, call_next):
-        request.scope["env"] = env
-        return await call_next(request)
-
-    test_app.include_router(router, prefix="/api/tags")
-    test_app.include_router(article_tags_router, prefix="/api/articles")
-    return test_app
+def _make_app(env):
+    return _make_test_app(env, *_ROUTERS)
 
 
 async def _authenticated_client(env: MockEnv) -> tuple[TestClient, str]:
-    """Create a test client with a valid session cookie."""
-    session_id = await create_session(env.SESSIONS, _USER_DATA)
-    app = _make_app(env)
-    client = TestClient(app, raise_server_exceptions=False)
-    return client, session_id
+    return await _authenticated_client_base(env, *_ROUTERS)
 
 
 # ---------------------------------------------------------------------------
@@ -89,7 +79,8 @@ class TestCreateTag:
     async def test_rejects_duplicate_tag_name(self) -> None:
         """POST /api/tags returns 409 when a tag with the same name exists."""
         existing_tag = {
-            "id": "tag_existing", "user_id": "user_001",
+            "id": "tag_existing",
+            "user_id": "user_001",
             "name": "python",
         }
 
@@ -138,11 +129,9 @@ class TestCreateTag:
 
         assert resp.status_code == 422
 
-
-# ---------------------------------------------------------------------------
-# GET /api/tags — List tags
-# ---------------------------------------------------------------------------
-
+    # ---------------------------------------------------------------------------
+    # GET /api/tags — List tags
+    # ---------------------------------------------------------------------------
 
     async def test_rejects_name_too_long(self) -> None:
         """POST /api/tags returns 400 when name exceeds 100 characters."""
@@ -164,12 +153,16 @@ class TestListTags:
         """GET /api/tags returns all tags for the authenticated user."""
         tags = [
             {
-                "id": "tag_1", "user_id": "user_001",
-                "name": "javascript", "created_at": "2025-01-01",
+                "id": "tag_1",
+                "user_id": "user_001",
+                "name": "javascript",
+                "created_at": "2025-01-01",
             },
             {
-                "id": "tag_2", "user_id": "user_001",
-                "name": "python", "created_at": "2025-01-02",
+                "id": "tag_2",
+                "user_id": "user_001",
+                "name": "python",
+                "created_at": "2025-01-02",
             },
         ]
 
@@ -217,8 +210,10 @@ class TestDeleteTag:
     async def test_deletes_tag(self) -> None:
         """DELETE /api/tags/{tag_id} removes the tag."""
         tag = {
-            "id": "tag_001", "user_id": "user_001",
-            "name": "python", "created_at": "2025-01-01",
+            "id": "tag_001",
+            "user_id": "user_001",
+            "name": "python",
+            "created_at": "2025-01-01",
         }
         calls: list[dict[str, Any]] = []
 
@@ -239,9 +234,7 @@ class TestDeleteTag:
 
         assert resp.status_code == 204
 
-        delete_calls = [
-            c for c in calls if "DELETE FROM tags" in c["sql"]
-        ]
+        delete_calls = [c for c in calls if "DELETE FROM tags" in c["sql"]]
         assert len(delete_calls) == 1
 
     async def test_returns_404_for_missing_tag(self) -> None:
@@ -268,8 +261,10 @@ class TestAddTagToArticle:
         """POST /api/articles/{id}/tags associates a tag with an article."""
         article = ArticleFactory.create(id="art_001", user_id="user_001")
         tag = {
-            "id": "tag_001", "user_id": "user_001",
-            "name": "python", "created_at": "2025-01-01",
+            "id": "tag_001",
+            "user_id": "user_001",
+            "name": "python",
+            "created_at": "2025-01-01",
         }
         calls: list[dict[str, Any]] = []
 
@@ -296,9 +291,7 @@ class TestAddTagToArticle:
         assert data["article_id"] == "art_001"
         assert data["tag_id"] == "tag_001"
 
-        insert_calls = [
-            c for c in calls if "INSERT INTO article_tags" in c["sql"]
-        ]
+        insert_calls = [c for c in calls if "INSERT INTO article_tags" in c["sql"]]
         assert len(insert_calls) == 1
 
     async def test_returns_404_for_missing_article(self) -> None:
@@ -342,8 +335,10 @@ class TestAddTagToArticle:
         """POST /api/articles/{id}/tags returns 409 when already tagged."""
         article = ArticleFactory.create(id="art_001", user_id="user_001")
         tag = {
-            "id": "tag_001", "user_id": "user_001",
-            "name": "python", "created_at": "2025-01-01",
+            "id": "tag_001",
+            "user_id": "user_001",
+            "name": "python",
+            "created_at": "2025-01-01",
         }
         existing_assoc = {"article_id": "art_001", "tag_id": "tag_001"}
 
@@ -393,8 +388,10 @@ class TestRemoveTagFromArticle:
         """DELETE /api/articles/{id}/tags/{tag_id} removes the association."""
         article = ArticleFactory.create(id="art_001", user_id="user_001")
         tag = {
-            "id": "tag_001", "user_id": "user_001",
-            "name": "python", "created_at": "2025-01-01",
+            "id": "tag_001",
+            "user_id": "user_001",
+            "name": "python",
+            "created_at": "2025-01-01",
         }
         calls: list[dict[str, Any]] = []
 
@@ -417,9 +414,7 @@ class TestRemoveTagFromArticle:
 
         assert resp.status_code == 204
 
-        delete_calls = [
-            c for c in calls if "DELETE FROM article_tags" in c["sql"]
-        ]
+        delete_calls = [c for c in calls if "DELETE FROM article_tags" in c["sql"]]
         assert len(delete_calls) == 1
 
     async def test_returns_404_for_missing_article(self) -> None:
@@ -467,12 +462,16 @@ class TestGetArticleTags:
         article = ArticleFactory.create(id="art_001", user_id="user_001")
         tags = [
             {
-                "id": "tag_1", "user_id": "user_001",
-                "name": "python", "created_at": "2025-01-01",
+                "id": "tag_1",
+                "user_id": "user_001",
+                "name": "python",
+                "created_at": "2025-01-01",
             },
             {
-                "id": "tag_2", "user_id": "user_001",
-                "name": "cloudflare", "created_at": "2025-01-02",
+                "id": "tag_2",
+                "user_id": "user_001",
+                "name": "cloudflare",
+                "created_at": "2025-01-02",
             },
         ]
 
@@ -548,7 +547,8 @@ class TestTagsAuthRequired:
         app = _make_app(env)
         client = TestClient(app, raise_server_exceptions=False)
         resp = client.post(
-            "/api/articles/art_001/tags", json={"tag_id": "tag_001"},
+            "/api/articles/art_001/tags",
+            json={"tag_id": "tag_001"},
         )
         assert resp.status_code == 401
 

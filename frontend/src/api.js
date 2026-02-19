@@ -47,6 +47,16 @@ export function logout() {
   return request('POST', '/api/auth/logout');
 }
 
+export async function performLogout() {
+  try {
+    await logout();
+  } catch (e) {
+    // ignore network errors during logout
+  }
+  user.value = null;
+  window.location.hash = '#/login';
+}
+
 // Articles
 export function listArticles(params) {
   const qs = new URLSearchParams();
@@ -81,6 +91,11 @@ export function deleteArticle(id) {
 export function getArticleContent(articleId) {
   return fetch('/api/articles/' + articleId + '/content', { credentials: 'include' })
     .then(function (resp) {
+      if (resp.status === 401) {
+        user.value = null;
+        navigateToLogin();
+        return null;
+      }
       if (!resp.ok) return null;
       return resp.text();
     })

@@ -16,7 +16,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 
 from auth.dependencies import get_current_user
-from auth.session import COOKIE_NAME, SESSION_TTL, create_session, delete_session
+from auth.session import (
+    COOKIE_NAME,
+    SESSION_TTL,
+    create_session,
+    delete_session,
+    parse_allowed_emails,
+)
 from wrappers import SafeEnv, d1_first
 
 router = APIRouter()
@@ -30,21 +36,13 @@ OAUTH_STATE_PREFIX = "oauth_state:"
 OAUTH_STATE_TTL = 600  # 10 minutes
 
 
-def _parse_allowed_emails(raw: str) -> set[str]:
-    """Parse a comma-separated list of allowed emails into a set.
-
-    Strips whitespace from each entry and ignores empty strings.
-    """
-    if not raw:
-        return set()
-    return {email.strip() for email in raw.split(",") if email.strip()}
-
-
 @router.get("/login")
 async def login(request: Request) -> RedirectResponse:
     """Redirect the user to GitHub's OAuth authorize page."""
     env = SafeEnv(request.scope["env"])
     client_id = env.get("GITHUB_CLIENT_ID", "")
+    if not client_id:
+        raise HTTPException(status_code=500, detail="GITHUB_CLIENT_ID is not configured")
     site_url = env.get("SITE_URL", "")
     redirect_uri = f"{site_url}/api/auth/callback"
 
@@ -85,11 +83,18 @@ async def callback(request: Request) -> RedirectResponse:
 
     env = SafeEnv(raw_env)
     client_id = env.get("GITHUB_CLIENT_ID", "")
+    if not client_id:
+        raise HTTPException(status_code=500, detail="GITHUB_CLIENT_ID is not configured")
     client_secret = env.get("GITHUB_CLIENT_SECRET", "")
+    if not client_secret:
+        raise HTTPException(status_code=500, detail="GITHUB_CLIENT_SECRET is not configured")
     site_url = env.get("SITE_URL", "")
     redirect_uri = f"{site_url}/api/auth/callback"
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(
+        headers={"User-Agent": "tasche/1.0"},
+        timeout=httpx.Timeout(10.0),
+    ) as client:
         # --- Exchange code for access token ---
         token_resp = await client.post(
             GITHUB_TOKEN_URL,
@@ -105,6 +110,15 @@ async def callback(request: Request) -> RedirectResponse:
             raise HTTPException(status_code=502, detail="GitHub token exchange failed")
         token_data = token_resp.json()
 
+        if "error" in token_data:
+            error_detail = token_data.get(
+                "error_description", token_data["error"]
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=f"GitHub OAuth error: {error_detail}",
+            )
+
         access_token = token_data.get("access_token")
         if not access_token:
             raise HTTPException(status_code=400, detail="Failed to obtain access token")
@@ -112,7 +126,8 @@ async def callback(request: Request) -> RedirectResponse:
         # --- Fetch GitHub user info ---
         auth_headers = {
             "Authorization": f"Bearer {access_token}",
-            "Accept": "application/json",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
         }
         user_resp = await client.get(GITHUB_USER_URL, headers=auth_headers)
         if user_resp.status_code != 200:
@@ -137,15 +152,24 @@ async def callback(request: Request) -> RedirectResponse:
     username = github_user.get("login", "")
     avatar_url = github_user.get("avatar_url", "")
 
+    if not email:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Could not obtain a verified email from GitHub."
+                " Please ensure your GitHub account has a verified email."
+            ),
+        )
+
     # --- Check ALLOWED_EMAILS whitelist (required) ---
     allowed_raw = env.get("ALLOWED_EMAILS", "")
-    allowed_emails = _parse_allowed_emails(allowed_raw)
+    allowed_emails = parse_allowed_emails(allowed_raw)
     if not allowed_emails:
         raise HTTPException(
             status_code=403,
             detail="ALLOWED_EMAILS is not configured. Set it in wrangler.jsonc.",
         )
-    if email not in allowed_emails:
+    if email.lower() not in allowed_emails:
         raise HTTPException(status_code=403, detail="Email not authorized")
 
     # --- Upsert user in D1 ---
@@ -188,12 +212,13 @@ async def callback(request: Request) -> RedirectResponse:
     session_id = await create_session(raw_env.SESSIONS, session_data)
 
     # --- Set cookie and redirect ---
+    is_secure = site_url.startswith("https://")
     response = RedirectResponse(url="/", status_code=302)
     response.set_cookie(
         key=COOKIE_NAME,
         value=session_id,
         httponly=True,
-        secure=True,
+        secure=is_secure,
         samesite="lax",
         path="/",
         max_age=SESSION_TTL,
@@ -204,17 +229,19 @@ async def callback(request: Request) -> RedirectResponse:
 @router.post("/logout")
 async def logout(request: Request) -> Response:
     """Delete the session from KV and clear the session cookie."""
+    raw_env = request.scope["env"]
     session_id = request.cookies.get(COOKIE_NAME)
     if session_id:
-        env = request.scope["env"]
-        await delete_session(env.SESSIONS, session_id)
+        await delete_session(raw_env.SESSIONS, session_id)
 
+    env = SafeEnv(raw_env)
+    is_secure = env.get("SITE_URL", "").startswith("https://")
     response = Response(status_code=200)
     response.delete_cookie(
         key=COOKIE_NAME,
         path="/",
         httponly=True,
-        secure=True,
+        secure=is_secure,
         samesite="lax",
     )
     return response

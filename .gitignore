@@ -27,6 +27,10 @@ htmlcov/
 # Node
 node_modules/
 package-lock.json
+!frontend/package-lock.json
+
+# Pyodide / pywrangler dependency cache
+python_modules/
 
 # Cloudflare Workers
 .wrangler/

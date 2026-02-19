@@ -12,6 +12,7 @@ Libraries used:
 
 from __future__ import annotations
 
+import math
 import re
 
 from bs4 import BeautifulSoup
@@ -147,8 +148,7 @@ def calculate_reading_time(word_count: int, wpm: int = 200) -> int:
     """
     if word_count <= 0:
         return 1
-    minutes = word_count / wpm
-    return max(1, round(minutes + 0.49999))
+    return max(1, math.ceil(word_count / wpm))
 
 
 def rewrite_image_paths(html: str, image_map: dict[str, str]) -> str:

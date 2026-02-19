@@ -6,6 +6,9 @@ Workers Logs captures stdout, so this is the primary observability mechanism.
 Tail sampling is applied after the request completes — errors, slow requests,
 and server errors are always emitted, while successful fast requests are
 sampled at a low rate to control log volume.
+
+Implemented as a pure ASGI middleware (no BaseHTTPMiddleware) to avoid
+spawning background threads that are incompatible with the Pyodide runtime.
 """
 
 from __future__ import annotations
@@ -15,45 +18,67 @@ import random
 import time
 import uuid
 from datetime import UTC, datetime
-
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import Response
+from typing import Any
 
 # Tail sampling thresholds
 _SLOW_REQUEST_MS = 2000
 _SUCCESS_SAMPLE_RATE = 0.05  # 5%
 
 
-class ObservabilityMiddleware(BaseHTTPMiddleware):
-    """FastAPI middleware that emits a single wide event per request.
+class ObservabilityMiddleware:
+    """Pure ASGI middleware that emits a single wide event per request.
 
     The event is built incrementally during request processing and emitted
     once in a ``finally`` block.  Tail sampling decides whether the event
     is actually printed to stdout.
+
+    User ID is read from ``scope["state"]["user_id"]`` which is set by
+    the ``get_current_user`` auth dependency, avoiding a duplicate KV lookup.
     """
 
-    async def dispatch(self, request: Request, call_next) -> Response:
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
         event: dict = {}
         start_time = time.monotonic()
+        status_code = 500  # default in case of unhandled exception
+
+        async def send_wrapper(message: dict) -> None:
+            nonlocal status_code
+            if message["type"] == "http.response.start":
+                status_code = message["status"]
+            await send(message)
 
         try:
             # ----- Fields from the request -----
             event["timestamp"] = datetime.now(UTC).isoformat()
-            event["request_id"] = request.headers.get("cf-ray", str(uuid.uuid4()))
-            event["method"] = request.method
-            event["path"] = request.url.path
 
-            response = await call_next(request)
+            # Extract request_id from headers (cf-ray) or generate a UUID
+            headers = dict(scope.get("headers", []))
+            cf_ray = headers.get(b"cf-ray", b"").decode("utf-8", errors="replace")
+            event["request_id"] = cf_ray if cf_ray else str(uuid.uuid4())
 
-            event["status_code"] = response.status_code
-            event["outcome"] = "error" if response.status_code >= 400 else "success"
+            event["method"] = scope.get("method", "")
+            event["path"] = scope.get("path", "")
 
-            # Extract user ID after call_next so that inner middleware
-            # (e.g. env injection) has already populated request.scope.
-            event["user.id"] = await _try_extract_user_id(request)
+            await self.app(scope, receive, send_wrapper)
 
-            return response
+            event["status_code"] = status_code
+            event["outcome"] = "error" if status_code >= 400 else "success"
+
+            # Extract user ID from request state (set by get_current_user dependency)
+            # instead of performing a duplicate KV lookup.
+            state = scope.get("state", {})
+            if isinstance(state, dict):
+                event["user.id"] = state.get("user_id")
+            else:
+                event["user.id"] = getattr(state, "user_id", None)
+
         except Exception as exc:
             event["status_code"] = 500
             event["outcome"] = "error"
@@ -68,34 +93,6 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
             # Tail sampling — decide after the request whether to emit
             if _should_sample(event):
                 print(json.dumps(event))
-
-
-async def _try_extract_user_id(request: Request) -> str | None:
-    """Attempt to extract the authenticated user ID from the session cookie.
-
-    Returns the ``user_id`` string if a valid session exists, or ``None``
-    if the cookie is missing, the env binding is unavailable, or the
-    session has expired.
-    """
-    from auth.session import COOKIE_NAME, get_session
-
-    try:
-        session_id = request.cookies.get(COOKIE_NAME)
-        if not session_id:
-            return None
-
-        env = request.scope.get("env")
-        if env is None:
-            return None
-
-        user_data = await get_session(env.SESSIONS, session_id)
-        if user_data is None:
-            return None
-
-        return user_data.get("user_id")
-    except Exception:
-        # Never let user extraction break the request
-        return None
 
 
 def _should_sample(event: dict) -> bool:

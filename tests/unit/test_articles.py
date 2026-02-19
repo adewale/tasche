@@ -8,45 +8,35 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.articles.routes import router
-from src.auth.session import COOKIE_NAME, create_session
-from tests.conftest import ArticleFactory, MockD1, MockEnv, MockQueue, MockR2
+from src.auth.session import COOKIE_NAME
+from tests.conftest import (
+    ArticleFactory,
+    MockD1,
+    MockEnv,
+    MockQueue,
+    MockR2,
+    _make_test_app,
+)
+from tests.conftest import (
+    _authenticated_client as _authenticated_client_base,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-_USER_DATA: dict[str, Any] = {
-    "user_id": "user_001",
-    "email": "test@example.com",
-    "username": "tester",
-    "avatar_url": "https://github.com/avatar.png",
-    "created_at": "2025-01-01T00:00:00",
-}
+_ROUTERS = ((router, "/api/articles"),)
 
 
-def _make_app(env: Any) -> FastAPI:
-    """Create a FastAPI app with the articles router and env injection."""
-    test_app = FastAPI()
-
-    @test_app.middleware("http")
-    async def inject_env(request, call_next):
-        request.scope["env"] = env
-        return await call_next(request)
-
-    test_app.include_router(router, prefix="/api/articles")
-    return test_app
+def _make_app(env):
+    return _make_test_app(env, *_ROUTERS)
 
 
 async def _authenticated_client(env: MockEnv) -> tuple[TestClient, str]:
-    """Create a test client with a valid session cookie."""
-    session_id = await create_session(env.SESSIONS, _USER_DATA)
-    app = _make_app(env)
-    client = TestClient(app, raise_server_exceptions=False)
-    return client, session_id
+    return await _authenticated_client_base(env, *_ROUTERS)
 
 
 # ---------------------------------------------------------------------------
@@ -366,7 +356,8 @@ class TestGetArticleThumbnail:
     async def test_returns_thumbnail_image(self) -> None:
         """GET /api/articles/{id}/thumbnail returns WebP image from R2."""
         article = ArticleFactory.create(
-            id="art_thumb", user_id="user_001",
+            id="art_thumb",
+            user_id="user_001",
             thumbnail_key="articles/art_thumb/thumbnail.webp",
         )
 
@@ -396,7 +387,9 @@ class TestGetArticleThumbnail:
     async def test_returns_404_when_no_thumbnail_key(self) -> None:
         """GET /api/articles/{id}/thumbnail returns 404 when thumbnail_key is null."""
         article = ArticleFactory.create(
-            id="art_nothumb", user_id="user_001", thumbnail_key=None,
+            id="art_nothumb",
+            user_id="user_001",
+            thumbnail_key=None,
         )
 
         def execute(sql: str, params: list) -> list:
@@ -418,7 +411,8 @@ class TestGetArticleThumbnail:
     async def test_returns_404_when_r2_object_missing(self) -> None:
         """GET /api/articles/{id}/thumbnail returns 404 when R2 object is gone."""
         article = ArticleFactory.create(
-            id="art_gone", user_id="user_001",
+            id="art_gone",
+            user_id="user_001",
             thumbnail_key="articles/art_gone/thumbnail.webp",
         )
 
@@ -449,7 +443,8 @@ class TestGetArticleScreenshot:
     async def test_returns_screenshot_image(self) -> None:
         """GET /api/articles/{id}/screenshot returns WebP image from R2."""
         article = ArticleFactory.create(
-            id="art_ss", user_id="user_001",
+            id="art_ss",
+            user_id="user_001",
             original_key="articles/art_ss/original.webp",
         )
 
@@ -479,7 +474,9 @@ class TestGetArticleScreenshot:
     async def test_returns_404_when_no_original_key(self) -> None:
         """GET /api/articles/{id}/screenshot returns 404 when original_key is null."""
         article = ArticleFactory.create(
-            id="art_noss", user_id="user_001", original_key=None,
+            id="art_noss",
+            user_id="user_001",
+            original_key=None,
         )
 
         def execute(sql: str, params: list) -> list:
@@ -501,7 +498,8 @@ class TestGetArticleScreenshot:
     async def test_returns_404_when_r2_object_missing(self) -> None:
         """GET /api/articles/{id}/screenshot returns 404 when R2 object is gone."""
         article = ArticleFactory.create(
-            id="art_ss_gone", user_id="user_001",
+            id="art_ss_gone",
+            user_id="user_001",
             original_key="articles/art_ss_gone/original.webp",
         )
 
@@ -621,6 +619,308 @@ class TestInputValidation:
 
         assert resp.status_code == 400
         assert "500" in resp.json()["detail"]
+
+
+class TestEnqueueFailure:
+    async def test_enqueue_failure_marks_article_failed(self) -> None:
+        """POST /api/articles marks article as 'failed' when queue.send() raises."""
+        calls: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            calls.append({"sql": sql, "params": params})
+            return []
+
+        class FailingQueue:
+            messages: list = []
+
+            async def send(self, message: Any, **kwargs: Any) -> None:
+                raise RuntimeError("Queue unavailable")
+
+        queue = FailingQueue()
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db, article_queue=queue)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles",
+            json={"url": "https://example.com/queue-fail"},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 503
+        assert "enqueue" in resp.json()["detail"].lower()
+
+        # Verify D1 UPDATE set status='failed'
+        update_calls = [c for c in calls if c["sql"].startswith("UPDATE")]
+        assert len(update_calls) >= 1
+        assert "failed" in update_calls[0]["params"]
+
+
+class TestRejectsInvalidReadingStatus:
+    async def test_rejects_invalid_reading_status(self) -> None:
+        """PATCH /api/articles/{id} returns 422 for invalid reading_status enum."""
+        article = ArticleFactory.create(id="art_inv_rs", user_id="user_001")
+
+        def execute(sql: str, params: list) -> list:
+            if "id = ?" in sql and params[0] == "art_inv_rs":
+                return [article]
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.patch(
+            "/api/articles/art_inv_rs",
+            json={"reading_status": "invalid_status"},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 422
+        assert "reading_status" in resp.json()["detail"]
+
+
+class TestRejectsInvalidReadingProgressBounds:
+    async def test_rejects_reading_progress_above_one(self) -> None:
+        """PATCH /api/articles/{id} returns 422 when reading_progress > 1.0."""
+        article = ArticleFactory.create(id="art_rp_hi", user_id="user_001")
+
+        def execute(sql: str, params: list) -> list:
+            if "id = ?" in sql and params[0] == "art_rp_hi":
+                return [article]
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.patch(
+            "/api/articles/art_rp_hi",
+            json={"reading_progress": 1.5},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 422
+        assert "reading_progress" in resp.json()["detail"]
+
+    async def test_rejects_reading_progress_below_zero(self) -> None:
+        """PATCH /api/articles/{id} returns 422 when reading_progress < 0."""
+        article = ArticleFactory.create(id="art_rp_lo", user_id="user_001")
+
+        def execute(sql: str, params: list) -> list:
+            if "id = ?" in sql and params[0] == "art_rp_lo":
+                return [article]
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.patch(
+            "/api/articles/art_rp_lo",
+            json={"reading_progress": -0.1},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 422
+        assert "reading_progress" in resp.json()["detail"]
+
+
+class TestRejectsInvalidScrollPosition:
+    async def test_rejects_negative_scroll_position(self) -> None:
+        """PATCH /api/articles/{id} returns 422 for negative scroll_position."""
+        article = ArticleFactory.create(id="art_sp_neg", user_id="user_001")
+
+        def execute(sql: str, params: list) -> list:
+            if "id = ?" in sql and params[0] == "art_sp_neg":
+                return [article]
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.patch(
+            "/api/articles/art_sp_neg",
+            json={"scroll_position": -1},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 422
+        assert "scroll_position" in resp.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# GET /api/articles/{article_id}/content — Serve article HTML
+# ---------------------------------------------------------------------------
+
+
+class TestGetArticleContent:
+    async def test_content_endpoint_returns_html(self) -> None:
+        """GET /api/articles/{id}/content returns HTML from R2."""
+        article = ArticleFactory.create(
+            id="art_html",
+            user_id="user_001",
+            html_key="articles/art_html/content.html",
+        )
+
+        def execute(sql: str, params: list) -> list:
+            if "id = ?" in sql and params[0] == "art_html":
+                return [article]
+            return []
+
+        db = MockD1(execute=execute)
+        r2 = MockR2()
+        env = MockEnv(db=db, content=r2)
+
+        await r2.put("articles/art_html/content.html", "<p>Article content</p>")
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get(
+            "/api/articles/art_html/content",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 200
+        assert "text/html" in resp.headers["content-type"]
+        assert "<p>Article content</p>" in resp.text
+
+    async def test_content_endpoint_not_found(self) -> None:
+        """GET /api/articles/{id}/content returns 404 when no HTML in R2."""
+        article = ArticleFactory.create(
+            id="art_nohtml",
+            user_id="user_001",
+            html_key="articles/art_nohtml/content.html",
+        )
+
+        def execute(sql: str, params: list) -> list:
+            if "id = ?" in sql and params[0] == "art_nohtml":
+                return [article]
+            return []
+
+        db = MockD1(execute=execute)
+        r2 = MockR2()  # Empty R2
+        env = MockEnv(db=db, content=r2)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get(
+            "/api/articles/art_nohtml/content",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# GET /api/articles/{article_id}/metadata — Serve article metadata
+# ---------------------------------------------------------------------------
+
+
+class TestGetArticleMetadata:
+    async def test_metadata_endpoint(self) -> None:
+        """GET /api/articles/{id}/metadata returns metadata JSON from R2."""
+        article = ArticleFactory.create(id="art_meta", user_id="user_001")
+
+        def execute(sql: str, params: list) -> list:
+            if "id = ?" in sql and params[0] == "art_meta":
+                return [article]
+            return []
+
+        db = MockD1(execute=execute)
+        r2 = MockR2()
+        env = MockEnv(db=db, content=r2)
+
+        import json as _json
+
+        metadata = {"article_id": "art_meta", "word_count": 500}
+        await r2.put("articles/art_meta/metadata.json", _json.dumps(metadata))
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get(
+            "/api/articles/art_meta/metadata",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["article_id"] == "art_meta"
+        assert data["word_count"] == 500
+
+    async def test_metadata_not_found(self) -> None:
+        """GET /api/articles/{id}/metadata returns 404 when no metadata in R2."""
+        article = ArticleFactory.create(id="art_nometa", user_id="user_001")
+
+        def execute(sql: str, params: list) -> list:
+            if "id = ?" in sql and params[0] == "art_nometa":
+                return [article]
+            return []
+
+        db = MockD1(execute=execute)
+        r2 = MockR2()  # Empty R2
+        env = MockEnv(db=db, content=r2)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get(
+            "/api/articles/art_nometa/metadata",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# GET /api/articles?status=... — Filter by status
+# ---------------------------------------------------------------------------
+
+
+class TestFilterByStatus:
+    async def test_filters_by_status(self) -> None:
+        """GET /api/articles?status=ready includes status filter in query."""
+        captured: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            captured.append({"sql": sql, "params": params})
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        client.get(
+            "/api/articles?status=ready",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        select_calls = [c for c in captured if "SELECT" in c["sql"]]
+        assert len(select_calls) >= 1
+        assert "status = ?" in select_calls[0]["sql"]
+        assert "ready" in select_calls[0]["params"]
+
+    async def test_rejects_invalid_status(self) -> None:
+        """GET /api/articles?status=bogus returns 422."""
+        env = MockEnv()
+        client, session_id = await _authenticated_client(env)
+
+        resp = client.get(
+            "/api/articles?status=bogus",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 422
+        assert "status" in resp.json()["detail"]
+
+    async def test_rejects_invalid_audio_status_filter(self) -> None:
+        """GET /api/articles?audio_status=bogus returns 422."""
+        env = MockEnv()
+        client, session_id = await _authenticated_client(env)
+
+        resp = client.get(
+            "/api/articles?audio_status=bogus",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 422
+        assert "audio_status" in resp.json()["detail"]
 
 
 class TestAuthRequired:

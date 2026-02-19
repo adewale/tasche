@@ -63,7 +63,8 @@ class StatefulMockD1(MockD1):
         # --- DELETE (must be checked before SELECT to avoid "FROM X" substring matches) ---
         if sql_upper.startswith("DELETE FROM ARTICLE_TAGS"):
             self.article_tags = [
-                at for at in self.article_tags
+                at
+                for at in self.article_tags
                 if not (at["article_id"] == params[0] and at["tag_id"] == params[1])
             ]
             return []
@@ -71,17 +72,13 @@ class StatefulMockD1(MockD1):
         if sql_upper.startswith("DELETE FROM TAGS"):
             tag_id = params[0]
             self.tags.pop(tag_id, None)
-            self.article_tags = [
-                at for at in self.article_tags if at["tag_id"] != tag_id
-            ]
+            self.article_tags = [at for at in self.article_tags if at["tag_id"] != tag_id]
             return []
 
         if sql_upper.startswith("DELETE FROM ARTICLES"):
             article_id = params[0]
             self.articles.pop(article_id, None)
-            self.article_tags = [
-                at for at in self.article_tags if at["article_id"] != article_id
-            ]
+            self.article_tags = [at for at in self.article_tags if at["article_id"] != article_id]
             return []
 
         # --- INSERT ---
@@ -94,10 +91,12 @@ class StatefulMockD1(MockD1):
             return []
 
         if sql_upper.startswith("INSERT INTO ARTICLE_TAGS"):
-            self.article_tags.append({
-                "article_id": params[0],
-                "tag_id": params[1],
-            })
+            self.article_tags.append(
+                {
+                    "article_id": params[0],
+                    "tag_id": params[1],
+                }
+            )
             return []
 
         # --- UPDATE ---
@@ -179,9 +178,7 @@ class StatefulMockD1(MockD1):
         # List articles (with filters)
         if "LIMIT" in sql_upper:
             user_id = params[0]
-            results = [
-                a for a in self.articles.values() if a["user_id"] == user_id
-            ]
+            results = [a for a in self.articles.values() if a["user_id"] == user_id]
             # Sort by created_at descending
             results.sort(key=lambda x: x.get("created_at", ""), reverse=True)
             return results
@@ -220,18 +217,19 @@ class StatefulMockD1(MockD1):
         return []
 
     def _handle_select_article_tags(
-        self, sql: str, params: list[Any],
+        self,
+        sql: str,
+        params: list[Any],
     ) -> list[dict[str, Any]]:
         article_id = params[0]
         user_id = params[1]
         tag_ids = {at["tag_id"] for at in self.article_tags if at["article_id"] == article_id}
-        return [
-            t for t in self.tags.values()
-            if t["id"] in tag_ids and t["user_id"] == user_id
-        ]
+        return [t for t in self.tags.values() if t["id"] in tag_ids and t["user_id"] == user_id]
 
     def _handle_select_article_tag_assoc(
-        self, sql: str, params: list[Any],
+        self,
+        sql: str,
+        params: list[Any],
     ) -> list[dict[str, Any]]:
         article_id = params[0]
         tag_id = params[1]
@@ -395,7 +393,9 @@ class TestAuthFlow:
         assert resp.status_code == 401
 
     async def test_session_with_valid_cookie_returns_user(
-        self, test_app: TestClient, auth_cookie: str,
+        self,
+        test_app: TestClient,
+        auth_cookie: str,
     ) -> None:
         """GET /api/auth/session with a valid session returns user data."""
         resp = test_app.get(
@@ -427,7 +427,10 @@ class TestAuthFlow:
 
 class TestArticleCrudFlow:
     async def test_full_article_lifecycle(
-        self, test_app: TestClient, auth_cookie: str, env: MockEnv,
+        self,
+        test_app: TestClient,
+        auth_cookie: str,
+        env: MockEnv,
     ) -> None:
         """Create, list, get, update, and delete an article."""
         cookies = {COOKIE_NAME: auth_cookie}
@@ -492,7 +495,9 @@ class TestArticleCrudFlow:
         assert resp.status_code == 401
 
     async def test_create_rejects_duplicate_url(
-        self, test_app: TestClient, auth_cookie: str,
+        self,
+        test_app: TestClient,
+        auth_cookie: str,
     ) -> None:
         """POST /api/articles returns 409 for a duplicate URL."""
         cookies = {COOKIE_NAME: auth_cookie}
@@ -514,7 +519,9 @@ class TestArticleCrudFlow:
         assert resp.status_code == 409
 
     async def test_create_rejects_private_url(
-        self, test_app: TestClient, auth_cookie: str,
+        self,
+        test_app: TestClient,
+        auth_cookie: str,
     ) -> None:
         """POST /api/articles rejects URLs pointing to private networks (SSRF)."""
         cookies = {COOKIE_NAME: auth_cookie}
@@ -533,7 +540,9 @@ class TestArticleCrudFlow:
             assert resp.status_code == 422, f"Expected 422 for {url}, got {resp.status_code}"
 
     async def test_create_validates_url_length(
-        self, test_app: TestClient, auth_cookie: str,
+        self,
+        test_app: TestClient,
+        auth_cookie: str,
     ) -> None:
         """POST /api/articles rejects URLs exceeding 2048 characters."""
         cookies = {COOKIE_NAME: auth_cookie}
@@ -547,7 +556,9 @@ class TestArticleCrudFlow:
         assert resp.status_code == 400
 
     async def test_get_nonexistent_article_returns_404(
-        self, test_app: TestClient, auth_cookie: str,
+        self,
+        test_app: TestClient,
+        auth_cookie: str,
     ) -> None:
         """GET /api/articles/{id} returns 404 for nonexistent article."""
         cookies = {COOKIE_NAME: auth_cookie}
@@ -562,7 +573,10 @@ class TestArticleCrudFlow:
 
 class TestTagsFlow:
     async def test_full_tag_lifecycle(
-        self, test_app: TestClient, auth_cookie: str, env: MockEnv,
+        self,
+        test_app: TestClient,
+        auth_cookie: str,
+        env: MockEnv,
     ) -> None:
         """Create tag, list tags, associate with article, list article tags,
         remove association, delete tag."""
@@ -635,7 +649,9 @@ class TestTagsFlow:
         assert not any(t["id"] == tag_id for t in resp.json())
 
     async def test_create_tag_rejects_empty_name(
-        self, test_app: TestClient, auth_cookie: str,
+        self,
+        test_app: TestClient,
+        auth_cookie: str,
     ) -> None:
         """POST /api/tags rejects empty tag names."""
         cookies = {COOKIE_NAME: auth_cookie}
@@ -643,7 +659,9 @@ class TestTagsFlow:
         assert resp.status_code == 422
 
     async def test_create_tag_rejects_long_name(
-        self, test_app: TestClient, auth_cookie: str,
+        self,
+        test_app: TestClient,
+        auth_cookie: str,
     ) -> None:
         """POST /api/tags rejects names exceeding 100 characters."""
         cookies = {COOKIE_NAME: auth_cookie}
@@ -655,7 +673,9 @@ class TestTagsFlow:
         assert resp.status_code == 400
 
     async def test_duplicate_tag_name_returns_409(
-        self, test_app: TestClient, auth_cookie: str,
+        self,
+        test_app: TestClient,
+        auth_cookie: str,
     ) -> None:
         """POST /api/tags returns 409 for duplicate tag names."""
         cookies = {COOKIE_NAME: auth_cookie}
@@ -672,7 +692,10 @@ class TestTagsFlow:
 
 class TestSearchFlow:
     async def test_search_returns_matching_articles(
-        self, test_app: TestClient, auth_cookie: str, env: MockEnv,
+        self,
+        test_app: TestClient,
+        auth_cookie: str,
+        env: MockEnv,
     ) -> None:
         """GET /api/search?q=test returns matching articles."""
         cookies = {COOKIE_NAME: auth_cookie}
@@ -695,7 +718,9 @@ class TestSearchFlow:
         assert len(results) >= 1
 
     async def test_search_requires_query(
-        self, test_app: TestClient, auth_cookie: str,
+        self,
+        test_app: TestClient,
+        auth_cookie: str,
     ) -> None:
         """GET /api/search without q returns 422."""
         cookies = {COOKIE_NAME: auth_cookie}
@@ -703,7 +728,9 @@ class TestSearchFlow:
         assert resp.status_code == 422
 
     async def test_search_sanitizes_fts5_operators(
-        self, test_app: TestClient, auth_cookie: str,
+        self,
+        test_app: TestClient,
+        auth_cookie: str,
     ) -> None:
         """GET /api/search with FTS5 operators does not cause errors."""
         cookies = {COOKIE_NAME: auth_cookie}
@@ -728,7 +755,10 @@ class TestSearchFlow:
 
 class TestListenLaterFlow:
     async def test_listen_later_enqueues_tts(
-        self, test_app: TestClient, auth_cookie: str, env: MockEnv,
+        self,
+        test_app: TestClient,
+        auth_cookie: str,
+        env: MockEnv,
     ) -> None:
         """POST /api/articles/{id}/listen-later enqueues a TTS job."""
         cookies = {COOKIE_NAME: auth_cookie}
@@ -761,7 +791,10 @@ class TestListenLaterFlow:
         assert msg["article_id"] == article_id
 
     async def test_listen_later_idempotent_when_pending(
-        self, test_app: TestClient, auth_cookie: str, env: MockEnv,
+        self,
+        test_app: TestClient,
+        auth_cookie: str,
+        env: MockEnv,
     ) -> None:
         """POST /api/articles/{id}/listen-later returns 409 if already pending."""
         cookies = {COOKIE_NAME: auth_cookie}
@@ -801,7 +834,10 @@ class TestListenLaterFlow:
 
 class TestContentServing:
     async def test_get_article_content_from_r2(
-        self, test_app: TestClient, auth_cookie: str, env: MockEnv,
+        self,
+        test_app: TestClient,
+        auth_cookie: str,
+        env: MockEnv,
     ) -> None:
         """GET /api/articles/{id}/content serves HTML from R2."""
         cookies = {COOKIE_NAME: auth_cookie}
@@ -829,7 +865,10 @@ class TestContentServing:
         assert "Test Content" in resp.text
 
     async def test_get_content_returns_404_when_missing(
-        self, test_app: TestClient, auth_cookie: str, env: MockEnv,
+        self,
+        test_app: TestClient,
+        auth_cookie: str,
+        env: MockEnv,
     ) -> None:
         """GET /api/articles/{id}/content returns 404 when no HTML in R2."""
         cookies = {COOKIE_NAME: auth_cookie}

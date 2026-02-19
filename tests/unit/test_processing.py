@@ -7,114 +7,28 @@ and D1 field updates.  All external HTTP calls are mocked.
 from __future__ import annotations
 
 import json
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
-from tests.conftest import MockD1, MockEnv, MockR2
+from tests.conftest import (
+    MockEnv,
+    MockR2,
+    _browser_env,
+    _make_mock_client,
+    _make_mock_response,
+    _noop_screenshot,
+)
+from tests.conftest import (
+    TrackingD1 as _TrackingD1,
+)
 
-# =========================================================================
-# Helpers
-# =========================================================================
-
-_SAMPLE_HTML = """
-<html>
-<head>
-    <title>Test Article Title</title>
-    <link rel="canonical" href="https://example.com/canonical-url">
-</head>
-<body>
-    <article>
-        <h1>Test Article Title</h1>
-        <p>This is the first paragraph with enough content for readability
-        to consider it as the main article body. We need substantial text
-        here so the extraction algorithm can identify the primary content
-        area of the page and extract it correctly.</p>
-        <p>Second paragraph with additional text to pad the content and
-        ensure that readability treats this as a real article. The algorithm
-        uses various heuristics including text length, paragraph count,
-        and link density to determine what constitutes an article.</p>
-        <p>Third paragraph provides even more content. This should give us
-        enough text to count words and calculate a reasonable reading time
-        estimate for our tests.</p>
-        <img src="https://cdn.example.com/photo1.jpg">
-        <img src="https://cdn.example.com/photo2.jpg">
-    </article>
-</body>
-</html>
-"""
-
-
-class _TrackingD1(MockD1):
-    """MockD1 that records all SQL statements executed against it."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.executed: list[tuple[str, list[Any]]] = []
-
-    def _execute(self, sql: str, params: list[Any]) -> list[dict[str, Any]]:
-        self.executed.append((sql, params))
-        return []
-
-
-def _make_mock_response(
-    *,
-    status_code: int = 200,
-    text: str = _SAMPLE_HTML,
-    content: bytes = b"fake-image-data",
-    url: str = "https://example.com/article",
-    headers: dict[str, str] | None = None,
-) -> MagicMock:
-    """Create a mock httpx.Response."""
-    resp = MagicMock()
-    resp.status_code = status_code
-    resp.text = text
-    resp.content = content
-    resp.url = url
-    resp.headers = headers or {"content-type": "image/jpeg"}
-    resp.raise_for_status = MagicMock()
-    if status_code >= 400:
-        resp.raise_for_status.side_effect = Exception(f"HTTP {status_code}")
-    return resp
-
-
-async def _noop_screenshot(client, url, account_id, api_token, **kwargs):
-    """Mock screenshot that returns fake image data."""
-    return b"FAKE_SCREENSHOT"
-
-
-def _browser_env(env: MockEnv) -> MockEnv:
-    """Add Browser Rendering config to a MockEnv."""
-    env.CF_ACCOUNT_ID = "test-account"
-    env.CF_API_TOKEN = "test-token"
-    return env
-
-
-def _make_mock_client(
-    page_response: MagicMock | None = None,
-    image_response: MagicMock | None = None,
-) -> AsyncMock:
-    """Create a mock httpx.AsyncClient context manager."""
-    if page_response is None:
-        page_response = _make_mock_response()
-    if image_response is None:
-        image_response = _make_mock_response(content=b"fake-image-bytes")
-
-    mock_client = AsyncMock()
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
-
-    call_count = 0
-
-    async def _get(url, **kwargs):
-        nonlocal call_count
-        call_count += 1
-        # First call is the page fetch, subsequent calls are image downloads
-        if call_count == 1:
-            return page_response
-        return image_response
-
-    mock_client.get = AsyncMock(side_effect=_get)
-    return mock_client
+# Re-export helpers so test_health.py's existing cross-file imports still work
+__all__ = [
+    "_TrackingD1",
+    "_browser_env",
+    "_make_mock_client",
+    "_make_mock_response",
+    "_noop_screenshot",
+]
 
 
 # =========================================================================
@@ -468,3 +382,134 @@ class TestProcessArticleD1Updates:
         first_sql, first_params = db.executed[0]
         assert "UPDATE" in first_sql
         assert "processing" in first_params
+
+
+# =========================================================================
+# test_process_article — content validation
+# =========================================================================
+
+
+class TestProcessArticleContentValidation:
+    async def test_content_type_validation_rejects_non_html(self) -> None:
+        """Non-HTML response (e.g. application/json) results in 'failed' status."""
+        db = _TrackingD1()
+        r2 = MockR2()
+        env = _browser_env(MockEnv(db=db, content=r2))
+
+        json_response = _make_mock_response(
+            headers={"content-type": "application/json"},
+        )
+        mock_client = _make_mock_client(page_response=json_response)
+
+        with (
+            patch("articles.processing.httpx.AsyncClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+        ):
+            from articles.processing import process_article
+
+            await process_article("art_ct", "https://example.com/api", env)
+
+        # Should have 'failed' status update due to content-type validation
+        failed_updates = [
+            (sql, params)
+            for sql, params in db.executed
+            if sql.strip().startswith("UPDATE") and "status" in sql
+        ]
+        assert len(failed_updates) >= 1
+        last_sql, last_params = failed_updates[-1]
+        assert last_params[0] == "failed"
+
+    async def test_content_length_limit_rejects_oversized(self) -> None:
+        """Oversized response (Content-Length > 10MB) results in 'failed' status."""
+        db = _TrackingD1()
+        r2 = MockR2()
+        env = _browser_env(MockEnv(db=db, content=r2))
+
+        oversized_response = _make_mock_response(
+            headers={
+                "content-type": "text/html",
+                "content-length": "20000000",  # 20 MB
+            },
+        )
+        mock_client = _make_mock_client(page_response=oversized_response)
+
+        with (
+            patch("articles.processing.httpx.AsyncClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+        ):
+            from articles.processing import process_article
+
+            await process_article("art_big", "https://example.com/huge", env)
+
+        # Should have 'failed' status update due to content-length limit
+        failed_updates = [
+            (sql, params)
+            for sql, params in db.executed
+            if sql.strip().startswith("UPDATE") and "status" in sql
+        ]
+        assert len(failed_updates) >= 1
+        last_sql, last_params = failed_updates[-1]
+        assert last_params[0] == "failed"
+
+
+# =========================================================================
+# Phase E: Fix fragile assertions — exact index checks
+# =========================================================================
+
+
+class TestProcessArticleExactAssertions:
+    async def test_ready_status_at_exact_index(self) -> None:
+        """Verify the final UPDATE sets status='ready' at the correct param index."""
+        db = _TrackingD1()
+        r2 = MockR2()
+        env = _browser_env(MockEnv(db=db, content=r2))
+
+        mock_client = _make_mock_client()
+
+        with (
+            patch("articles.processing.httpx.AsyncClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+        ):
+            from articles.processing import process_article
+
+            await process_article("art_exact", "https://example.com/article", env)
+
+        # Find the big UPDATE that sets status to 'ready' (the one with 'title' in SQL)
+        update_stmts = [
+            (sql, params)
+            for sql, params in db.executed
+            if sql.strip().startswith("UPDATE") and "title" in sql
+        ]
+        assert len(update_stmts) >= 1
+        sql, params = update_stmts[-1]
+
+        # The 'status' field is the 14th SET clause (0-indexed: position 13)
+        # In the SQL: title, excerpt, author, word_count, reading_time_minutes,
+        #             domain, final_url, canonical_url, html_key, thumbnail_key,
+        #             original_key, image_count, markdown_content, status, updated_at
+        # So "ready" should be at index 13 in the params list
+        assert params[13] == "ready"
+
+    async def test_failed_status_at_exact_index(self) -> None:
+        """Verify the failure UPDATE sets status='failed' at param index 0."""
+        db = _TrackingD1()
+        r2 = MockR2()
+        env = MockEnv(db=db, content=r2)
+
+        error_response = _make_mock_response(status_code=404)
+        mock_client = _make_mock_client(page_response=error_response)
+
+        with patch("articles.processing.httpx.AsyncClient", return_value=mock_client):
+            from articles.processing import process_article
+
+            await process_article("art_fidx", "https://example.com/missing", env)
+
+        # The failure UPDATE is: UPDATE articles SET status = ?, updated_at = ? WHERE id = ?
+        failed_updates = [
+            (sql, params)
+            for sql, params in db.executed
+            if sql.strip().startswith("UPDATE") and "status = ?" in sql and "title" not in sql
+        ]
+        assert len(failed_updates) >= 1
+        _sql, params = failed_updates[-1]
+        assert params[0] == "failed"

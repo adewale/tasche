@@ -2,8 +2,8 @@ import { useRef, useState, useEffect } from 'preact/hooks';
 import { signal } from '@preact/signals';
 import { addToast } from '../state.js';
 import { formatTime } from '../utils.js';
+import { IconPlay, IconPause, IconSkipBack, IconSkipForward, IconX } from './Icons.jsx';
 
-// Global audio state - persists across component mounts/unmounts
 const audioState = signal({
   articleId: null,
   articleTitle: '',
@@ -13,7 +13,6 @@ const audioState = signal({
 
 const SPEEDS = [0.75, 1, 1.25, 1.5, 1.75, 2];
 
-// Singleton audio element
 let audioEl = null;
 function getAudio() {
   if (!audioEl) {
@@ -31,7 +30,7 @@ export function playAudio(articleId, title) {
     visible: true,
   };
   audio.src = '/api/articles/' + articleId + '/audio';
-  audio.play().catch((e) => addToast('Could not play audio: ' + e.message, 'error'));
+  audio.play().catch(function (e) { addToast('Could not play audio: ' + e.message, 'error'); });
   document.body.classList.add('has-audio-player');
 }
 
@@ -53,21 +52,10 @@ export function AudioPlayer() {
       setDuration(audio.duration || 0);
     }
 
-    function onPlay() {
-      setIsPlaying(true);
-    }
-
-    function onPause() {
-      setIsPlaying(false);
-    }
-
-    function onEnded() {
-      setIsPlaying(false);
-    }
-
-    function onError() {
-      addToast('Audio playback error', 'error');
-    }
+    function onPlay() { setIsPlaying(true); }
+    function onPause() { setIsPlaying(false); }
+    function onEnded() { setIsPlaying(false); }
+    function onError() { addToast('Audio playback error', 'error'); }
 
     audio.addEventListener('timeupdate', onTimeUpdate);
     audio.addEventListener('play', onPlay);
@@ -75,33 +63,31 @@ export function AudioPlayer() {
     audio.addEventListener('ended', onEnded);
     audio.addEventListener('error', onError);
 
-    // Sync initial state
     setIsPlaying(!audio.paused);
     setCurrentTime(audio.currentTime);
     setDuration(audio.duration || 0);
 
-    // Media Session API for lock screen controls
     if ('mediaSession' in navigator) {
       navigator.mediaSession.metadata = new MediaMetadata({
         title: state.articleTitle || 'Untitled',
         artist: 'Tasche',
       });
 
-      navigator.mediaSession.setActionHandler('play', () => {
-        audio.play().catch(() => {});
+      navigator.mediaSession.setActionHandler('play', function () {
+        audio.play().catch(function () {});
       });
-      navigator.mediaSession.setActionHandler('pause', () => {
+      navigator.mediaSession.setActionHandler('pause', function () {
         audio.pause();
       });
-      navigator.mediaSession.setActionHandler('seekbackward', () => {
+      navigator.mediaSession.setActionHandler('seekbackward', function () {
         audio.currentTime = Math.max(0, audio.currentTime - 15);
       });
-      navigator.mediaSession.setActionHandler('seekforward', () => {
+      navigator.mediaSession.setActionHandler('seekforward', function () {
         audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + 15);
       });
     }
 
-    return () => {
+    return function () {
       audio.removeEventListener('timeupdate', onTimeUpdate);
       audio.removeEventListener('play', onPlay);
       audio.removeEventListener('pause', onPause);
@@ -116,7 +102,7 @@ export function AudioPlayer() {
     const audio = getAudio();
     if (!audio.src) return;
     if (audio.paused) {
-      audio.play().catch(() => {});
+      audio.play().catch(function () {});
     } else {
       audio.pause();
     }
@@ -125,23 +111,20 @@ export function AudioPlayer() {
   function skip(seconds) {
     const audio = getAudio();
     if (!audio.src) return;
-    audio.currentTime = Math.max(
-      0,
-      Math.min(audio.duration || 0, audio.currentTime + seconds)
-    );
+    audio.currentTime = Math.max(0, Math.min(audio.duration || 0, audio.currentTime + seconds));
   }
 
   function cycleSpeed() {
     const newIndex = (speedIndex + 1) % SPEEDS.length;
     setSpeedIndex(newIndex);
-    const audio = getAudio();
-    audio.playbackRate = SPEEDS[newIndex];
+    getAudio().playbackRate = SPEEDS[newIndex];
   }
 
   function stop() {
     const audio = getAudio();
     audio.pause();
     audio.src = '';
+    audio.load();
     audioState.value = {
       articleId: null,
       articleTitle: '',
@@ -171,20 +154,20 @@ export function AudioPlayer() {
           </div>
         </div>
         <div class="audio-player-controls">
-          <button class="audio-skip-back" title="Back 15s" onClick={() => skip(-15)}>
-            {'\u23EA'}
+          <button title="Back 15s" onClick={function () { skip(-15); }}>
+            <IconSkipBack />
           </button>
           <button class="play-btn" title={isPlaying ? 'Pause' : 'Play'} onClick={toggle}>
-            {isPlaying ? '\u23F8' : '\u25B6'}
+            {isPlaying ? <IconPause size={18} /> : <IconPlay size={18} />}
           </button>
-          <button class="audio-skip-fwd" title="Forward 15s" onClick={() => skip(15)}>
-            {'\u23E9'}
+          <button title="Forward 15s" onClick={function () { skip(15); }}>
+            <IconSkipForward />
           </button>
           <button class="audio-speed-btn" title="Playback speed" onClick={cycleSpeed}>
             {SPEEDS[speedIndex]}x
           </button>
           <button class="audio-close-btn" title="Close" onClick={stop}>
-            {'\u2715'}
+            <IconX />
           </button>
         </div>
       </div>

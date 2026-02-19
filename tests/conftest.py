@@ -8,11 +8,18 @@ in-memory and exposes the same async interface that the real bindings provide.
 from __future__ import annotations
 
 import json
+import re
 import secrets
+import time
 from dataclasses import dataclass, field
 from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest  # noqa: I001
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from src.auth.session import COOKIE_NAME, create_session  # noqa: F401 (COOKIE_NAME re-exported)
 
 # ---------------------------------------------------------------------------
 # Mock D1 (Database)
@@ -32,7 +39,18 @@ class MockD1Statement:
         self._params: list[Any] = []
 
     def bind(self, *args: Any) -> MockD1Statement:
-        """Bind positional parameters to the statement."""
+        """Bind positional parameters to the statement.
+
+        Validates that the number of bound parameters matches the number
+        of ``?`` placeholders in the SQL statement.
+        """
+        expected = len(re.findall(r"\?", self._sql))
+        actual = len(args)
+        if actual != expected:
+            raise ValueError(
+                f"Parameter count mismatch: SQL has {expected} placeholder(s) "
+                f"but {actual} parameter(s) were bound. SQL: {self._sql!r}"
+            )
         self._params = list(args)
         return self
 
@@ -49,9 +67,19 @@ class MockD1Statement:
         return None
 
     async def run(self) -> dict[str, Any]:
-        """Execute a statement that does not return rows (INSERT/UPDATE/DELETE)."""
-        self._db._execute(self._sql, self._params)
-        return {"success": True, "meta": {"changes": 1}}
+        """Execute a statement that does not return rows (INSERT/UPDATE/DELETE).
+
+        Tracks row changes: ``meta.changes`` reflects the number of rows
+        returned by ``_execute`` (0 when no match, otherwise the count).
+        """
+        rows = self._db._execute(self._sql, self._params)
+        changes = len(rows) if rows else 1 if self._is_write_statement() else 0
+        return {"success": True, "meta": {"changes": changes}}
+
+    def _is_write_statement(self) -> bool:
+        """Check if the SQL is a write statement (INSERT/UPDATE/DELETE)."""
+        stripped = self._sql.strip().upper()
+        return stripped.startswith(("INSERT", "UPDATE", "DELETE"))
 
 
 class MockD1:
@@ -77,31 +105,63 @@ class MockD1:
 
 
 # ---------------------------------------------------------------------------
-# Mock KV (Key-Value)
+# Mock KV (Key-Value) with TTL tracking
 # ---------------------------------------------------------------------------
 
 
 class MockKV:
-    """In-memory mock of a Cloudflare KV namespace binding."""
+    """In-memory mock of a Cloudflare KV namespace binding.
+
+    Supports TTL tracking: when ``expirationTtl`` is passed to ``put()``,
+    the key will expire after the given number of seconds.  Use
+    ``advance_time(seconds)`` to simulate time progression, or expired keys
+    will be checked against real wall-clock time.
+    """
 
     def __init__(self) -> None:
         self._store: dict[str, str] = {}
+        self._expiry: dict[str, float] = {}
+        self._time_offset: float = 0.0
+
+    def _now(self) -> float:
+        """Return the current (possibly simulated) time."""
+        return time.monotonic() + self._time_offset
+
+    def advance_time(self, seconds: float) -> None:
+        """Advance the simulated clock by *seconds*.
+
+        After calling this, any keys whose TTL has elapsed will appear
+        expired on the next ``get()`` call.
+        """
+        self._time_offset += seconds
 
     async def get(self, key: str, **kwargs: Any) -> str | None:
-        """Retrieve a value by key.  Returns ``None`` if not found."""
+        """Retrieve a value by key.  Returns ``None`` if not found or expired."""
+        if key in self._expiry and self._now() >= self._expiry[key]:
+            # Key has expired — clean up and return None
+            self._store.pop(key, None)
+            del self._expiry[key]
+            return None
         return self._store.get(key)
 
     async def put(self, key: str, value: str, **kwargs: Any) -> None:
-        """Store a value.  Ignores ``expirationTtl`` and other options."""
+        """Store a value.  Honors ``expirationTtl`` (seconds) for TTL tracking."""
         self._store[key] = value
+        ttl = kwargs.get("expirationTtl")
+        if ttl is not None:
+            self._expiry[key] = self._now() + ttl
+        else:
+            # No TTL — remove any previous expiry
+            self._expiry.pop(key, None)
 
     async def delete(self, key: str) -> None:
         """Delete a key."""
         self._store.pop(key, None)
+        self._expiry.pop(key, None)
 
 
 # ---------------------------------------------------------------------------
-# Mock R2 (Object Storage)
+# Mock R2 (Object Storage) with httpMetadata support
 # ---------------------------------------------------------------------------
 
 
@@ -122,27 +182,42 @@ class MockR2Object:
 
 
 class MockR2:
-    """In-memory mock of a Cloudflare R2 bucket binding."""
+    """In-memory mock of a Cloudflare R2 bucket binding.
+
+    Stores and returns ``httpMetadata`` on ``put()``/``get()``.
+    """
 
     def __init__(self) -> None:
         self._store: dict[str, bytes] = {}
+        self._metadata: dict[str, dict[str, str]] = {}
 
     async def put(self, key: str, value: bytes | str, **kwargs: Any) -> None:
-        """Store an object."""
+        """Store an object.  Preserves ``httpMetadata`` if provided."""
         if isinstance(value, str):
             value = value.encode("utf-8")
         self._store[key] = value
+        http_metadata = kwargs.get("httpMetadata")
+        if http_metadata is not None:
+            self._metadata[key] = dict(http_metadata)
+        else:
+            self._metadata.pop(key, None)
 
     async def get(self, key: str) -> MockR2Object | None:
         """Retrieve an object.  Returns ``None`` if not found."""
         data = self._store.get(key)
         if data is None:
             return None
-        return MockR2Object(key=key, body=data, size=len(data))
+        return MockR2Object(
+            key=key,
+            body=data,
+            size=len(data),
+            httpMetadata=self._metadata.get(key, {}),
+        )
 
     async def delete(self, key: str) -> None:
         """Delete an object."""
         self._store.pop(key, None)
+        self._metadata.pop(key, None)
 
     async def list(self, **kwargs: Any) -> dict[str, Any]:
         """List objects.  Supports optional ``prefix`` filtering and pagination."""
@@ -151,11 +226,7 @@ class MockR2:
         page_size = kwargs.get("limit", 1000)
 
         all_objects = sorted(
-            [
-                {"key": k, "size": len(v)}
-                for k, v in self._store.items()
-                if k.startswith(prefix)
-            ],
+            [{"key": k, "size": len(v)} for k, v in self._store.items() if k.startswith(prefix)],
             key=lambda o: o["key"],
         )
 
@@ -211,9 +282,21 @@ class MockAI:
         self._response = response or b""
         self.calls: list[dict[str, Any]] = []
 
-    async def run(self, model: str, **kwargs: Any) -> Any:
-        """Record the call and return the configured response."""
-        self.calls.append({"model": model, **kwargs})
+    async def run(self, model: str, inputs: Any = None, **kwargs: Any) -> Any:
+        """Record the call and return the configured response.
+
+        Accepts inputs as a positional arg (matching the Workers AI calling
+        convention ``ai.run(model, inputs)``) or as keyword arguments.
+        """
+        call: dict[str, Any] = {"model": model}
+        if inputs is not None:
+            # inputs may be a dict (in tests) or a JsProxy (in production)
+            if isinstance(inputs, dict):
+                call.update(inputs)
+            else:
+                call["inputs"] = inputs
+        call.update(kwargs)
+        self.calls.append(call)
         return self._response
 
 
@@ -319,6 +402,206 @@ class ArticleFactory:
 
         defaults.update(overrides)
         return defaults
+
+
+# ---------------------------------------------------------------------------
+# Shared user data constant
+# ---------------------------------------------------------------------------
+
+USER_DATA: dict[str, Any] = {
+    "user_id": "user_001",
+    "email": "test@example.com",
+    "username": "tester",
+    "avatar_url": "https://github.com/avatar.png",
+    "created_at": "2025-01-01T00:00:00",
+}
+
+# Backward-compatible alias used by some test files
+_USER_DATA = USER_DATA
+
+
+# ---------------------------------------------------------------------------
+# Unified TrackingD1
+# ---------------------------------------------------------------------------
+
+
+class TrackingD1(MockD1):
+    """MockD1 that records all SQL statements executed against it.
+
+    Optionally accepts a ``result_fn(sql, params)`` callback to return
+    custom results for specific queries.  When no callback is provided,
+    all queries return an empty list.
+
+    Usage::
+
+        db = TrackingD1()  # returns [] for everything
+        db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
+    """
+
+    def __init__(self, result_fn: Any | None = None) -> None:
+        super().__init__()
+        self.executed: list[tuple[str, list[Any]]] = []
+        self._result_fn = result_fn
+
+    def _execute(self, sql: str, params: list[Any]) -> list[dict[str, Any]]:
+        self.executed.append((sql, params))
+        if self._result_fn is not None:
+            return self._result_fn(sql, params)
+        return []
+
+
+# Backward-compatible alias
+_TrackingD1 = TrackingD1
+
+
+# ---------------------------------------------------------------------------
+# Shared test app helpers
+# ---------------------------------------------------------------------------
+
+
+def _make_test_app(env: Any, *routers: tuple[Any, str]) -> FastAPI:
+    """Create a FastAPI app with env injection and the given routers.
+
+    Each router argument should be a ``(router, prefix)`` tuple::
+
+        app = _make_test_app(env, (articles_router, "/api/articles"))
+        app = _make_test_app(
+            env, (tags_router, "/api/tags"), (article_tags_router, "/api/articles"),
+        )
+    """
+    test_app = FastAPI()
+
+    @test_app.middleware("http")
+    async def inject_env(request, call_next):
+        request.scope["env"] = env
+        return await call_next(request)
+
+    for router_item, prefix in routers:
+        test_app.include_router(router_item, prefix=prefix)
+
+    return test_app
+
+
+async def _authenticated_client(
+    env: MockEnv,
+    *routers: tuple[Any, str],
+    user_data: dict[str, Any] | None = None,
+) -> tuple[TestClient, str]:
+    """Create a test client with a valid session cookie.
+
+    Builds the app with the given routers and returns a ``(client, session_id)``
+    tuple ready for making authenticated requests::
+
+        client, sid = await _authenticated_client(
+            env,
+            (articles_router, "/api/articles"),
+        )
+        resp = client.get("/api/articles", cookies={COOKIE_NAME: sid})
+    """
+    data = user_data or USER_DATA
+    session_id = await create_session(env.SESSIONS, data)
+    app = _make_test_app(env, *routers)
+    client = TestClient(app, raise_server_exceptions=False)
+    return client, session_id
+
+
+# ---------------------------------------------------------------------------
+# Processing test helpers (moved from test_processing.py)
+# ---------------------------------------------------------------------------
+
+SAMPLE_HTML = """
+<html>
+<head>
+    <title>Test Article Title</title>
+    <link rel="canonical" href="https://example.com/canonical-url">
+</head>
+<body>
+    <article>
+        <h1>Test Article Title</h1>
+        <p>This is the first paragraph with enough content for readability
+        to consider it as the main article body. We need substantial text
+        here so the extraction algorithm can identify the primary content
+        area of the page and extract it correctly.</p>
+        <p>Second paragraph with additional text to pad the content and
+        ensure that readability treats this as a real article. The algorithm
+        uses various heuristics including text length, paragraph count,
+        and link density to determine what constitutes an article.</p>
+        <p>Third paragraph provides even more content. This should give us
+        enough text to count words and calculate a reasonable reading time
+        estimate for our tests.</p>
+        <img src="https://cdn.example.com/photo1.jpg">
+        <img src="https://cdn.example.com/photo2.jpg">
+    </article>
+</body>
+</html>
+"""
+
+# Backward-compatible alias
+_SAMPLE_HTML = SAMPLE_HTML
+
+
+def _make_mock_response(
+    *,
+    status_code: int = 200,
+    text: str = SAMPLE_HTML,
+    content: bytes = b"fake-image-data",
+    url: str = "https://example.com/article",
+    headers: dict[str, str] | None = None,
+) -> MagicMock:
+    """Create a mock httpx.Response."""
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.text = text
+    resp.content = content
+    resp.url = url
+    resp.headers = headers or {"content-type": "text/html"}
+    resp.raise_for_status = MagicMock()
+    if status_code >= 400:
+        resp.raise_for_status.side_effect = Exception(f"HTTP {status_code}")
+    return resp
+
+
+async def _noop_screenshot(client, url, account_id, api_token, **kwargs):
+    """Mock screenshot that returns fake image data."""
+    return b"FAKE_SCREENSHOT"
+
+
+def _browser_env(env: MockEnv) -> MockEnv:
+    """Add Browser Rendering config to a MockEnv."""
+    env.CF_ACCOUNT_ID = "test-account"
+    env.CF_API_TOKEN = "test-token"
+    return env
+
+
+def _make_mock_client(
+    page_response: MagicMock | None = None,
+    image_response: MagicMock | None = None,
+) -> AsyncMock:
+    """Create a mock httpx.AsyncClient context manager."""
+    if page_response is None:
+        page_response = _make_mock_response()
+    if image_response is None:
+        image_response = _make_mock_response(
+            content=b"fake-image-bytes",
+            headers={"content-type": "image/jpeg"},
+        )
+
+    mock_client = AsyncMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    call_count = 0
+
+    async def _get(url, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        # First call is the page fetch, subsequent calls are image downloads
+        if call_count == 1:
+            return page_response
+        return image_response
+
+    mock_client.get = AsyncMock(side_effect=_get)
+    return mock_client
 
 
 # ---------------------------------------------------------------------------

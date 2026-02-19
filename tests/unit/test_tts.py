@@ -8,10 +8,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.auth.session import COOKIE_NAME, create_session
+from src.auth.session import COOKIE_NAME
 from src.tts.routes import router
 from tests.conftest import (
     ArticleFactory,
@@ -20,60 +19,28 @@ from tests.conftest import (
     MockEnv,
     MockQueue,
     MockR2,
+    _make_test_app,
+)
+from tests.conftest import (
+    TrackingD1 as _TrackingD1,
+)
+from tests.conftest import (
+    _authenticated_client as _authenticated_client_base,
 )
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-_USER_DATA: dict[str, Any] = {
-    "user_id": "user_001",
-    "email": "test@example.com",
-    "username": "tester",
-    "avatar_url": "https://github.com/avatar.png",
-    "created_at": "2025-01-01T00:00:00",
-}
+_ROUTERS = ((router, "/api/articles"),)
 
 
-def _make_app(env: Any) -> FastAPI:
-    """Create a FastAPI app with the TTS router and env injection."""
-    test_app = FastAPI()
-
-    @test_app.middleware("http")
-    async def inject_env(request, call_next):
-        request.scope["env"] = env
-        return await call_next(request)
-
-    test_app.include_router(router, prefix="/api/articles")
-    return test_app
+def _make_app(env):
+    return _make_test_app(env, *_ROUTERS)
 
 
 async def _authenticated_client(env: MockEnv) -> tuple[TestClient, str]:
-    """Create a test client with a valid session cookie."""
-    session_id = await create_session(env.SESSIONS, _USER_DATA)
-    app = _make_app(env)
-    client = TestClient(app, raise_server_exceptions=False)
-    return client, session_id
-
-
-# ---------------------------------------------------------------------------
-# Tracking D1 mock
-# ---------------------------------------------------------------------------
-
-
-class _TrackingD1(MockD1):
-    """MockD1 that records all SQL statements and supports configurable results."""
-
-    def __init__(self, result_fn: Any | None = None) -> None:
-        super().__init__()
-        self.executed: list[tuple[str, list[Any]]] = []
-        self._result_fn = result_fn
-
-    def _execute(self, sql: str, params: list[Any]) -> list[dict[str, Any]]:
-        self.executed.append((sql, params))
-        if self._result_fn is not None:
-            return self._result_fn(sql, params)
-        return []
+    return await _authenticated_client_base(env, *_ROUTERS)
 
 
 # ---------------------------------------------------------------------------
@@ -107,11 +74,7 @@ class TestListenLater:
         assert data["audio_status"] == "pending"
 
         # Verify D1 UPDATE was called with audio_status
-        update_calls = [
-            (sql, params)
-            for sql, params in db.executed
-            if sql.startswith("UPDATE")
-        ]
+        update_calls = [(sql, params) for sql, params in db.executed if sql.startswith("UPDATE")]
         assert len(update_calls) >= 1
         update_sql = update_calls[0][0]
         assert "audio_status = 'pending'" in update_sql
@@ -135,16 +98,16 @@ class TestListenLater:
 
         assert resp.status_code == 404
 
-
-# ---------------------------------------------------------------------------
-# GET /api/articles/{article_id}/audio
-# ---------------------------------------------------------------------------
-
+    # ---------------------------------------------------------------------------
+    # GET /api/articles/{article_id}/audio
+    # ---------------------------------------------------------------------------
 
     async def test_returns_409_when_already_pending(self) -> None:
         """POST listen-later returns 409 when audio is already pending."""
         article = ArticleFactory.create(
-            id="art_dup1", user_id="user_001", audio_status="pending",
+            id="art_dup1",
+            user_id="user_001",
+            audio_status="pending",
         )
 
         def execute(sql: str, params: list) -> list:
@@ -167,7 +130,9 @@ class TestListenLater:
     async def test_returns_409_when_generating(self) -> None:
         """POST listen-later returns 409 when audio is generating."""
         article = ArticleFactory.create(
-            id="art_dup2", user_id="user_001", audio_status="generating",
+            id="art_dup2",
+            user_id="user_001",
+            audio_status="generating",
         )
 
         def execute(sql: str, params: list) -> list:
@@ -189,7 +154,8 @@ class TestListenLater:
     async def test_returns_200_when_already_ready(self) -> None:
         """POST listen-later returns 200 with existing data when ready."""
         article = ArticleFactory.create(
-            id="art_ready", user_id="user_001",
+            id="art_ready",
+            user_id="user_001",
             audio_status="ready",
             audio_key="articles/art_ready/audio.mp3",
         )
@@ -216,7 +182,9 @@ class TestListenLater:
     async def test_enqueues_when_failed(self) -> None:
         """POST listen-later enqueues when previous attempt failed."""
         article = ArticleFactory.create(
-            id="art_fail", user_id="user_001", audio_status="failed",
+            id="art_fail",
+            user_id="user_001",
+            audio_status="failed",
         )
 
         def execute(sql: str, params: list) -> list:
@@ -384,7 +352,7 @@ class TestTTSProcessing:
 
         from tts.processing import process_tts
 
-        await process_tts("art_proc1", env)
+        await process_tts("art_proc1", env, user_id="user_001")
 
         # Verify AI was called with the correct model
         assert len(ai.calls) == 1
@@ -423,7 +391,7 @@ class TestTTSProcessing:
 
         from tts.processing import process_tts
 
-        await process_tts("art_proc2", env)
+        await process_tts("art_proc2", env, user_id="user_001")
 
         # Verify AI was called with the D1 content
         assert len(ai.calls) == 1
@@ -447,7 +415,7 @@ class TestTTSProcessing:
 
         from tts.processing import process_tts
 
-        await process_tts("art_proc3", env)
+        await process_tts("art_proc3", env, user_id="user_001")
 
         # First executed statement should set audio_status to 'generating'
         assert len(db.executed) >= 1
@@ -477,15 +445,18 @@ class TestTTSProcessingFailure:
 
         from tts.processing import process_tts
 
-        await process_tts("art_fail1", env)
+        await process_tts("art_fail1", env, user_id="user_001")
 
-        # Should have 'failed' status update
+        # Should have an UPDATE that sets audio_status to 'failed'
         failed_updates = [
             (sql, params)
             for sql, params in db.executed
-            if "UPDATE" in sql and "failed" in str(params)
+            if sql.startswith("UPDATE") and "audio_status" in sql
         ]
         assert len(failed_updates) >= 1
+        # The last such update should have "failed" as the first bound param
+        last_sql, last_params = failed_updates[-1]
+        assert last_params[0] == "failed"
 
     async def test_sets_failed_on_ai_error(self) -> None:
         """When Workers AI raises an error, audio_status is set to 'failed'."""
@@ -501,7 +472,7 @@ class TestTTSProcessingFailure:
         # Create an AI mock that raises an error
         ai = MockAI()
 
-        async def _failing_run(model, **kwargs):
+        async def _failing_run(model, inputs=None, **kwargs):
             raise RuntimeError("AI model unavailable")
 
         ai.run = _failing_run
@@ -510,15 +481,17 @@ class TestTTSProcessingFailure:
 
         from tts.processing import process_tts
 
-        await process_tts("art_fail2", env)
+        await process_tts("art_fail2", env, user_id="user_001")
 
-        # Should have 'failed' status update
+        # Should have an UPDATE that sets audio_status to 'failed'
         failed_updates = [
             (sql, params)
             for sql, params in db.executed
-            if "UPDATE" in sql and "failed" in str(params)
+            if sql.startswith("UPDATE") and "audio_status" in sql
         ]
         assert len(failed_updates) >= 1
+        last_sql, last_params = failed_updates[-1]
+        assert last_params[0] == "failed"
 
 
 # ---------------------------------------------------------------------------
@@ -628,6 +601,112 @@ class TestStripMarkdown:
         from tts.processing import strip_markdown
 
         assert strip_markdown(None) is None
+
+
+# ---------------------------------------------------------------------------
+# TTS text truncation
+# ---------------------------------------------------------------------------
+
+
+class TestTTSTextTruncation:
+    async def test_tts_text_truncation(self) -> None:
+        """Markdown > 100,000 chars is truncated with a message appended."""
+        long_markdown = "Hello world. " * 10_000  # ~130,000 chars
+        article = ArticleFactory.create(
+            id="art_trunc",
+            user_id="user_001",
+            markdown_content=long_markdown,
+        )
+
+        db = _TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
+        r2 = MockR2()
+        fake_audio = b"\xff\xfb\x90\x00" + b"\x00" * 100
+        ai = MockAI(response=fake_audio)
+        env = MockEnv(db=db, content=r2, ai=ai)
+
+        from tts.processing import process_tts
+
+        await process_tts("art_trunc", env, user_id="user_001")
+
+        # Verify AI was called with truncated text that ends with the truncation message
+        assert len(ai.calls) == 1
+        text_sent = ai.calls[0]["text"]
+        assert "Content has been truncated" in text_sent
+        assert len(text_sent) < len(long_markdown)
+
+
+# ---------------------------------------------------------------------------
+# _estimate_duration edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestEstimateDuration:
+    def test_empty_text(self) -> None:
+        """Empty text returns at least 1 second."""
+        from tts.processing import _estimate_duration
+
+        assert _estimate_duration("") >= 1
+
+    def test_single_word(self) -> None:
+        """Single word returns at least 1 second."""
+        from tts.processing import _estimate_duration
+
+        assert _estimate_duration("hello") >= 1
+
+    def test_long_text(self) -> None:
+        """Long text returns proportional duration."""
+        from tts.processing import _estimate_duration
+
+        # 1500 words at 150 wpm = 10 minutes = 600 seconds
+        text = "word " * 1500
+        duration = _estimate_duration(text)
+        assert duration == 600
+
+
+# ---------------------------------------------------------------------------
+# Enqueue failure rollback
+# ---------------------------------------------------------------------------
+
+
+class TestEnqueueFailureRollback:
+    async def test_enqueue_failure_rollback(self) -> None:
+        """When queue.send() fails, audio_status is rolled back to NULL."""
+        article = ArticleFactory.create(
+            id="art_qfail",
+            user_id="user_001",
+            audio_status=None,
+        )
+
+        def execute(sql: str, params: list) -> list:
+            if sql.startswith("SELECT") and "id = ?" in sql:
+                return [article]
+            return []
+
+        class FailingQueue:
+            messages: list = []
+
+            async def send(self, message: Any, **kwargs: Any) -> None:
+                raise RuntimeError("Queue unavailable")
+
+        db = _TrackingD1(result_fn=execute)
+        queue = FailingQueue()
+        env = MockEnv(db=db, article_queue=queue)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles/art_qfail/listen-later",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 503
+
+        # Verify audio_status was rolled back to NULL
+        rollback_updates = [
+            (sql, params)
+            for sql, params in db.executed
+            if sql.startswith("UPDATE") and "audio_status = NULL" in sql
+        ]
+        assert len(rollback_updates) >= 1
 
 
 class TestTTSAuthRequired:

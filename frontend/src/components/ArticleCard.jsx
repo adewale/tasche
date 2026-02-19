@@ -2,6 +2,9 @@ import { useState, useEffect } from 'preact/hooks';
 import { formatDate } from '../utils.js';
 import { addToast, isOffline, articles } from '../state.js';
 import { updateArticle, deleteArticle as apiDeleteArticle, getArticleTags, queueOfflineMutation, isOfflineCached } from '../api.js';
+import { IconStar, IconTrash, IconCheck } from './Icons.jsx';
+
+const tagCache = new Map();
 
 export function ArticleCard({ article, onDelete }) {
   const a = article;
@@ -17,13 +20,16 @@ export function ArticleCard({ article, onDelete }) {
 
   useEffect(() => {
     let cancelled = false;
-    getArticleTags(a.id)
-      .then(function (tags) {
-        if (!cancelled) setCardTags(tags);
-      })
-      .catch(function () {
-        // Silently ignore tag fetch failures
-      });
+    if (tagCache.has(a.id)) {
+      setCardTags(tagCache.get(a.id));
+    } else {
+      getArticleTags(a.id)
+        .then(function (tags) {
+          tagCache.set(a.id, tags);
+          if (!cancelled) setCardTags(tags);
+        })
+        .catch(function () {});
+    }
     isOfflineCached(a.id)
       .then(function (status) {
         if (!cancelled) setOfflineSaved(status.hasContent);
@@ -35,7 +41,6 @@ export function ArticleCard({ article, onDelete }) {
   }, [a.id]);
 
   function handleClick(e) {
-    // Don't navigate if clicking action buttons or tag chips
     if (e.target.closest('.article-card-actions')) return;
     if (e.target.closest('.tag-chip')) return;
     window.location.hash = '#/article/' + a.id;
@@ -46,16 +51,15 @@ export function ArticleCard({ article, onDelete }) {
     const newFav = !a.is_favorite;
     try {
       await updateArticle(a.id, { is_favorite: newFav });
-      // Update the article in the articles signal array
-      articles.value = articles.value.map((art) =>
-        art.id === a.id ? { ...art, is_favorite: newFav ? 1 : 0 } : art
-      );
+      articles.value = articles.value.map(function (art) {
+        return art.id === a.id ? { ...art, is_favorite: newFav ? 1 : 0 } : art;
+      });
     } catch (err) {
       if (isOffline.value) {
         queueOfflineMutation('/api/articles/' + a.id, 'PATCH', { is_favorite: newFav });
-        articles.value = articles.value.map((art) =>
-          art.id === a.id ? { ...art, is_favorite: newFav ? 1 : 0 } : art
-        );
+        articles.value = articles.value.map(function (art) {
+          return art.id === a.id ? { ...art, is_favorite: newFav ? 1 : 0 } : art;
+        });
         addToast('Queued for sync', 'info');
       } else {
         addToast(err.message, 'error');
@@ -68,7 +72,7 @@ export function ArticleCard({ article, onDelete }) {
     if (!confirm('Delete this article?')) return;
     try {
       await apiDeleteArticle(a.id);
-      articles.value = articles.value.filter((art) => art.id !== a.id);
+      articles.value = articles.value.filter(function (art) { return art.id !== a.id; });
       if (onDelete) onDelete(a.id);
       addToast('Article deleted', 'success');
     } catch (err) {
@@ -117,7 +121,9 @@ export function ArticleCard({ article, onDelete }) {
             <span>{formatDate(a.created_at)}</span>
             <span class={'reading-status-badge ' + statusClass}>{statusClass}</span>
             {offlineSaved && (
-              <span class="offline-indicator" title="Available offline">{'\u2713'}</span>
+              <span class="offline-indicator" title="Available offline">
+                <IconCheck size={10} />
+              </span>
             )}
           </div>
           {a.excerpt && <div class="article-card-excerpt">{a.excerpt}</div>}
@@ -152,10 +158,10 @@ export function ArticleCard({ article, onDelete }) {
             title="Toggle favorite"
             onClick={handleFavorite}
           >
-            {isFav ? '\u2605' : '\u2606'}
+            <IconStar filled={!!isFav} />
           </button>
           <button class="delete-btn" title="Delete" onClick={handleDelete}>
-            {'\uD83D\uDDD1'}
+            <IconTrash />
           </button>
         </div>
       </div>

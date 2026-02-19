@@ -1,14 +1,6 @@
-/* =========================================================================
-   Tasche — Style Sheet
-   Mobile-first, responsive, dark-mode-aware styles.
-   ========================================================================= */
-
-/* ---------------------------------------------------------------------------
-   CSS Custom Properties
-   --------------------------------------------------------------------------- */
+/* Variables */
 
 :root {
-  /* Light mode */
   --bg: #ffffff;
   --bg-secondary: #f5f5f7;
   --bg-card: #ffffff;
@@ -16,15 +8,15 @@
   --text-secondary: #6e6e73;
   --text-muted: #aeaeb2;
   --border: #e5e5e7;
-  --accent: #1a1a2e;
-  --accent-hover: #2d2d4e;
-  --accent-light: #e8e8f0;
-  --danger: #ff3b30;
-  --danger-hover: #d63028;
-  --success: #34c759;
-  --warning: #ff9500;
-  --favorite: #ff9500;
-  --link: #0066cc;
+  --accent: #2b4acb;
+  --accent-hover: #3d5cd6;
+  --accent-light: #e8ecf8;
+  --danger: #d4302b;
+  --danger-hover: #b52722;
+  --success: #2d8a4e;
+  --warning: #c47e12;
+  --favorite: #d4870e;
+  --link: #2b5ea7;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.1);
   --radius: 8px;
@@ -34,6 +26,22 @@
   --font-serif: Georgia, 'Times New Roman', serif;
   --font-mono: 'SF Mono', Menlo, Consolas, monospace;
   --transition: 0.2s ease;
+  --status-reading-bg: #e8f5e9;
+  --status-reading-text: #2e7d32;
+  --status-available-bg: #e8f5e9;
+  --status-available-text: #2e7d32;
+  --status-available-border: #c8e6c9;
+  --status-paywalled-bg: #fff8e1;
+  --status-paywalled-text: #c47e12;
+  --status-paywalled-border: #ffecb3;
+  --status-gone-bg: #fff3e0;
+  --status-gone-text: #c45000;
+  --status-gone-border: #ffe0b2;
+  --status-dead-bg: #ffebee;
+  --status-dead-text: #c62828;
+  --status-dead-border: #ffcdd2;
+  --mark-bg: var(--warning);
+  --mark-text: #000;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -45,23 +53,37 @@
     --text-secondary: #aeaeb2;
     --text-muted: #6e6e73;
     --border: #3a3a3c;
-    --accent: #6e6ef0;
-    --accent-hover: #8585f5;
+    --accent: #7b8df0;
+    --accent-hover: #95a3f5;
     --accent-light: #2a2a4e;
-    --danger: #ff453a;
-    --danger-hover: #ff6961;
-    --success: #30d158;
-    --warning: #ffa726;
-    --favorite: #ffa726;
-    --link: #64b5f6;
+    --danger: #e05550;
+    --danger-hover: #f07570;
+    --success: #3bb564;
+    --warning: #d4981e;
+    --favorite: #d4981e;
+    --link: #6daee8;
     --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
     --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.4);
+    --status-reading-bg: #1b3a20;
+    --status-reading-text: #66bb6a;
+    --status-available-bg: #1b3a20;
+    --status-available-text: #66bb6a;
+    --status-available-border: #2e5a33;
+    --status-paywalled-bg: #3a3000;
+    --status-paywalled-text: #ffd54f;
+    --status-paywalled-border: #5a4a00;
+    --status-gone-bg: #3a2000;
+    --status-gone-text: #ffab40;
+    --status-gone-border: #5a3800;
+    --status-dead-bg: #3a1010;
+    --status-dead-text: #ef5350;
+    --status-dead-border: #5a2020;
+    --mark-bg: #665200;
+    --mark-text: #ffd54f;
   }
 }
 
-/* ---------------------------------------------------------------------------
-   Reset & Base
-   --------------------------------------------------------------------------- */
+/* Reset */
 
 *, *::before, *::after {
   box-sizing: border-box;
@@ -112,9 +134,7 @@ input, textarea {
   font-size: inherit;
 }
 
-/* ---------------------------------------------------------------------------
-   Layout
-   --------------------------------------------------------------------------- */
+/* Layout */
 
 #app {
   min-height: 100vh;
@@ -162,9 +182,7 @@ input, textarea {
   padding: 16px;
 }
 
-/* ---------------------------------------------------------------------------
-   Buttons
-   --------------------------------------------------------------------------- */
+/* Buttons */
 
 .btn {
   display: inline-flex;
@@ -231,9 +249,7 @@ input, textarea {
   cursor: not-allowed;
 }
 
-/* ---------------------------------------------------------------------------
-   Forms
-   --------------------------------------------------------------------------- */
+/* Forms */
 
 .input {
   width: 100%;
@@ -261,9 +277,13 @@ input, textarea {
   flex: 1;
 }
 
-/* ---------------------------------------------------------------------------
-   Offline Indicator
-   --------------------------------------------------------------------------- */
+.input-inline-select {
+  width: auto;
+  padding: 4px 10px;
+  font-size: 0.8125rem;
+}
+
+/* Offline bar */
 
 .offline-bar {
   background: var(--warning);
@@ -279,9 +299,7 @@ input, textarea {
   display: block;
 }
 
-/* ---------------------------------------------------------------------------
-   Filter Tabs
-   --------------------------------------------------------------------------- */
+/* Filter tabs */
 
 .filter-tabs {
   display: flex;
@@ -319,9 +337,7 @@ input, textarea {
   border-color: var(--accent);
 }
 
-/* ---------------------------------------------------------------------------
-   Article Cards
-   --------------------------------------------------------------------------- */
+/* Article cards */
 
 .article-list {
   display: flex;
@@ -352,7 +368,6 @@ input, textarea {
   text-decoration: none;
 }
 
-/* Article card body — thumbnail + content side by side */
 .article-card-body {
   display: flex;
   gap: 12px;
@@ -363,7 +378,6 @@ input, textarea {
   min-width: 0;
 }
 
-/* Thumbnail */
 .article-card-thumbnail {
   flex-shrink: 0;
   width: 72px;
@@ -389,7 +403,6 @@ input, textarea {
   font-weight: 700;
 }
 
-/* Processing overlay */
 .processing-overlay {
   position: absolute;
   inset: 0;
@@ -478,6 +491,8 @@ input, textarea {
   color: var(--text-muted);
   transition: color var(--transition), background var(--transition);
   font-size: 1rem;
+  display: flex;
+  align-items: center;
 }
 
 .article-card-actions button:hover {
@@ -505,8 +520,8 @@ input, textarea {
 }
 
 .reading-status-badge.reading {
-  background: #e8f5e9;
-  color: #2e7d32;
+  background: var(--status-reading-bg);
+  color: var(--status-reading-text);
 }
 
 .reading-status-badge.archived {
@@ -514,16 +529,7 @@ input, textarea {
   color: var(--text-muted);
 }
 
-@media (prefers-color-scheme: dark) {
-  .reading-status-badge.reading {
-    background: #1b3a20;
-    color: #66bb6a;
-  }
-}
-
-/* ---------------------------------------------------------------------------
-   Reading Progress Bar
-   --------------------------------------------------------------------------- */
+/* Reading progress */
 
 .reading-progress-bar {
   height: 3px;
@@ -540,9 +546,7 @@ input, textarea {
   border-radius: 2px;
 }
 
-/* ---------------------------------------------------------------------------
-   Reader View
-   --------------------------------------------------------------------------- */
+/* Reader */
 
 .reader-header {
   margin-bottom: 32px;
@@ -562,6 +566,10 @@ input, textarea {
 
 .reader-back:hover {
   color: var(--text);
+}
+
+.reader-back svg {
+  flex-shrink: 0;
 }
 
 .reader-title {
@@ -594,9 +602,7 @@ input, textarea {
   margin-top: 16px;
 }
 
-/* ---------------------------------------------------------------------------
-   Original Status Badge
-   --------------------------------------------------------------------------- */
+/* Original status */
 
 .original-status {
   display: flex;
@@ -615,59 +621,33 @@ input, textarea {
 }
 
 .original-status--available {
-  background: #e8f5e9;
-  color: #2e7d32;
-  border: 1px solid #c8e6c9;
+  background: var(--status-available-bg);
+  color: var(--status-available-text);
+  border: 1px solid var(--status-available-border);
 }
 
 .original-status--paywalled {
-  background: #fff8e1;
-  color: #f57f17;
-  border: 1px solid #ffecb3;
+  background: var(--status-paywalled-bg);
+  color: var(--status-paywalled-text);
+  border: 1px solid var(--status-paywalled-border);
 }
 
 .original-status--gone {
-  background: #fff3e0;
-  color: #e65100;
-  border: 1px solid #ffe0b2;
+  background: var(--status-gone-bg);
+  color: var(--status-gone-text);
+  border: 1px solid var(--status-gone-border);
 }
 
 .original-status--domain_dead {
-  background: #ffebee;
-  color: #c62828;
-  border: 1px solid #ffcdd2;
+  background: var(--status-dead-bg);
+  color: var(--status-dead-text);
+  border: 1px solid var(--status-dead-border);
 }
 
 .original-status--unknown {
   background: var(--bg-secondary);
   color: var(--text-secondary);
   border: 1px solid var(--border);
-}
-
-@media (prefers-color-scheme: dark) {
-  .original-status--available {
-    background: #1b3a20;
-    color: #66bb6a;
-    border-color: #2e5a33;
-  }
-
-  .original-status--paywalled {
-    background: #3a3000;
-    color: #ffd54f;
-    border-color: #5a4a00;
-  }
-
-  .original-status--gone {
-    background: #3a2000;
-    color: #ffab40;
-    border-color: #5a3800;
-  }
-
-  .original-status--domain_dead {
-    background: #3a1010;
-    color: #ef5350;
-    border-color: #5a2020;
-  }
 }
 
 .reader-content {
@@ -785,9 +765,7 @@ input, textarea {
   }
 }
 
-/* ---------------------------------------------------------------------------
-   Audio Player
-   --------------------------------------------------------------------------- */
+/* Audio player */
 
 .audio-player-bar {
   position: fixed;
@@ -899,9 +877,7 @@ input, textarea {
   }
 }
 
-/* ---------------------------------------------------------------------------
-   Tags
-   --------------------------------------------------------------------------- */
+/* Tags */
 
 .tag-chip {
   display: inline-flex;
@@ -975,9 +951,7 @@ input, textarea {
   gap: 8px;
 }
 
-/* ---------------------------------------------------------------------------
-   Search
-   --------------------------------------------------------------------------- */
+/* Search */
 
 .search-container {
   margin-bottom: 24px;
@@ -989,32 +963,20 @@ input, textarea {
   margin-bottom: 16px;
 }
 
-/* Search term highlighting */
 mark {
-  background: var(--warning);
-  color: #000;
+  background: var(--mark-bg);
+  color: var(--mark-text);
   padding: 1px 2px;
   border-radius: 2px;
 }
 
-@media (prefers-color-scheme: dark) {
-  mark {
-    background: #665200;
-    color: #ffd54f;
-  }
-}
-
-/* ---------------------------------------------------------------------------
-   Save Article Form
-   --------------------------------------------------------------------------- */
+/* Save form */
 
 .save-form {
   margin-bottom: 24px;
 }
 
-/* ---------------------------------------------------------------------------
-   Empty State
-   --------------------------------------------------------------------------- */
+/* Empty state */
 
 .empty-state {
   text-align: center;
@@ -1028,6 +990,12 @@ mark {
   opacity: 0.4;
 }
 
+.empty-state-icon svg {
+  width: 48px;
+  height: 48px;
+  stroke: var(--text-muted);
+}
+
 .empty-state-title {
   font-size: 1.125rem;
   font-weight: 600;
@@ -1039,9 +1007,7 @@ mark {
   font-size: 0.875rem;
 }
 
-/* ---------------------------------------------------------------------------
-   Loading
-   --------------------------------------------------------------------------- */
+/* Loading */
 
 .loading {
   display: flex;
@@ -1070,9 +1036,59 @@ mark {
   padding: 16px;
 }
 
-/* ---------------------------------------------------------------------------
-   Error / Toast Messages
-   --------------------------------------------------------------------------- */
+/* Skeleton loading */
+
+.skeleton {
+  background: var(--bg-secondary);
+  border-radius: var(--radius);
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+.skeleton-card {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  display: flex;
+  gap: 12px;
+}
+
+.skeleton-thumbnail {
+  width: 72px;
+  height: 72px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.skeleton-lines {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.skeleton-line {
+  height: 14px;
+  border-radius: 4px;
+}
+
+.skeleton-line:first-child {
+  width: 80%;
+}
+
+.skeleton-line:nth-child(2) {
+  width: 60%;
+}
+
+.skeleton-line:nth-child(3) {
+  width: 40%;
+}
+
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* Toasts */
 
 .toast-container {
   position: fixed;
@@ -1125,9 +1141,7 @@ mark {
   }
 }
 
-/* ---------------------------------------------------------------------------
-   Login Page
-   --------------------------------------------------------------------------- */
+/* Login */
 
 .login-page {
   display: flex;
@@ -1157,9 +1171,7 @@ mark {
   font-size: 1rem;
 }
 
-/* ---------------------------------------------------------------------------
-   User Avatar
-   --------------------------------------------------------------------------- */
+/* Avatar */
 
 .user-avatar {
   width: 32px;
@@ -1168,9 +1180,7 @@ mark {
   object-fit: cover;
 }
 
-/* ---------------------------------------------------------------------------
-   Section headings
-   --------------------------------------------------------------------------- */
+/* Section headings */
 
 .section-title {
   font-size: 1.25rem;
@@ -1178,9 +1188,7 @@ mark {
   margin-bottom: 16px;
 }
 
-/* ---------------------------------------------------------------------------
-   Modal / Dialog
-   --------------------------------------------------------------------------- */
+/* Confirm modal */
 
 .modal-overlay {
   position: fixed;
@@ -1197,14 +1205,20 @@ mark {
   background: var(--bg-card);
   border-radius: var(--radius-lg);
   padding: 24px;
-  max-width: 480px;
+  max-width: 400px;
   width: 100%;
   box-shadow: var(--shadow-lg);
 }
 
 .modal-title {
-  font-size: 1.125rem;
+  font-size: 1rem;
   font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.modal-text {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
   margin-bottom: 16px;
 }
 
@@ -1212,12 +1226,9 @@ mark {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  margin-top: 16px;
 }
 
-/* ---------------------------------------------------------------------------
-   Utility
-   --------------------------------------------------------------------------- */
+/* Accessibility */
 
 .sr-only {
   position: absolute;
@@ -1231,20 +1242,20 @@ mark {
   border: 0;
 }
 
-.text-center { text-align: center; }
-.text-muted { color: var(--text-muted); }
-.mt-4 { margin-top: 16px; }
-.mt-8 { margin-top: 32px; }
-.mb-4 { margin-bottom: 16px; }
-.gap-2 { gap: 8px; }
-.flex { display: flex; }
-.flex-wrap { flex-wrap: wrap; }
-.items-center { align-items: center; }
-.justify-between { justify-content: space-between; }
+/* Inline helper classes (used in 1-2 places) */
 
-/* ---------------------------------------------------------------------------
-   Responsive adjustments
-   --------------------------------------------------------------------------- */
+.settings-detail {
+  font-size: 0.875rem;
+  margin-bottom: 16px;
+}
+
+.bookmarklet-hint {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+
+/* Responsive */
 
 @media (min-width: 640px) {
   .main-content {
@@ -1275,11 +1286,8 @@ mark {
   }
 }
 
-/* ---------------------------------------------------------------------------
-   Offline Features
-   --------------------------------------------------------------------------- */
+/* Offline features */
 
-/* "Save for offline" / "Download audio" buttons */
 .offline-btn {
   background: var(--bg-secondary);
   color: var(--text);
@@ -1307,7 +1315,6 @@ mark {
   cursor: wait;
 }
 
-/* Small offline indicator on article cards */
 .offline-indicator {
   display: inline-flex;
   align-items: center;
@@ -1323,7 +1330,6 @@ mark {
   flex-shrink: 0;
 }
 
-/* Offline badge (dot) next to the header logo */
 .offline-badge {
   display: inline-block;
   width: 8px;
@@ -1348,7 +1354,6 @@ mark {
   50% { opacity: 0.4; }
 }
 
-/* Sync status text in header */
 .sync-status {
   font-size: 0.75rem;
   color: var(--text-secondary);
@@ -1356,7 +1361,6 @@ mark {
   animation: pulse-badge 1s ease-in-out infinite;
 }
 
-/* Account for audio player height when visible */
 body.has-audio-player {
   padding-bottom: 100px;
 }

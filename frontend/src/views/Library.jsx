@@ -2,6 +2,7 @@ import { useState, useEffect } from 'preact/hooks';
 import { Header } from '../components/Header.jsx';
 import { ArticleCard } from '../components/ArticleCard.jsx';
 import { Pagination } from '../components/Pagination.jsx';
+import { IconBookOpen } from '../components/Icons.jsx';
 import {
   articles,
   filter as filterSignal,
@@ -25,7 +26,7 @@ const FILTERS = [
   { key: 'reading', label: 'Reading' },
   { key: 'archived', label: 'Archived' },
   { key: 'favorites', label: 'Favorites' },
-  { key: 'listen', label: '\uD83C\uDFA7' },
+  { key: 'listen', label: 'Audio' },
 ];
 
 export function Library({ tag }) {
@@ -35,7 +36,6 @@ export function Library({ tag }) {
   const isLoading = loadingSignal.value;
   const moreAvailable = hasMoreSignal.value;
 
-  // Reset and load articles on mount or when filter/tag changes
   useEffect(() => {
     articles.value = [];
     offsetSignal.value = 0;
@@ -74,10 +74,9 @@ export function Library({ tag }) {
       offsetSignal.value = currentOffset + result.length;
       hasMoreSignal.value = result.length >= limitSignal.value;
 
-      // Pre-cache unread articles for offline reading
       const unreadIds = result
-        .filter((a) => a.reading_status === 'unread')
-        .map((a) => a.id);
+        .filter(function (a) { return a.reading_status === 'unread'; })
+        .map(function (a) { return a.id; });
       cacheArticlesForOffline(unreadIds);
     } catch (e) {
       addToast('Failed to load articles: ' + e.message, 'error');
@@ -97,7 +96,6 @@ export function Library({ tag }) {
       await apiCreateArticle(url);
       addToast('Article saved!', 'success');
       setSaveUrl('');
-      // Reload list
       articles.value = [];
       offsetSignal.value = 0;
       hasMoreSignal.value = true;
@@ -121,6 +119,21 @@ export function Library({ tag }) {
     filterSignal.value = key;
   }
 
+  function renderSkeletons() {
+    return Array.from({ length: 3 }, function (_, i) {
+      return (
+        <div class="skeleton-card" key={'skel-' + i}>
+          <div class="skeleton skeleton-thumbnail"></div>
+          <div class="skeleton-lines">
+            <div class="skeleton skeleton-line"></div>
+            <div class="skeleton skeleton-line"></div>
+            <div class="skeleton skeleton-line"></div>
+          </div>
+        </div>
+      );
+    });
+  }
+
   return (
     <>
       <Header />
@@ -128,7 +141,7 @@ export function Library({ tag }) {
         {tag ? (
           <>
             <a href="#/tags" class="reader-back">
-              {'\u2190'} Back to tags
+              Back to tags
             </a>
             <h2 class="section-title">Articles tagged</h2>
           </>
@@ -142,7 +155,7 @@ export function Library({ tag }) {
                   placeholder="Paste a URL to save..."
                   autocomplete="off"
                   value={saveUrl}
-                  onInput={(e) => setSaveUrl(e.target.value)}
+                  onInput={function (e) { setSaveUrl(e.target.value); }}
                   onKeyDown={handleKeyDown}
                 />
                 <button class="btn btn-primary" onClick={handleSave}>
@@ -151,15 +164,17 @@ export function Library({ tag }) {
               </div>
             </div>
             <div class="filter-tabs">
-              {FILTERS.map((f) => (
-                <button
-                  key={f.key}
-                  class={'filter-tab' + (currentFilter === f.key ? ' active' : '')}
-                  onClick={() => setFilter(f.key)}
-                >
-                  {f.label}
-                </button>
-              ))}
+              {FILTERS.map(function (f) {
+                return (
+                  <button
+                    key={f.key}
+                    class={'filter-tab' + (currentFilter === f.key ? ' active' : '')}
+                    onClick={function () { setFilter(f.key); }}
+                  >
+                    {f.label}
+                  </button>
+                );
+              })}
             </div>
           </>
         )}
@@ -167,17 +182,23 @@ export function Library({ tag }) {
         <div class="article-list">
           {articleList.length === 0 && !isLoading && (
             <div class="empty-state">
-              <div class="empty-state-icon">{'\uD83D\uDCDA'}</div>
+              <div class="empty-state-icon">
+                <IconBookOpen />
+              </div>
               <div class="empty-state-title">No articles yet</div>
               <div class="empty-state-text">Save a URL above to get started.</div>
             </div>
           )}
-          {articleList.map((a) => (
-            <ArticleCard key={a.id} article={a} />
-          ))}
+          {articleList.map(function (a) {
+            return <ArticleCard key={a.id} article={a} />;
+          })}
         </div>
 
-        {isLoading && (
+        {isLoading && articleList.length === 0 && (
+          <div class="article-list">{renderSkeletons()}</div>
+        )}
+
+        {isLoading && articleList.length > 0 && (
           <div class="loading">
             <div class="spinner"></div>
           </div>
@@ -186,7 +207,7 @@ export function Library({ tag }) {
         <Pagination
           hasMore={moreAvailable}
           loading={isLoading}
-          onLoadMore={() => loadArticles(false)}
+          onLoadMore={function () { loadArticles(false); }}
         />
       </main>
     </>

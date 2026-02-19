@@ -82,3 +82,14 @@ async def delete_session(kv: Any, session_id: str) -> None:
     """
     key = f"{SESSION_PREFIX}{session_id}"
     await kv.delete(key)
+
+
+def parse_allowed_emails(raw: str) -> set[str]:
+    """Parse a comma-separated list of allowed emails into a set.
+
+    Strips whitespace from each entry, lowercases for case-insensitive
+    comparison, and ignores empty strings.
+    """
+    if not raw:
+        return set()
+    return {e.strip().lower() for e in raw.split(",") if e.strip()}

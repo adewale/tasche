@@ -16,11 +16,20 @@ Steps:
 from __future__ import annotations
 
 import json
+import re
 import traceback
 from datetime import UTC, datetime
 
 from articles.storage import article_key
-from wrappers import d1_first
+from wrappers import _to_js_value, d1_first
+
+# JsException import — only available inside Pyodide runtime
+try:
+    from pyodide.ffi import JsException  # type: ignore[import-not-found]
+except ImportError:
+
+    class JsException(Exception):  # type: ignore[no-redef]
+        """Stub that never matches outside Pyodide."""
 
 # TTS model identifier
 _TTS_MODEL = "@cf/deepgram/aura-2-en"
@@ -152,9 +161,10 @@ def strip_markdown(text: str) -> str:
         i += 1
     text = "".join(out_chars)
 
-    # Remove bold/italic markers: ***, **, *, ___, __, _
-    for marker in ("***", "**", "*", "___", "__", "_"):
-        text = text.replace(marker, "")
+    # Remove bold/italic markers: ***text***, **text**, *text*, ___text___, __text__, _text_
+    # Uses regex to only remove formatting markers around words, preserving
+    # standalone * and _ in normal text (e.g., "2 * 3", "my_variable").
+    text = re.sub(r"(\*{1,3}|_{1,3})(?=\S)(.+?)(?<=\S)\1", r"\2", text)
 
     # Remove HTML tags
     i = 0
@@ -182,7 +192,7 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-async def process_tts(article_id: str, env: object, *, user_id: str | None = None) -> None:
+async def process_tts(article_id: str, env: object, *, user_id: str) -> None:
     """Process a TTS generation job for a single article.
 
     This is the main entry point called by the queue handler in ``entry.py``.
@@ -197,7 +207,7 @@ async def process_tts(article_id: str, env: object, *, user_id: str | None = Non
         Worker environment object with ``DB`` (D1), ``CONTENT`` (R2),
         and ``AI`` (Workers AI).
     user_id:
-        The owner's user ID.  When provided, the query verifies ownership.
+        The owner's user ID.  The query always verifies ownership.
     """
     db = env.DB  # type: ignore[attr-defined]
     r2 = env.CONTENT  # type: ignore[attr-defined]
@@ -205,29 +215,17 @@ async def process_tts(article_id: str, env: object, *, user_id: str | None = Non
 
     try:
         # Step 1: Update audio_status to 'generating'
-        if user_id:
-            await db.prepare(
-                "UPDATE articles SET audio_status = ?, updated_at = ? WHERE id = ? AND user_id = ?"
-            ).bind("generating", _now(), article_id, user_id).run()
-        else:
-            await db.prepare(
-                "UPDATE articles SET audio_status = ?, updated_at = ? WHERE id = ?"
-            ).bind("generating", _now(), article_id).run()
+        await db.prepare(
+            "UPDATE articles SET audio_status = ?, updated_at = ? WHERE id = ? AND user_id = ?"
+        ).bind("generating", _now(), article_id, user_id).run()
 
         # Step 2: Fetch markdown content from D1
-        if user_id:
-            article = d1_first(
-                await db.prepare(
-                    "SELECT markdown_content FROM articles"
-                    " WHERE id = ? AND user_id = ?"
-                ).bind(article_id, user_id).first()
-            )
-        else:
-            article = d1_first(
-                await db.prepare(
-                    "SELECT markdown_content FROM articles WHERE id = ?"
-                ).bind(article_id).first()
-            )
+        article = d1_first(
+            await db.prepare(
+                "SELECT markdown_content FROM articles"
+                " WHERE id = ? AND user_id = ?"
+            ).bind(article_id, user_id).first()
+        )
 
         markdown_text = article.get("markdown_content") if article else None
 
@@ -250,7 +248,16 @@ async def process_tts(article_id: str, env: object, *, user_id: str | None = Non
             )
 
         # Step 4: Call Workers AI for TTS
-        audio_data = await ai.run(_TTS_MODEL, text=tts_text)
+        inputs = _to_js_value({"text": tts_text})
+        audio_data = await ai.run(_TTS_MODEL, inputs)
+
+        # Consume ReadableStream if the AI binding returns one
+        if hasattr(audio_data, "arrayBuffer"):
+            audio_data = await audio_data.arrayBuffer()
+        if hasattr(audio_data, "to_py"):
+            audio_data = bytes(audio_data.to_py())
+        if not audio_data:
+            raise ValueError("Workers AI returned empty audio data")
 
         # Step 5: Store audio in R2
         audio_r2_key = article_key(article_id, "audio.mp3")
@@ -259,16 +266,10 @@ async def process_tts(article_id: str, env: object, *, user_id: str | None = Non
         # Step 6: Update D1 with audio metadata
         duration = _estimate_duration(tts_text)
 
-        if user_id:
-            await db.prepare(
-                "UPDATE articles SET audio_key = ?, audio_duration_seconds = ?, "
-                "audio_status = ?, updated_at = ? WHERE id = ? AND user_id = ?"
-            ).bind(audio_r2_key, duration, "ready", _now(), article_id, user_id).run()
-        else:
-            await db.prepare(
-                "UPDATE articles SET audio_key = ?, audio_duration_seconds = ?, "
-                "audio_status = ?, updated_at = ? WHERE id = ?"
-            ).bind(audio_r2_key, duration, "ready", _now(), article_id).run()
+        await db.prepare(
+            "UPDATE articles SET audio_key = ?, audio_duration_seconds = ?, "
+            "audio_status = ?, updated_at = ? WHERE id = ? AND user_id = ?"
+        ).bind(audio_r2_key, duration, "ready", _now(), article_id, user_id).run()
 
         print(
             json.dumps({
@@ -280,8 +281,8 @@ async def process_tts(article_id: str, env: object, *, user_id: str | None = Non
             })
         )
 
-    except (ConnectionError, TimeoutError):
-        # Transient network errors — let propagate for queue retry
+    except (ConnectionError, TimeoutError, JsException):
+        # Transient network/JS errors — let propagate for queue retry
         print(
             json.dumps({
                 "event": "tts_processing_failed",
@@ -301,15 +302,10 @@ async def process_tts(article_id: str, env: object, *, user_id: str | None = Non
             })
         )
         try:
-            if user_id:
-                await db.prepare(
-                    "UPDATE articles SET audio_status = ?, updated_at = ?"
-                    " WHERE id = ? AND user_id = ?"
-                ).bind("failed", _now(), article_id, user_id).run()
-            else:
-                await db.prepare(
-                    "UPDATE articles SET audio_status = ?, updated_at = ? WHERE id = ?"
-                ).bind("failed", _now(), article_id).run()
+            await db.prepare(
+                "UPDATE articles SET audio_status = ?, updated_at = ?"
+                " WHERE id = ? AND user_id = ?"
+            ).bind("failed", _now(), article_id, user_id).run()
         except Exception:
             print(
                 json.dumps({

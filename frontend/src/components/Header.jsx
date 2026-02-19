@@ -1,5 +1,6 @@
 import { user, isOffline, syncStatus } from '../state.js';
-import { logout as apiLogout } from '../api.js';
+import { performLogout } from '../api.js';
+import { IconSearch, IconTag, IconSettings } from './Icons.jsx';
 
 export function Header() {
   const u = user.value;
@@ -7,13 +8,7 @@ export function Header() {
   const syncing = syncStatus.value;
 
   async function handleLogout() {
-    try {
-      await apiLogout();
-    } catch (e) {
-      // ignore
-    }
-    user.value = null;
-    window.location.hash = '#/login';
+    await performLogout();
   }
 
   return (
@@ -44,10 +39,13 @@ export function Header() {
               <span class="sync-status">Syncing...</span>
             )}
             <a href="#/search" class="btn btn-icon" title="Search">
-              {'\uD83D\uDD0D'}
+              <IconSearch />
             </a>
             <a href="#/tags" class="btn btn-icon" title="Tags">
-              {'\uD83C\uDFF7\uFE0F'}
+              <IconTag />
+            </a>
+            <a href="#/settings" class="btn btn-icon" title="Settings">
+              <IconSettings />
             </a>
             {u && u.avatar_url && (
               <img class="user-avatar" src={u.avatar_url} alt="Avatar" />
