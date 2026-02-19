@@ -41,6 +41,7 @@ from articles.extraction import (
 from articles.images import download_images, store_images
 from articles.storage import article_key, store_content, store_metadata
 from articles.urls import _is_private_hostname, extract_domain
+from wrappers import d1_first
 
 # Minimum content length (characters) to consider HTML as "real" content.
 # Below this threshold, the page is likely JS-rendered and needs Browser Rendering.
@@ -183,6 +184,15 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
             images = await download_images(client, clean_html)
             image_map = await store_images(r2, article_id, images)
 
+        # Preserve user-supplied title if one was provided at creation time
+        existing = d1_first(
+            await db.prepare("SELECT title FROM articles WHERE id = ?")
+            .bind(article_id)
+            .first()
+        )
+        if existing and existing.get("title"):
+            title = existing["title"]
+
         # Step 8: Rewrite HTML image paths
         if image_map:
             clean_html = rewrite_image_paths(clean_html, image_map)
@@ -293,8 +303,48 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
             )
         )
         raise
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code >= 500:
+            # Server errors are transient — let propagate for queue retry
+            print(
+                json.dumps(
+                    {
+                        "event": "article_processing_failed",
+                        "article_id": article_id,
+                        "error": traceback.format_exc(),
+                        "retryable": True,
+                    }
+                )
+            )
+            raise
+        # Client errors (4xx) are permanent — mark as failed
+        print(
+            json.dumps(
+                {
+                    "event": "article_processing_failed",
+                    "article_id": article_id,
+                    "error": traceback.format_exc(),
+                }
+            )
+        )
+        try:
+            await (
+                db.prepare("UPDATE articles SET status = ?, updated_at = ? WHERE id = ?")
+                .bind("failed", _now(), article_id)
+                .run()
+            )
+        except Exception:
+            print(
+                json.dumps(
+                    {
+                        "event": "article_status_update_failed",
+                        "article_id": article_id,
+                        "error": traceback.format_exc(),
+                    }
+                )
+            )
     except Exception:
-        # Permanent errors (HTTP 4xx, invalid content, etc.) — mark as failed
+        # Other permanent errors (invalid content, etc.) — mark as failed
         print(
             json.dumps(
                 {

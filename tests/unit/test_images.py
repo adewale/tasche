@@ -421,13 +421,13 @@ class TestStoreImagesExtensions:
         key = image_map["https://x.com/d"]
         assert key.endswith(".webp")
 
-    async def test_svg_extension(self) -> None:
-        """image/svg+xml produces .svg extension."""
+    async def test_svg_not_in_mime_map(self) -> None:
+        """image/svg+xml is not in _MIME_TO_EXT (XSS risk) — falls back to .bin."""
         r2 = MockR2()
         images = [{"url": "https://x.com/e", "data": b"s", "content_type": "image/svg+xml"}]
         image_map = await store_images(r2, "art_ext", images)
         key = image_map["https://x.com/e"]
-        assert key.endswith(".svg")
+        assert key.endswith(".bin")
 
     async def test_unknown_content_type_falls_back_to_url_extension(self) -> None:
         """Unknown content-type falls back to the URL's file extension."""

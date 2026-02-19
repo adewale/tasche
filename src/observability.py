@@ -71,24 +71,23 @@ class ObservabilityMiddleware:
             event["status_code"] = status_code
             event["outcome"] = "error" if status_code >= 400 else "success"
 
-            # Extract user ID from request state (set by get_current_user dependency)
-            # instead of performing a duplicate KV lookup.
-            state = scope.get("state", {})
-            if isinstance(state, dict):
-                event["user.id"] = state.get("user_id")
-            else:
-                event["user.id"] = getattr(state, "user_id", None)
-
         except Exception as exc:
             event["status_code"] = 500
             event["outcome"] = "error"
             event["error.type"] = type(exc).__name__
             event["error.message"] = str(exc)
-            event.setdefault("user.id", None)
             raise
         finally:
             duration_ms = (time.monotonic() - start_time) * 1000
             event["duration_ms"] = round(duration_ms, 2)
+
+            # Extract user ID from request state (set by get_current_user dependency)
+            # in finally block so it's captured even on exceptions.
+            state = scope.get("state", {})
+            if isinstance(state, dict):
+                event["user.id"] = state.get("user_id")
+            else:
+                event["user.id"] = getattr(state, "user_id", None)
 
             # Tail sampling — decide after the request whether to emit
             if _should_sample(event):

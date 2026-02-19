@@ -214,6 +214,20 @@ async def process_tts(article_id: str, env: object, *, user_id: str) -> None:
     ai = env.AI  # type: ignore[attr-defined]
 
     try:
+        # Idempotency check: skip if audio is already ready
+        existing = d1_first(
+            await db.prepare(
+                "SELECT audio_status FROM articles WHERE id = ? AND user_id = ?"
+            ).bind(article_id, user_id).first()
+        )
+        if existing and existing.get("audio_status") == "ready":
+            print(json.dumps({
+                "event": "tts_skipped",
+                "article_id": article_id,
+                "reason": "audio_already_ready",
+            }))
+            return
+
         # Step 1: Update audio_status to 'generating'
         await db.prepare(
             "UPDATE articles SET audio_status = ?, updated_at = ? WHERE id = ? AND user_id = ?"
@@ -281,19 +295,8 @@ async def process_tts(article_id: str, env: object, *, user_id: str) -> None:
             })
         )
 
-    except (ConnectionError, TimeoutError, JsException):
-        # Transient network/JS errors — let propagate for queue retry
-        print(
-            json.dumps({
-                "event": "tts_processing_failed",
-                "article_id": article_id,
-                "error": traceback.format_exc(),
-                "retryable": True,
-            })
-        )
-        raise
-    except Exception:
-        # Permanent errors (missing content, AI model failure) — mark as failed
+    except ValueError:
+        # Permanent errors (missing content, invalid data) — mark as failed
         print(
             json.dumps({
                 "event": "tts_processing_failed",
@@ -314,3 +317,14 @@ async def process_tts(article_id: str, env: object, *, user_id: str) -> None:
                     "error": traceback.format_exc(),
                 })
             )
+    except Exception:
+        # All other errors (network, JS, AI model) — let propagate for queue retry
+        print(
+            json.dumps({
+                "event": "tts_processing_failed",
+                "article_id": article_id,
+                "error": traceback.format_exc(),
+                "retryable": True,
+            })
+        )
+        raise

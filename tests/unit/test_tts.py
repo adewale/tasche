@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from src.auth.session import COOKIE_NAME
@@ -417,11 +418,13 @@ class TestTTSProcessing:
 
         await process_tts("art_proc3", env, user_id="user_001")
 
-        # First executed statement should set audio_status to 'generating'
-        assert len(db.executed) >= 1
-        first_sql, first_params = db.executed[0]
-        assert "UPDATE" in first_sql
-        assert "generating" in first_params
+        # First statement is the idempotency check (SELECT), second sets 'generating'
+        assert len(db.executed) >= 2
+        first_sql, _ = db.executed[0]
+        assert "SELECT" in first_sql and "audio_status" in first_sql
+        second_sql, second_params = db.executed[1]
+        assert "UPDATE" in second_sql
+        assert "generating" in second_params
 
 
 # ---------------------------------------------------------------------------
@@ -458,8 +461,8 @@ class TestTTSProcessingFailure:
         last_sql, last_params = failed_updates[-1]
         assert last_params[0] == "failed"
 
-    async def test_sets_failed_on_ai_error(self) -> None:
-        """When Workers AI raises an error, audio_status is set to 'failed'."""
+    async def test_ai_runtime_error_is_transient(self) -> None:
+        """RuntimeError from Workers AI is treated as transient and re-raised."""
         article = ArticleFactory.create(
             id="art_fail2",
             user_id="user_001",
@@ -481,7 +484,111 @@ class TestTTSProcessingFailure:
 
         from tts.processing import process_tts
 
-        await process_tts("art_fail2", env, user_id="user_001")
+        with pytest.raises(RuntimeError, match="AI model unavailable"):
+            await process_tts("art_fail2", env, user_id="user_001")
+
+    async def test_sets_failed_on_value_error(self) -> None:
+        """ValueError (permanent error) sets audio_status to 'failed'."""
+        article = ArticleFactory.create(
+            id="art_fail_ve",
+            user_id="user_001",
+            markdown_content="",  # Empty content triggers ValueError
+        )
+
+        db = _TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
+        r2 = MockR2()
+        ai = MockAI(response=b"fake-audio")
+        env = MockEnv(db=db, content=r2, ai=ai)
+
+        from tts.processing import process_tts
+
+        await process_tts("art_fail_ve", env, user_id="user_001")
+
+        # Should have an UPDATE that sets audio_status to 'failed'
+        failed_updates = [
+            (sql, params)
+            for sql, params in db.executed
+            if sql.startswith("UPDATE") and "audio_status" in sql
+        ]
+        assert len(failed_updates) >= 1
+        last_sql, last_params = failed_updates[-1]
+        assert last_params[0] == "failed"
+
+
+# ---------------------------------------------------------------------------
+# TTS Transient Error (queue retry)
+# ---------------------------------------------------------------------------
+
+
+class TestTTSTransientErrorRetry:
+    async def test_connection_error_reraises_for_retry(self) -> None:
+        """ConnectionError re-raises so the queue can retry; audio_status stays generating."""
+        article = ArticleFactory.create(
+            id="art_transient",
+            user_id="user_001",
+            markdown_content="Some content for TTS.",
+        )
+
+        db = _TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
+        r2 = MockR2()
+
+        # Create an AI mock that raises ConnectionError (transient)
+        ai = MockAI()
+
+        async def _transient_fail(model, inputs=None, **kwargs):
+            raise ConnectionError("Temporary network failure")
+
+        ai.run = _transient_fail
+
+        env = MockEnv(db=db, content=r2, ai=ai)
+
+        import pytest
+
+        from tts.processing import process_tts
+
+        with pytest.raises(ConnectionError):
+            await process_tts("art_transient", env, user_id="user_001")
+
+        # audio_status should NOT be set to 'failed' (only 'generating' from step 1)
+        failed_updates = [
+            (sql, params)
+            for sql, params in db.executed
+            if sql.startswith("UPDATE") and "audio_status" in sql and "failed" in str(params)
+        ]
+        assert len(failed_updates) == 0
+
+        # Verify 'generating' was set (step 1)
+        generating_updates = [
+            (sql, params)
+            for sql, params in db.executed
+            if sql.startswith("UPDATE") and "generating" in str(params)
+        ]
+        assert len(generating_updates) >= 1
+
+
+# ---------------------------------------------------------------------------
+# TTS Empty Audio Response
+# ---------------------------------------------------------------------------
+
+
+class TestTTSEmptyAudioResponse:
+    async def test_empty_audio_sets_failed(self) -> None:
+        """When Workers AI returns empty bytes, audio_status is set to 'failed'."""
+        article = ArticleFactory.create(
+            id="art_empty_audio",
+            user_id="user_001",
+            markdown_content="Some content for TTS.",
+        )
+
+        db = _TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
+        r2 = MockR2()
+        # MockAI with empty bytes response
+        ai = MockAI(response=b"")
+        env = MockEnv(db=db, content=r2, ai=ai)
+
+        from tts.processing import process_tts
+
+        await process_tts("art_empty_audio", env, user_id="user_001")
 
         # Should have an UPDATE that sets audio_status to 'failed'
         failed_updates = [

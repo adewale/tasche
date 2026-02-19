@@ -7,7 +7,11 @@
   // Default config works with workers.dev — deploy without --env for quick setup.
   // Use --env production for custom domain deployments.
   "workers_dev": true,
+  // Required secrets (set via `pywrangler secret put`):
+  // - GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET (GitHub OAuth)
+  // - CF_ACCOUNT_ID, CF_API_TOKEN (Browser Rendering REST API)
   "vars": { "ALLOWED_EMAILS": "", "SITE_URL": "https://tasche.<your-subdomain>.workers.dev" },
+  "ai": { "binding": "AI" },
   "d1_databases": [{ "binding": "DB", "database_name": "tasche-db", "database_id": "7f0dfc00-1891-4d8a-9876-03dbd8cf6804" }],
   "r2_buckets": [{ "binding": "CONTENT", "bucket_name": "tasche-content" }],
   "kv_namespaces": [{ "binding": "SESSIONS", "id": "7ca9ebd65b3e40638ec32f5c635483de" }],
@@ -25,6 +29,7 @@
   },
   "assets": {
     "directory": "./assets",
+    // Worker handles SPA fallback manually to avoid intercepting /api/* nav requests.
     "not_found_handling": "none",
     "binding": "ASSETS"
   },
@@ -33,15 +38,15 @@
       // TODO: Set production-specific database_id, KV id, and queue name
       // - d1_databases[].database_id must point to the production D1 instance
       // - kv_namespaces[].id must point to the production KV namespace
-      // - queues producer/consumer "queue" should use a production-specific name (e.g. "tasche-articles-prod")
       "workers_dev": false,
       "vars": { "ALLOWED_EMAILS": "", "SITE_URL": "https://tasche.yourdomain.com" },
+      "ai": { "binding": "AI" },
       "d1_databases": [{ "binding": "DB" }],
       "r2_buckets": [{ "binding": "CONTENT" }],
       "kv_namespaces": [{ "binding": "SESSIONS" }],
       "queues": {
-        "producers": [{ "binding": "ARTICLE_QUEUE", "queue": "tasche-articles" }],
-        "consumers": [{ "queue": "tasche-articles", "max_batch_size": 10, "max_batch_timeout": 60 }]
+        "producers": [{ "binding": "ARTICLE_QUEUE", "queue": "tasche-articles-prod" }],
+        "consumers": [{ "queue": "tasche-articles-prod", "max_batch_size": 10, "max_batch_timeout": 60 }]
       },
       "routes": [{ "pattern": "tasche.yourdomain.com", "custom_domain": true }]
     },
@@ -49,15 +54,15 @@
       // TODO: Set staging-specific database_id, KV id, and queue name
       // - d1_databases[].database_id must point to the staging D1 instance
       // - kv_namespaces[].id must point to the staging KV namespace
-      // - queues producer/consumer "queue" should use a staging-specific name (e.g. "tasche-articles-staging")
       "workers_dev": true,
       "vars": { "ALLOWED_EMAILS": "", "SITE_URL": "https://tasche-staging.<your-subdomain>.workers.dev" },
+      "ai": { "binding": "AI" },
       "d1_databases": [{ "binding": "DB" }],
       "r2_buckets": [{ "binding": "CONTENT" }],
       "kv_namespaces": [{ "binding": "SESSIONS" }],
       "queues": {
-        "producers": [{ "binding": "ARTICLE_QUEUE", "queue": "tasche-articles" }],
-        "consumers": [{ "queue": "tasche-articles", "max_batch_size": 10, "max_batch_timeout": 60 }]
+        "producers": [{ "binding": "ARTICLE_QUEUE", "queue": "tasche-articles-staging" }],
+        "consumers": [{ "queue": "tasche-articles-staging", "max_batch_size": 10, "max_batch_timeout": 60 }]
       }
     }
   }

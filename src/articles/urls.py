@@ -112,6 +112,9 @@ def validate_url(url: str) -> str:
     if not parsed.netloc:
         raise ValueError("URL must have a valid hostname")
 
+    if parsed.username or parsed.password:
+        raise ValueError("URLs with embedded credentials are not allowed")
+
     hostname = parsed.hostname or ""
     if _is_private_hostname(hostname):
         raise ValueError("URLs pointing to private/internal networks are not allowed")

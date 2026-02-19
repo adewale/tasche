@@ -16,24 +16,13 @@ import './app.css';
 
 /**
  * TagFilteredLibrary handles the `#/?tag=xxx` route pattern.
- * preact-router doesn't parse query strings from hash routes,
- * so we extract the tag param from window.location.hash.
+ * Extracts the tag param from window.location.hash.
  */
 function TagFilteredLibrary() {
   const hash = window.location.hash;
   const match = hash.match(/[?&]tag=([^&]+)/);
   const tag = match ? decodeURIComponent(match[1]) : null;
   return <Library tag={tag} />;
-}
-
-/**
- * Route guard component that checks auth and renders appropriate view
- */
-function AuthGuard({ component: Component, ...props }) {
-  if (!user.value) {
-    return <Login />;
-  }
-  return <Component {...props} />;
 }
 
 class ErrorBoundary extends Component {
@@ -154,9 +143,8 @@ export function App() {
 }
 
 /**
- * Hash-based router using preact-router.
- * We use handleRoute to detect tag-filtered routes
- * since preact-router doesn't handle query params in hash routes.
+ * Hash-based router.
+ * Manually parses window.location.hash for route matching.
  */
 function AppRouter() {
   const [currentPath, setCurrentPath] = useState(window.location.hash.slice(1) || '/');

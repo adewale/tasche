@@ -24,7 +24,6 @@ _MIME_TO_EXT: dict[str, str] = {
     "image/png": ".png",
     "image/gif": ".gif",
     "image/webp": ".webp",
-    "image/svg+xml": ".svg",
 }
 
 
@@ -79,6 +78,8 @@ async def download_images(
         # SSRF protection: skip images pointing to private/internal URLs
         try:
             parsed = urlparse(url)
+            if parsed.scheme and parsed.scheme not in ("http", "https"):
+                continue
             if parsed.hostname and _is_private_hostname(parsed.hostname):
                 continue
         except Exception:
@@ -103,6 +104,8 @@ async def download_images(
             continue
 
         content_type = resp.headers.get("content-type", "image/jpeg").split(";")[0].strip()
+        if not content_type.startswith("image/"):
+            continue
         total_size += len(data)
 
         results.append({

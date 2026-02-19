@@ -60,12 +60,24 @@ async def get_session(kv: Any, session_id: str) -> dict[str, Any] | None:
     return json.loads(raw)
 
 
+_REFRESH_INTERVAL = 3600  # Only refresh once per hour to reduce KV writes
+
+
 async def refresh_session(kv: Any, session_id: str, user_data: dict[str, Any]) -> None:
     """Refresh a session's TTL by re-writing it to KV.
 
     Called on each authenticated request to extend the session so that
     active users are not forced to re-authenticate every 7 days.
+    Skips the write if the session was refreshed less than 1 hour ago.
     """
+    import time
+
+    now = time.time()
+    last_refreshed = user_data.get("refreshed_at", 0)
+    if now - last_refreshed < _REFRESH_INTERVAL:
+        return
+
+    user_data["refreshed_at"] = now
     key = f"{SESSION_PREFIX}{session_id}"
     await kv.put(key, json.dumps(user_data), expirationTtl=SESSION_TTL)
 

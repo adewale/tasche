@@ -12,6 +12,7 @@ export function escapeHtml(str) {
 export function formatDate(iso) {
   if (!iso) return '';
   const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
   const now = new Date();
   const diff = now - d;
   const mins = Math.floor(diff / 60000);

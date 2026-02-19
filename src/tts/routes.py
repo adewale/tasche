@@ -109,7 +109,7 @@ async def get_audio(
     user_id = user["user_id"]
 
     # Fetch article to get audio_key and check audio_status
-    article = await _get_user_article(db, article_id, user_id)
+    article = await _get_user_article(db, article_id, user_id, fields="id, audio_status, audio_key")
 
     audio_status = article.get("audio_status")
     if audio_status != "ready":
@@ -155,7 +155,7 @@ async def get_audio(
             finally:
                 reader.releaseLock()
 
-        headers = {}
+        headers = {"Cache-Control": "public, max-age=86400, immutable"}
         content_length = getattr(audio_obj, "size", None)
         if content_length is not None:
             headers["Content-Length"] = str(content_length)
@@ -177,5 +177,8 @@ async def get_audio(
     return StreamingResponse(
         _stream(),
         media_type="audio/mpeg",
-        headers={"Content-Length": str(len(audio_bytes))},
+        headers={
+            "Content-Length": str(len(audio_bytes)),
+            "Cache-Control": "public, max-age=86400, immutable",
+        },
     )

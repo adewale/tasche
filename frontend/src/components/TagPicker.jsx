@@ -87,7 +87,9 @@ export function TagPicker({ articleId }) {
             onChange={(e) => setSelectedTagId(e.target.value)}
           >
             <option value="">Select a tag...</option>
-            {tagsSignal.value.map((t) => (
+            {tagsSignal.value
+              .filter((t) => !articleTags.some((at) => at.id === t.id))
+              .map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name}
               </option>

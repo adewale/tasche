@@ -785,6 +785,35 @@ class TestGetArticleContent:
         assert "text/html" in resp.headers["content-type"]
         assert "<p>Article content</p>" in resp.text
 
+    async def test_content_endpoint_includes_csp_header(self) -> None:
+        """GET /api/articles/{id}/content includes a restrictive CSP header."""
+        article = ArticleFactory.create(
+            id="art_csp",
+            user_id="user_001",
+            html_key="articles/art_csp/content.html",
+        )
+
+        def execute(sql: str, params: list) -> list:
+            if "id = ?" in sql and params[0] == "art_csp":
+                return [article]
+            return []
+
+        db = MockD1(execute=execute)
+        r2 = MockR2()
+        env = MockEnv(db=db, content=r2)
+
+        await r2.put("articles/art_csp/content.html", "<p>Content with CSP</p>")
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get(
+            "/api/articles/art_csp/content",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 200
+        assert "content-security-policy" in resp.headers
+        assert "default-src 'none'" in resp.headers["content-security-policy"]
+
     async def test_content_endpoint_not_found(self) -> None:
         """GET /api/articles/{id}/content returns 404 when no HTML in R2."""
         article = ArticleFactory.create(

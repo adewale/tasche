@@ -12,8 +12,8 @@ CREATE TABLE IF NOT EXISTS users (
     email           TEXT,
     username        TEXT,
     avatar_url      TEXT,
-    created_at      TEXT DEFAULT (datetime('now')),
-    updated_at      TEXT DEFAULT (datetime('now'))
+    created_at      TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now')),
+    updated_at      TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now'))
 );
 
 -- =========================================================================
@@ -51,8 +51,8 @@ CREATE TABLE IF NOT EXISTS articles (
     last_checked_at         TEXT DEFAULT NULL,
     scroll_position         REAL DEFAULT 0,
     reading_progress        REAL DEFAULT 0,
-    created_at              TEXT DEFAULT (datetime('now')),
-    updated_at              TEXT DEFAULT (datetime('now')),
+    created_at              TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now')),
+    updated_at              TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now')),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS tags (
     id              TEXT PRIMARY KEY,
     user_id         TEXT NOT NULL,
     name            TEXT NOT NULL,
-    created_at      TEXT DEFAULT (datetime('now')),
+    created_at      TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now')),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
@@ -123,9 +123,6 @@ CREATE INDEX IF NOT EXISTS idx_articles_user_created
 CREATE INDEX IF NOT EXISTS idx_articles_user_reading_status
     ON articles(user_id, reading_status);
 
-CREATE INDEX IF NOT EXISTS idx_articles_original_url
-    ON articles(original_url);
-
 CREATE INDEX IF NOT EXISTS idx_articles_final_url
     ON articles(final_url);
 
@@ -137,3 +134,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_tags_user_name
 
 CREATE INDEX IF NOT EXISTS idx_users_email
     ON users(email);
+
+CREATE INDEX IF NOT EXISTS idx_articles_user_audio_status
+    ON articles(user_id, audio_status);
+
+CREATE INDEX IF NOT EXISTS idx_articles_user_favorite
+    ON articles(user_id, is_favorite);
+
+CREATE INDEX IF NOT EXISTS idx_articles_user_status
+    ON articles(user_id, status);

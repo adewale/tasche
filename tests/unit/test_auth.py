@@ -205,6 +205,38 @@ class TestSessionRevocation:
         assert resp.status_code == 401
 
 
+class TestSessionRevocationOnAllowlistChange:
+    async def test_access_revoked_when_allowlist_changes(self) -> None:
+        """Changing ALLOWED_EMAILS to exclude a user returns 401."""
+        # Start with the user's email in the allowed list
+        env = MockEnv(allowed_emails="test@example.com")
+        user_data = {
+            "user_id": "u1",
+            "email": "test@example.com",
+            "username": "tester",
+            "avatar_url": "https://avatar.url",
+            "created_at": "2025-01-01T00:00:00",
+        }
+        session_id = await create_session(env.SESSIONS, user_data)
+
+        app = _make_app_with_env(env)
+        client = TestClient(app)
+
+        # First request should succeed
+        resp = client.get("/me", cookies={COOKIE_NAME: session_id})
+        assert resp.status_code == 200
+
+        # Change ALLOWED_EMAILS to exclude the user
+        env.ALLOWED_EMAILS = "other@example.com"
+
+        # Next request should return 401
+        resp = client.get("/me", cookies={COOKIE_NAME: session_id})
+        assert resp.status_code == 401
+
+        # Session should be deleted from KV
+        assert await get_session(env.SESSIONS, session_id) is None
+
+
 class TestAllowedEmailsParsing:
     def test_empty_string_returns_empty_set(self) -> None:
         assert parse_allowed_emails("") == set()
@@ -483,6 +515,41 @@ class TestCallbackRejectsUnauthorizedEmail:
                 follow_redirects=False,
             )
         assert resp.status_code == 403
+
+
+class TestCallbackCookieAttributes:
+    async def test_callback_sets_secure_cookie_attributes(self) -> None:
+        """OAuth callback Set-Cookie header includes httponly, samesite=lax, and path=/."""
+        db = MockD1(execute=lambda sql, params: [])
+        env = MockEnv(
+            allowed_emails="test@example.com",
+            db=db,
+        )
+        state = await _setup_oauth_state(env)
+
+        mock_cls = _mock_github_responses(
+            token_data={"access_token": "gho_test_token"},
+            user_data={
+                "id": 12345,
+                "login": "testuser",
+                "email": "test@example.com",
+                "avatar_url": "https://github.com/avatar.png",
+            },
+        )
+
+        app = _make_auth_app(env)
+        client = TestClient(app, raise_server_exceptions=False)
+        with patch("src.auth.routes.httpx.AsyncClient", mock_cls):
+            resp = client.get(
+                f"/api/auth/callback?code=test_code&state={state}",
+                follow_redirects=False,
+            )
+        assert resp.status_code == 302
+
+        set_cookie = resp.headers.get("set-cookie", "")
+        assert "httponly" in set_cookie.lower()
+        assert "samesite=lax" in set_cookie.lower()
+        assert "path=/" in set_cookie.lower()
 
 
 class TestCallbackPrivateEmail:

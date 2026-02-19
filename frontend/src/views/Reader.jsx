@@ -2,7 +2,7 @@ import { useState, useEffect } from 'preact/hooks';
 import { Header } from '../components/Header.jsx';
 import { TagPicker } from '../components/TagPicker.jsx';
 import { playAudio } from '../components/AudioPlayer.jsx';
-import { currentArticle, addToast } from '../state.js';
+import { articles, currentArticle, addToast } from '../state.js';
 import {
   IconArrowLeft, IconStar, IconExternalLink, IconPlay,
   IconHeadphones, IconClock, IconDownload, IconCheck,
@@ -95,6 +95,7 @@ export function Reader({ id }) {
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.removeEventListener('message', handleSWMessage);
       }
+      currentArticle.value = null;
     };
   }, [id]);
 
@@ -107,7 +108,7 @@ export function Reader({ id }) {
       let html = '';
       const r2Html = await getArticleContent(currentId);
       if (r2Html) {
-        html = DOMPurify.sanitize(r2Html);
+        html = DOMPurify.sanitize(r2Html, { FORBID_TAGS: ['style'], FORBID_ATTR: ['style'] });
       } else if (art.markdown_content) {
         html = renderMarkdown(art.markdown_content);
       } else if (art.excerpt) {
@@ -144,7 +145,9 @@ export function Reader({ id }) {
     const newFav = !article.is_favorite;
     try {
       await updateArticle(id, { is_favorite: newFav });
-      setArticle({ ...article, is_favorite: newFav ? 1 : 0 });
+      const updated = { ...article, is_favorite: newFav ? 1 : 0 };
+      setArticle(updated);
+      articles.value = articles.value.map((a) => a.id === id ? { ...a, is_favorite: updated.is_favorite } : a);
     } catch (e) {
       addToast(e.message, 'error');
     }
@@ -152,8 +155,10 @@ export function Reader({ id }) {
 
   async function handleStatusChange(e) {
     try {
-      await updateArticle(id, { reading_status: e.target.value });
-      setArticle({ ...article, reading_status: e.target.value });
+      const newStatus = e.target.value;
+      await updateArticle(id, { reading_status: newStatus });
+      setArticle({ ...article, reading_status: newStatus });
+      articles.value = articles.value.map((a) => a.id === id ? { ...a, reading_status: newStatus } : a);
       addToast('Status updated', 'success');
     } catch (err) {
       addToast(err.message, 'error');
@@ -166,7 +171,11 @@ export function Reader({ id }) {
       addToast('Audio generation queued', 'success');
       setAudioRequested(true);
     } catch (e) {
-      addToast(e.message, 'error');
+      if (e.status === 409) {
+        addToast('Audio generation is already in progress', 'info');
+      } else {
+        addToast(e.message, 'error');
+      }
     }
   }
 

@@ -30,7 +30,9 @@ export async function request(method, path, body) {
   if (resp.status === 204) return null;
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({ detail: resp.statusText }));
-    throw new Error(err.detail || 'Request failed');
+    const e = new Error(err.detail || 'Request failed');
+    e.status = resp.status;
+    throw e;
   }
   if (resp.headers.get('content-type')?.includes('application/json')) {
     return resp.json();

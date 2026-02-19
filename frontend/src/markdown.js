@@ -1,5 +1,6 @@
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
+import { escapeHtml } from './utils.js';
 
 marked.setOptions({
   gfm: true,
@@ -22,8 +23,8 @@ renderer.image = function ({ href, title, text }) {
   if (href && /^\s*javascript\s*:/i.test(href)) {
     return text || '';
   }
-  const titleAttr = title ? ' title="' + title + '"' : '';
-  return '<img src="' + href + '" alt="' + (text || '') + '"' + titleAttr + ' loading="lazy">';
+  const titleAttr = title ? ' title="' + escapeHtml(title) + '"' : '';
+  return '<img src="' + escapeHtml(href) + '" alt="' + escapeHtml(text || '') + '"' + titleAttr + ' loading="lazy">';
 };
 
 // Open links in new tab
@@ -41,5 +42,5 @@ marked.use({ renderer });
 export function renderMarkdown(md) {
   if (!md) return '';
   const raw = marked.parse(md);
-  return DOMPurify.sanitize(raw);
+  return DOMPurify.sanitize(raw, { FORBID_TAGS: ['style'], FORBID_ATTR: ['style'] });
 }

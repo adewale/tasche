@@ -26,6 +26,8 @@ def article_key(article_id: str, filename: str) -> str:
     ValueError
         If *filename* contains path traversal characters.
     """
+    if "/" in article_id or ".." in article_id:
+        raise ValueError(f"Invalid article_id: {article_id}")
     if "/" in filename or ".." in filename:
         raise ValueError(f"Invalid filename: {filename}")
     return f"articles/{article_id}/{filename}"

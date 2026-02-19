@@ -356,7 +356,10 @@ async def get_article(
     db = env.DB
     user_id = user["user_id"]
 
-    article = await _get_user_article(db, article_id, user_id)
+    article = await _get_user_article(
+        db, article_id, user_id,
+        fields=_LIST_COLUMNS + ", markdown_content",
+    )
     return article
 
 
@@ -534,14 +537,24 @@ async def update_article(
         raise HTTPException(status_code=422, detail="is_favorite must be 0 or 1")
     if "reading_progress" in body:
         rp = body["reading_progress"]
-        if isinstance(rp, (int, float)) and not (0.0 <= rp <= 1.0):
+        if not isinstance(rp, (int, float)):
+            raise HTTPException(
+                status_code=422,
+                detail="reading_progress must be a number",
+            )
+        if not (0.0 <= rp <= 1.0):
             raise HTTPException(
                 status_code=422,
                 detail="reading_progress must be between 0.0 and 1.0",
             )
     if "scroll_position" in body:
         sp = body["scroll_position"]
-        if isinstance(sp, (int, float)) and sp < 0:
+        if not isinstance(sp, (int, float)):
+            raise HTTPException(
+                status_code=422,
+                detail="scroll_position must be a number",
+            )
+        if sp < 0:
             raise HTTPException(
                 status_code=422,
                 detail="scroll_position must be >= 0",
