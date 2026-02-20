@@ -134,8 +134,12 @@ async def list_tags(
 
     results = await (
         db.prepare(
-            "SELECT id, user_id, name, created_at "
-            "FROM tags WHERE user_id = ? ORDER BY name"
+            "SELECT t.id, t.user_id, t.name, t.created_at, "
+            "COUNT(at.article_id) as article_count "
+            "FROM tags t LEFT JOIN article_tags at ON t.id = at.tag_id "
+            "WHERE t.user_id = ? "
+            "GROUP BY t.id "
+            "ORDER BY t.name"
         )
         .bind(user_id)
         .all()

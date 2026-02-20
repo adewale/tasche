@@ -46,7 +46,7 @@ class TestProcessArticleHappyPath:
         mock_client = _make_mock_client()
 
         with (
-            patch("articles.processing.httpx.AsyncClient", return_value=mock_client),
+            patch("articles.processing.HttpClient", return_value=mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -72,7 +72,7 @@ class TestProcessArticleHappyPath:
         mock_client = _make_mock_client()
 
         with (
-            patch("articles.processing.httpx.AsyncClient", return_value=mock_client),
+            patch("articles.processing.HttpClient", return_value=mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -90,7 +90,7 @@ class TestProcessArticleHappyPath:
         mock_client = _make_mock_client()
 
         with (
-            patch("articles.processing.httpx.AsyncClient", return_value=mock_client),
+            patch("articles.processing.HttpClient", return_value=mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -108,7 +108,7 @@ class TestProcessArticleHappyPath:
         mock_client = _make_mock_client()
 
         with (
-            patch("articles.processing.httpx.AsyncClient", return_value=mock_client),
+            patch("articles.processing.HttpClient", return_value=mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -153,7 +153,7 @@ class TestProcessArticleScreenshot:
             return fake_thumb
 
         with (
-            patch("articles.processing.httpx.AsyncClient", return_value=mock_client),
+            patch("articles.processing.HttpClient", return_value=mock_client),
             patch("articles.processing.screenshot", side_effect=_mock_screenshot),
         ):
             from articles.processing import process_article
@@ -180,7 +180,7 @@ class TestProcessArticleScreenshot:
             return b"SCREENSHOT_DATA"
 
         with (
-            patch("articles.processing.httpx.AsyncClient", return_value=mock_client),
+            patch("articles.processing.HttpClient", return_value=mock_client),
             patch("articles.processing.screenshot", side_effect=_mock_screenshot),
         ):
             from articles.processing import process_article
@@ -207,7 +207,7 @@ class TestProcessArticleScreenshot:
 
         mock_client = _make_mock_client()
 
-        with patch("articles.processing.httpx.AsyncClient", return_value=mock_client):
+        with patch("articles.processing.HttpClient", return_value=mock_client):
             from articles.processing import process_article
 
             await process_article("art_noss", "https://example.com/article", env)
@@ -238,7 +238,7 @@ class TestProcessArticleScreenshot:
             return b"THUMB_DATA"
 
         with (
-            patch("articles.processing.httpx.AsyncClient", return_value=mock_client),
+            patch("articles.processing.HttpClient", return_value=mock_client),
             patch("articles.processing.screenshot", side_effect=_mock_screenshot),
         ):
             from articles.processing import process_article
@@ -273,7 +273,7 @@ class TestProcessArticleFailure:
         error_response = _make_mock_response(status_code=404)
         mock_client = _make_mock_client(page_response=error_response)
 
-        with patch("articles.processing.httpx.AsyncClient", return_value=mock_client):
+        with patch("articles.processing.HttpClient", return_value=mock_client):
             from articles.processing import process_article
 
             await process_article("art_fail", "https://example.com/missing", env)
@@ -297,7 +297,7 @@ class TestProcessArticleFailure:
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.get = AsyncMock(side_effect=Exception("Network error"))
 
-        with patch("articles.processing.httpx.AsyncClient", return_value=mock_client):
+        with patch("articles.processing.HttpClient", return_value=mock_client):
             from articles.processing import process_article
 
             await process_article("art_err", "https://example.com/error", env)
@@ -325,7 +325,7 @@ class TestProcessArticleD1Updates:
         mock_client = _make_mock_client()
 
         with (
-            patch("articles.processing.httpx.AsyncClient", return_value=mock_client),
+            patch("articles.processing.HttpClient", return_value=mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -370,7 +370,7 @@ class TestProcessArticleD1Updates:
         mock_client = _make_mock_client()
 
         with (
-            patch("articles.processing.httpx.AsyncClient", return_value=mock_client),
+            patch("articles.processing.HttpClient", return_value=mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -402,7 +402,7 @@ class TestProcessArticleContentValidation:
         mock_client = _make_mock_client(page_response=json_response)
 
         with (
-            patch("articles.processing.httpx.AsyncClient", return_value=mock_client),
+            patch("articles.processing.HttpClient", return_value=mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -434,7 +434,7 @@ class TestProcessArticleContentValidation:
         mock_client = _make_mock_client(page_response=oversized_response)
 
         with (
-            patch("articles.processing.httpx.AsyncClient", return_value=mock_client),
+            patch("articles.processing.HttpClient", return_value=mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -457,6 +457,430 @@ class TestProcessArticleContentValidation:
 # =========================================================================
 
 
+# =========================================================================
+# test_process_article — image path rewriting
+# =========================================================================
+
+
+class TestProcessArticleImageRewriting:
+    async def test_image_paths_rewritten_to_api_urls(self) -> None:
+        """Image paths in stored HTML should be /api/articles/{id}/images/... not bare R2 keys."""
+        db = _TrackingD1()
+        r2 = MockR2()
+        env = _browser_env(MockEnv(db=db, content=r2))
+
+        mock_client = _make_mock_client()
+
+        with (
+            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+        ):
+            from articles.processing import process_article
+
+            await process_article("art_img_rewrite", "https://example.com/article", env)
+
+        # Check the stored HTML in R2 for rewritten image paths
+        html_key = "articles/art_img_rewrite/content.html"
+        assert html_key in r2._store, "content.html should be stored in R2"
+
+        stored_html = r2._store[html_key]
+        if isinstance(stored_html, bytes):
+            stored_html = stored_html.decode("utf-8")
+
+        # The SAMPLE_HTML has images from https://cdn.example.com/photo1.jpg and photo2.jpg
+        # After rewriting, those should become /api/articles/art_img_rewrite/images/{hash}.ext
+        # They should NOT contain the original external URLs anymore
+        assert "cdn.example.com/photo1.jpg" not in stored_html, (
+            "Original image URL should be rewritten"
+        )
+        assert "/api/articles/art_img_rewrite/images/" in stored_html, (
+            "Image paths should be rewritten to /api/articles/{id}/images/..."
+        )
+
+    async def test_canonical_url_stored_in_d1(self) -> None:
+        """After processing, canonical_url from HTML is stored in the D1 UPDATE."""
+        db = _TrackingD1()
+        r2 = MockR2()
+        env = _browser_env(MockEnv(db=db, content=r2))
+
+        mock_client = _make_mock_client()
+
+        with (
+            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+        ):
+            from articles.processing import process_article
+
+            await process_article("art_canon", "https://example.com/article", env)
+
+        # The SAMPLE_HTML has <link rel="canonical" href="https://example.com/canonical-url">
+        # Find the big UPDATE statement
+        update_stmts = [
+            (sql, params)
+            for sql, params in db.executed
+            if sql.strip().startswith("UPDATE") and "canonical_url" in sql
+        ]
+        assert len(update_stmts) >= 1, "D1 UPDATE should include canonical_url"
+        sql, params = update_stmts[-1]
+        # canonical_url is the 8th parameter (0-indexed: 7)
+        # SQL: title, excerpt, author, word_count, reading_time_minutes,
+        #      domain, final_url, canonical_url, ...
+        assert "https://example.com/canonical-url" in params, (
+            f"canonical_url should be extracted from HTML. Params: {params}"
+        )
+
+
+    async def test_subsequent_duplicate_check_finds_canonical_url(self) -> None:
+        """After processing stores canonical_url, check_duplicate should find it."""
+        # First, simulate processing that stored canonical_url
+        stored_article = {
+            "id": "art_round",
+            "created_at": "2025-01-01T00:00:00",
+            "status": "ready",
+            "original_url": "https://example.com/article",
+            "final_url": "https://example.com/article",
+            "canonical_url": "https://example.com/canonical-url",
+        }
+
+        def execute(sql: str, params: list) -> list:
+            if "original_url = ?" in sql:
+                # This is check_duplicate: params = [user_id, url, url, url]
+                submitted_url = params[1]
+                if (
+                    submitted_url == stored_article["original_url"]
+                    or submitted_url == stored_article["final_url"]
+                    or submitted_url == stored_article["canonical_url"]
+                ):
+                    return [stored_article]
+            return []
+
+        from src.articles.urls import check_duplicate
+        from tests.conftest import MockD1
+
+        db = MockD1(execute=execute)
+        result = await check_duplicate(db, "user_001", "https://example.com/canonical-url")
+        assert result is not None, "Duplicate check should find article via canonical_url"
+        assert result["id"] == "art_round"
+
+
+    async def test_image_paths_match_serving_endpoint_format(self) -> None:
+        """Image src attributes should match GET /api/articles/{id}/images/{filename}."""
+        import re
+
+        db = _TrackingD1()
+        r2 = MockR2()
+        env = _browser_env(MockEnv(db=db, content=r2))
+
+        mock_client = _make_mock_client()
+
+        with (
+            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+        ):
+            from articles.processing import process_article
+
+            await process_article("art_imgfmt", "https://example.com/article", env)
+
+        html_key = "articles/art_imgfmt/content.html"
+        stored_html = r2._store[html_key]
+        if isinstance(stored_html, bytes):
+            stored_html = stored_html.decode("utf-8")
+
+        # Find all image src attributes in the stored HTML
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(stored_html, "html.parser")
+        img_srcs = [img.get("src", "") for img in soup.find_all("img")]
+
+        # Each image src should match /api/articles/{article_id}/images/{filename}
+        for src in img_srcs:
+            if src:
+                assert re.match(
+                    r"^/api/articles/art_imgfmt/images/[a-f0-9]+\.\w+$", src
+                ), (
+                    f"Image src '{src}' does not match expected "
+                    f"/api/articles/{{id}}/images/{{filename}} format"
+                )
+
+
+    async def test_process_article_with_empty_readability_output(self) -> None:
+        """Processing should handle pages where readability extracts minimal content."""
+        db = _TrackingD1()
+        r2 = MockR2()
+        env = _browser_env(MockEnv(db=db, content=r2))
+
+        # Page with very little article content but enough body text to pass JS-heavy check
+        minimal_html = """
+        <html>
+        <head><title>Empty Article</title></head>
+        <body>
+            <nav>Lots of navigation here to make it past the JS heavy check.
+            We need to pad this with enough text content so that the is_js_heavy
+            heuristic does not trigger Browser Rendering. This is just navigation
+            and boilerplate text that fills up the page but has no actual article
+            content. More text here to reach 500 characters easily. And some more
+            text to really pad this out enough. Almost there with the padding text.
+            Just a few more words should be enough now.</nav>
+            <p>Short article.</p>
+        </body>
+        </html>
+        """
+        page_response = _make_mock_response(text=minimal_html)
+        mock_client = _make_mock_client(page_response=page_response)
+
+        with (
+            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+        ):
+            from articles.processing import process_article
+
+            await process_article("art_empty", "https://example.com/empty", env)
+
+        # The article should still complete (status = 'ready') even with minimal content
+        ready_updates = [
+            (sql, params)
+            for sql, params in db.executed
+            if "title" in sql and "ready" in str(params)
+        ]
+        assert len(ready_updates) >= 1, (
+            "Article should still be marked ready even with minimal content. "
+            f"SQL executed: {[sql for sql, _ in db.executed]}"
+        )
+
+
+class TestProcessArticleUserTitle:
+    async def test_preserves_user_supplied_title(self) -> None:
+        """When user provided a title at creation, processing should keep it."""
+        user_title = "My Custom Title"
+
+        def result_fn(sql, params):
+            # The processing pipeline queries: SELECT title FROM articles WHERE id = ?
+            if "SELECT title FROM articles" in sql:
+                return [{"title": user_title}]
+            return []
+
+        db = _TrackingD1(result_fn=result_fn)
+        r2 = MockR2()
+        env = _browser_env(MockEnv(db=db, content=r2))
+
+        mock_client = _make_mock_client()
+
+        with (
+            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+        ):
+            from articles.processing import process_article
+
+            await process_article("art_title", "https://example.com/article", env)
+
+        # Find the big UPDATE statement
+        update_stmts = [
+            (sql, params)
+            for sql, params in db.executed
+            if sql.strip().startswith("UPDATE") and "title = ?" in sql and "canonical_url" in sql
+        ]
+        assert len(update_stmts) >= 1
+        sql, params = update_stmts[-1]
+        # title is the first param in the big UPDATE
+        assert params[0] == user_title, (
+            f"User-supplied title should be preserved. Got: {params[0]!r}"
+        )
+
+
+class TestProcessArticleWithNoCanonical:
+    async def test_falls_back_to_final_url_when_no_canonical(self) -> None:
+        """When the HTML has no canonical URL, canonical_url should equal final_url."""
+        db = _TrackingD1()
+        r2 = MockR2()
+        env = _browser_env(MockEnv(db=db, content=r2))
+
+        html_no_canonical = """
+        <html>
+        <head><title>No Canonical</title></head>
+        <body>
+            <article>
+                <h1>No Canonical URL</h1>
+                <p>This page has no canonical link tag. The processing pipeline
+                should fall back to using the final URL as the canonical URL.
+                We need enough text here for readability to pick it up properly.</p>
+                <p>Second paragraph to pad the content so the extraction works
+                as expected by the readability algorithm.</p>
+                <p>Third paragraph for good measure. More text to ensure that
+                the content is substantial enough.</p>
+            </article>
+        </body>
+        </html>
+        """
+        page_response = _make_mock_response(
+            text=html_no_canonical,
+            url="https://example.com/final-destination",
+        )
+        mock_client = _make_mock_client(page_response=page_response)
+
+        with (
+            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+        ):
+            from articles.processing import process_article
+
+            await process_article("art_nocanon", "https://example.com/original", env)
+
+        # Find the big UPDATE statement
+        update_stmts = [
+            (sql, params)
+            for sql, params in db.executed
+            if sql.strip().startswith("UPDATE") and "canonical_url" in sql and "title" in sql
+        ]
+        assert len(update_stmts) >= 1
+        sql, params = update_stmts[-1]
+
+        # The fields in order: title, excerpt, author, word_count, reading_time,
+        #                       domain, final_url, canonical_url, ...
+        # canonical_url is at index 7
+        canonical_in_params = params[7]
+        final_in_params = params[6]
+        assert canonical_in_params == "https://example.com/final-destination", (
+            f"canonical_url should fall back to final_url. Got: {canonical_in_params}"
+        )
+        assert final_in_params == "https://example.com/final-destination", (
+            f"final_url should be the final destination URL. Got: {final_in_params}"
+        )
+
+
+class TestProcessArticleRelativeImages:
+    async def test_relative_image_urls_are_silently_skipped(self) -> None:
+        """Images with relative URLs should not crash processing."""
+        db = _TrackingD1()
+        r2 = MockR2()
+        env = _browser_env(MockEnv(db=db, content=r2))
+
+        html_with_relative_imgs = """
+        <html>
+        <head><title>Relative Images</title></head>
+        <body>
+            <article>
+                <h1>Article with Relative Images</h1>
+                <p>This article has images with relative URLs that cannot be
+                downloaded because there is no base URL context available during
+                processing. The pipeline should handle this gracefully.</p>
+                <p>More text to ensure readability picks up the content properly
+                and treats this as a valid article for extraction.</p>
+                <p>Third paragraph with additional content padding for the
+                readability algorithm to work correctly.</p>
+                <img src="/images/photo.jpg" />
+                <img src="relative/path/image.png" />
+            </article>
+        </body>
+        </html>
+        """
+        page_response = _make_mock_response(text=html_with_relative_imgs)
+
+        # Mock client that fails on relative URLs but succeeds on the page fetch
+        from unittest.mock import AsyncMock
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        call_count = 0
+
+        async def _get(url, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return page_response
+            # Image URLs: simulate failure for relative URLs
+            if url.startswith("/") or not url.startswith("http"):
+                raise Exception(f"Cannot fetch relative URL: {url}")
+            return _make_mock_response(
+                content=b"fake-image-bytes",
+                headers={"content-type": "image/jpeg"},
+            )
+
+        mock_client.get = AsyncMock(side_effect=_get)
+
+        with (
+            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+        ):
+            from articles.processing import process_article
+
+            await process_article("art_relimg", "https://example.com/article", env)
+
+        # Processing should still succeed (status = 'ready')
+        ready_updates = [
+            (sql, params)
+            for sql, params in db.executed
+            if "title" in sql and "ready" in str(params)
+        ]
+        assert len(ready_updates) >= 1, (
+            "Article should be marked ready even when relative image downloads fail. "
+            f"SQL executed: {[(sql[:60], params) for sql, params in db.executed]}"
+        )
+
+
+class TestProcessArticleSQLParamCounts:
+    async def test_all_sql_statements_have_matching_param_counts(self) -> None:
+        """Every SQL statement executed during processing has matching placeholder/param counts."""
+        import re
+
+        db = _TrackingD1()
+        r2 = MockR2()
+        env = _browser_env(MockEnv(db=db, content=r2))
+
+        mock_client = _make_mock_client()
+
+        with (
+            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+        ):
+            from articles.processing import process_article
+
+            await process_article("art_params", "https://example.com/article", env)
+
+        # Every SQL statement should have matching placeholder count and param count
+        for sql, params in db.executed:
+            expected = len(re.findall(r"\?", sql))
+            actual = len(params)
+            assert expected == actual, (
+                f"SQL placeholder/param mismatch: {expected} placeholders but {actual} params.\n"
+                f"SQL: {sql!r}\n"
+                f"Params: {params!r}"
+            )
+
+
+class TestProcessArticleSSRF:
+    async def test_redirect_to_private_ip_is_blocked(self) -> None:
+        """Processing should fail if the page redirects to a private IP."""
+        db = _TrackingD1()
+        r2 = MockR2()
+        env = _browser_env(MockEnv(db=db, content=r2))
+
+        # Page response that claims to redirect to 127.0.0.1
+        redirect_response = _make_mock_response(
+            url="http://127.0.0.1:8080/secret",
+        )
+        mock_client = _make_mock_client(page_response=redirect_response)
+
+        with (
+            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+        ):
+            from articles.processing import process_article
+
+            await process_article("art_ssrf", "https://example.com/redirect", env)
+
+        # Should be marked as 'failed' due to SSRF check
+        failed_updates = [
+            (sql, params)
+            for sql, params in db.executed
+            if "status" in sql and "failed" in str(params)
+        ]
+        assert len(failed_updates) >= 1, (
+            "Article should be marked failed when redirect targets private IP"
+        )
+
+
 class TestProcessArticleExactAssertions:
     async def test_ready_status_at_exact_index(self) -> None:
         """Verify the final UPDATE sets status='ready' at the correct param index."""
@@ -467,7 +891,7 @@ class TestProcessArticleExactAssertions:
         mock_client = _make_mock_client()
 
         with (
-            patch("articles.processing.httpx.AsyncClient", return_value=mock_client),
+            patch("articles.processing.HttpClient", return_value=mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -499,7 +923,7 @@ class TestProcessArticleExactAssertions:
         error_response = _make_mock_response(status_code=404)
         mock_client = _make_mock_client(page_response=error_response)
 
-        with patch("articles.processing.httpx.AsyncClient", return_value=mock_client):
+        with patch("articles.processing.HttpClient", return_value=mock_client):
             from articles.processing import process_article
 
             await process_article("art_fidx", "https://example.com/missing", env)

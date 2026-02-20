@@ -11,9 +11,9 @@ conversion requires testing in the actual Pyodide environment.
 from __future__ import annotations
 
 import hashlib
+from typing import Any
 from urllib.parse import urlparse
 
-import httpx
 from bs4 import BeautifulSoup
 
 from articles.urls import _is_private_hostname
@@ -28,7 +28,7 @@ _MIME_TO_EXT: dict[str, str] = {
 
 
 async def download_images(
-    client: httpx.AsyncClient,
+    client: Any,
     html: str,
     *,
     max_per_image: int = 2_000_000,
@@ -43,7 +43,7 @@ async def download_images(
     Parameters
     ----------
     client:
-        A reusable ``httpx.AsyncClient`` instance.
+        An HTTP client with an async ``.get()`` method (e.g. ``HttpClient``).
     html:
         HTML string containing ``<img>`` tags.
     max_per_image:
@@ -94,7 +94,7 @@ async def download_images(
             resp_parsed = urlparse(str(resp.url))
             if resp_parsed.hostname and _is_private_hostname(resp_parsed.hostname):
                 continue
-        except (httpx.HTTPError, Exception):
+        except Exception:
             continue
 
         data = resp.content

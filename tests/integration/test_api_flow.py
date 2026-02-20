@@ -111,7 +111,11 @@ class StatefulMockD1(MockD1):
         if "FROM ARTICLES" in sql_upper:
             return self._handle_select_articles(sql, params)
 
-        # --- SELECT (tags with join) ---
+        # --- SELECT (tags with article count — list_tags with LEFT JOIN) ---
+        if "FROM TAGS" in sql_upper and "LEFT JOIN" in sql_upper and "GROUP BY" in sql_upper:
+            return self._handle_select_tags_with_counts(sql, params)
+
+        # --- SELECT (tags for a specific article — join via article_tags) ---
         if "FROM TAGS" in sql_upper and "ARTICLE_TAGS" in sql_upper:
             return self._handle_select_article_tags(sql, params)
 
@@ -216,6 +220,22 @@ class StatefulMockD1(MockD1):
 
         return []
 
+    def _handle_select_tags_with_counts(
+        self,
+        sql: str,
+        params: list[Any],
+    ) -> list[dict[str, Any]]:
+        """Handle: SELECT ... FROM tags t LEFT JOIN article_tags ... GROUP BY t.id"""
+        user_id = params[0]
+        results = []
+        for t in self.tags.values():
+            if t["user_id"] != user_id:
+                continue
+            count = sum(1 for at in self.article_tags if at["tag_id"] == t["id"])
+            results.append({**t, "article_count": count})
+        results.sort(key=lambda x: x.get("name", ""))
+        return results
+
     def _handle_select_article_tags(
         self,
         sql: str,
@@ -240,12 +260,33 @@ class StatefulMockD1(MockD1):
 
     def _handle_update_article(self, sql: str, params: list[Any]) -> list[dict[str, Any]]:
         sql_upper = sql.upper()
-        # The last two params are always article_id and user_id in WHERE clause
-        article_id = params[-2]
-        user_id = params[-1]
+
+        # Determine article_id from the WHERE clause.
+        # Most UPDATEs use "WHERE id = ? AND user_id = ?" (last two params).
+        # The re-process UPDATE uses "WHERE id = ?" (last param only, no user_id).
+        if "AND USER_ID = ?" in sql_upper:
+            article_id = params[-2]
+            user_id = params[-1]
+        else:
+            article_id = params[-1]
+            user_id = None
+
         article = self.articles.get(article_id)
-        if article and article["user_id"] == user_id:
+        if article and (user_id is None or article["user_id"] == user_id):
             # Parse SET clause fields from sql
+            # Re-process: UPDATE articles SET status = 'pending', updated_at = ? WHERE id = ?
+            if "STATUS = 'PENDING'" in sql_upper:
+                article["status"] = "pending"
+            elif "STATUS = ?" in sql_upper:
+                idx = 0
+                for _i, token in enumerate(sql.split("?")):
+                    tok = token.lower()
+                    if ("status" in tok
+                            and "reading_status" not in tok
+                            and "audio_status" not in tok):
+                        article["status"] = params[idx]
+                        break
+                    idx += 1
             if "READING_STATUS = ?" in sql_upper:
                 idx = 0
                 for i, token in enumerate(sql.split("?")):
@@ -494,12 +535,13 @@ class TestArticleCrudFlow:
         )
         assert resp.status_code == 401
 
-    async def test_create_rejects_duplicate_url(
+    async def test_duplicate_url_reprocesses(
         self,
         test_app: TestClient,
         auth_cookie: str,
+        env: MockEnv,
     ) -> None:
-        """POST /api/articles returns 409 for a duplicate URL."""
+        """POST /api/articles with a duplicate URL re-processes the existing article."""
         cookies = {COOKIE_NAME: auth_cookie}
 
         # Create first
@@ -509,14 +551,19 @@ class TestArticleCrudFlow:
             cookies=cookies,
         )
         assert resp.status_code == 201
+        first_id = resp.json()["id"]
 
-        # Try to create again
+        # Submit same URL again — should re-process, not reject
         resp = test_app.post(
             "/api/articles",
             json={"url": "https://example.com/duplicate"},
             cookies=cookies,
         )
-        assert resp.status_code == 409
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["id"] == first_id, "Should return the same article ID"
+        assert data["updated"] is True
+        assert "created_at" in data
 
     async def test_create_rejects_private_url(
         self,

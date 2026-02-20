@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from articles.routes import _get_user_article
 from auth.dependencies import get_current_user
-from wrappers import _to_js_value
+from wrappers import _to_js_value, to_py_bytes
 
 router = APIRouter()
 
@@ -148,10 +148,7 @@ async def get_audio(
                         break
                     chunk = getattr(result, "value", None)
                     if chunk is not None:
-                        if hasattr(chunk, "to_py"):
-                            yield bytes(chunk.to_py())
-                        else:
-                            yield bytes(chunk)
+                        yield to_py_bytes(chunk)
             finally:
                 reader.releaseLock()
 
@@ -167,9 +164,7 @@ async def get_audio(
         )
 
     # Fallback: load entire buffer (for mocks / non-streaming environments)
-    audio_bytes = await audio_obj.arrayBuffer()
-    if hasattr(audio_bytes, "to_py"):
-        audio_bytes = bytes(audio_bytes.to_py())
+    audio_bytes = to_py_bytes(await audio_obj.arrayBuffer())
 
     async def _stream():
         yield audio_bytes

@@ -2,7 +2,7 @@
 
 Provides async helpers for taking screenshots and scraping rendered HTML
 from web pages via Cloudflare's headless browser service.  Used by the
-article processing pipeline when simple ``httpx.get()`` returns minimal
+article processing pipeline when a simple GET returns minimal
 content (JS-heavy sites).
 
 See spec section 2.5 for details on the REST API endpoints.
@@ -10,7 +10,7 @@ See spec section 2.5 for details on the REST API endpoints.
 
 from __future__ import annotations
 
-import httpx
+from typing import Any
 
 BROWSER_API_BASE = (
     "https://api.cloudflare.com/client/v4/accounts/{account_id}/browser-rendering"
@@ -22,7 +22,7 @@ class BrowserRenderingError(Exception):
 
 
 async def screenshot(
-    client: httpx.AsyncClient,
+    client: Any,
     url: str,
     account_id: str,
     api_token: str,
@@ -36,7 +36,7 @@ async def screenshot(
     Parameters
     ----------
     client:
-        A reusable ``httpx.AsyncClient`` instance.
+        An HTTP client with async ``.post()`` method (e.g. ``HttpClient``).
     url:
         The page URL to screenshot.
     account_id:
@@ -80,7 +80,7 @@ async def screenshot(
 
 
 async def scrape(
-    client: httpx.AsyncClient,
+    client: Any,
     url: str,
     account_id: str,
     api_token: str,
@@ -92,7 +92,7 @@ async def scrape(
     Parameters
     ----------
     client:
-        A reusable ``httpx.AsyncClient`` instance.
+        An HTTP client with async ``.post()`` method (e.g. ``HttpClient``).
     url:
         The page URL to scrape.
     account_id:

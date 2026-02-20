@@ -15,9 +15,8 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
-import httpx
-
 from articles.urls import _is_private_hostname
+from wrappers import HttpClient
 
 # Timeout for health check requests (seconds).
 _HEALTH_CHECK_TIMEOUT = 10.0
@@ -56,17 +55,15 @@ async def check_original_url(url: str) -> str:
         return "unknown"
 
     try:
-        async with httpx.AsyncClient(
-            follow_redirects=True,
-            timeout=_HEALTH_CHECK_TIMEOUT,
-        ) as client:
+        async with HttpClient() as client:
             resp = await client.head(
                 url,
                 headers={"User-Agent": _USER_AGENT},
+                timeout=_HEALTH_CHECK_TIMEOUT,
             )
 
             # SSRF check: validate the final URL after redirects
-            final_hostname = resp.url.host if resp.url else None
+            final_hostname = urlparse(resp.url).hostname if resp.url else None
             if final_hostname and _is_private_hostname(final_hostname):
                 return "unknown"
 
@@ -82,11 +79,11 @@ async def check_original_url(url: str) -> str:
             # Other HTTP errors (5xx, etc.) — treat as unknown
             return "unknown"
 
-    except (httpx.ConnectError, httpx.ConnectTimeout, OSError):
-        # DNS failure, connection refused, timeout on connect
+    except (ConnectionError, OSError):
+        # DNS failure, connection refused
         return "domain_dead"
-    except (httpx.TimeoutException, httpx.HTTPError):
-        # Read timeout or other HTTP-level errors
-        return "unknown"
+    except TimeoutError:
+        # Connect or read timeout
+        return "domain_dead"
     except Exception:
         return "unknown"

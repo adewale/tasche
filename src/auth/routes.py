@@ -1,7 +1,9 @@
 """Auth routes for Tasche — GitHub OAuth login, callback, logout, and session.
 
-All GitHub API communication uses ``httpx.AsyncClient``.  D1 queries use the
-``d1_first`` helper from ``wrappers`` and parameterised SQL (``?`` placeholders).
+All outbound GitHub API communication uses ``http_fetch`` from ``wrappers``,
+which delegates to the native JS ``fetch()`` API in the Workers runtime and
+falls back to httpx in CPython tests.  D1 queries use the ``d1_first`` helper
+and parameterised SQL (``?`` placeholders).
 """
 
 from __future__ import annotations
@@ -11,7 +13,6 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlencode
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 
@@ -23,7 +24,7 @@ from auth.session import (
     delete_session,
     parse_allowed_emails,
 )
-from wrappers import SafeEnv, d1_first
+from wrappers import SafeEnv, d1_first, http_fetch
 
 router = APIRouter()
 
@@ -91,63 +92,64 @@ async def callback(request: Request) -> RedirectResponse:
     site_url = env.get("SITE_URL", "")
     redirect_uri = f"{site_url}/api/auth/callback"
 
-    async with httpx.AsyncClient(
-        headers={"User-Agent": "tasche/1.0"},
-        timeout=httpx.Timeout(10.0),
-    ) as client:
-        # --- Exchange code for access token ---
-        token_resp = await client.post(
-            GITHUB_TOKEN_URL,
-            data={
-                "client_id": client_id,
-                "client_secret": client_secret,
-                "code": code,
-                "redirect_uri": redirect_uri,
-            },
-            headers={"Accept": "application/json"},
+    # --- Exchange code for access token ---
+    token_resp = await http_fetch(
+        GITHUB_TOKEN_URL,
+        method="POST",
+        form_data={
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "code": code,
+            "redirect_uri": redirect_uri,
+        },
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "tasche/1.0",
+        },
+    )
+    if token_resp.status_code != 200:
+        raise HTTPException(status_code=502, detail="GitHub token exchange failed")
+    token_data = token_resp.json()
+
+    if "error" in token_data:
+        error_detail = token_data.get(
+            "error_description", token_data["error"]
         )
-        if token_resp.status_code != 200:
-            raise HTTPException(status_code=502, detail="GitHub token exchange failed")
-        token_data = token_resp.json()
+        raise HTTPException(
+            status_code=400,
+            detail=f"GitHub OAuth error: {error_detail}",
+        )
 
-        if "error" in token_data:
-            error_detail = token_data.get(
-                "error_description", token_data["error"]
-            )
-            raise HTTPException(
-                status_code=400,
-                detail=f"GitHub OAuth error: {error_detail}",
-            )
+    access_token = token_data.get("access_token")
+    if not access_token:
+        raise HTTPException(status_code=400, detail="Failed to obtain access token")
 
-        access_token = token_data.get("access_token")
-        if not access_token:
-            raise HTTPException(status_code=400, detail="Failed to obtain access token")
+    # --- Fetch GitHub user info ---
+    auth_headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "tasche/1.0",
+    }
+    user_resp = await http_fetch(GITHUB_USER_URL, headers=auth_headers)
+    if user_resp.status_code != 200:
+        raise HTTPException(status_code=502, detail="GitHub user info fetch failed")
+    github_user = user_resp.json()
 
-        # --- Fetch GitHub user info ---
-        auth_headers = {
-            "Authorization": f"Bearer {access_token}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        }
-        user_resp = await client.get(GITHUB_USER_URL, headers=auth_headers)
-        if user_resp.status_code != 200:
-            raise HTTPException(status_code=502, detail="GitHub user info fetch failed")
-        github_user = user_resp.json()
+    github_id = github_user.get("id")
+    if github_id is None:
+        raise HTTPException(status_code=502, detail="GitHub did not return a valid user")
 
-        github_id = github_user.get("id")
-        if github_id is None:
-            raise HTTPException(status_code=502, detail="GitHub did not return a valid user")
+    email = github_user.get("email") or ""
 
-        email = github_user.get("email") or ""
-
-        # If no public email, fetch from /user/emails endpoint
-        if not email:
-            emails_resp = await client.get(GITHUB_USER_EMAILS_URL, headers=auth_headers)
-            if emails_resp.status_code == 200:
-                for e in emails_resp.json():
-                    if e.get("primary") and e.get("verified"):
-                        email = e["email"]
-                        break
+    # If no public email, fetch from /user/emails endpoint
+    if not email:
+        emails_resp = await http_fetch(GITHUB_USER_EMAILS_URL, headers=auth_headers)
+        if emails_resp.status_code == 200:
+            for e in emails_resp.json():
+                if e.get("primary") and e.get("verified"):
+                    email = e["email"]
+                    break
 
     username = github_user.get("login", "")
     avatar_url = github_user.get("avatar_url", "")

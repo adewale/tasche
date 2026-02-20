@@ -229,26 +229,22 @@ class TestQueueHandlerException:
 
 
 class TestQueueBodyConversion:
-    async def test_body_with_to_py_method(self, capsys: Any) -> None:
-        """When body has a to_py() method (JsProxy), it is called for conversion."""
+    async def test_body_as_dict(self, capsys: Any) -> None:
+        """When body is already a dict, _to_py_safe passes it through."""
         from entry import Default
 
         worker = Default()
         worker.env = MockEnv()
 
         body_dict = {"type": "totally_unknown_type", "data": "test"}
-        mock_body = MagicMock()
-        mock_body.to_py = MagicMock(return_value=body_dict)
-        # hasattr check: to_py exists
-        mock_body.configure_mock(**{"to_py.return_value": body_dict})
-
-        msg = _MockMessage(mock_body)
+        msg = _MockMessage(body_dict)
         batch = _MockBatch([msg])
 
         await worker.queue(batch)
 
-        mock_body.to_py.assert_called_once()
         assert msg.acked is True
+        output = capsys.readouterr().out
+        assert "totally_unknown_type" in output
 
     async def test_body_as_json_string(self, capsys: Any) -> None:
         """When body is a JSON string, it is parsed via json.loads."""
@@ -268,13 +264,12 @@ class TestQueueBodyConversion:
         assert "unknown_str_type" in output
 
     async def test_body_as_plain_dict(self) -> None:
-        """When body is already a Python dict, it is used directly via _to_py_safe fallback."""
+        """When body is already a dict, _to_py_safe returns it unchanged."""
         from entry import Default
 
         worker = Default()
         worker.env = MockEnv()
 
-        # A plain dict has no to_py() and is not a string, so _to_py_safe is called
         msg = _MockMessage({"type": "some_other_unknown"})
         batch = _MockBatch([msg])
 
@@ -537,3 +532,110 @@ class TestSPAFallbackRouting:
         # Second call should be the index.html fallback
         assert mock_assets.fetch.call_count == 2
         assert result == index_response
+
+
+# ---------------------------------------------------------------------------
+# GET /api/health/config — configuration check
+# ---------------------------------------------------------------------------
+
+
+class TestConfigCheck:
+    """Tests for the configuration verification endpoint."""
+
+    def _make_client(self, env: MockEnv):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient as TC
+
+        from entry import app
+
+        # Clone the app's routes into a test app with env injection
+        test_app = FastAPI()
+
+        @test_app.middleware("http")
+        async def inject_env(request, call_next):
+            request.scope["env"] = env
+            return await call_next(request)
+
+        for route in app.routes:
+            test_app.routes.append(route)
+
+        return TC(test_app, raise_server_exceptions=False)
+
+    def test_all_configured_returns_ok(self) -> None:
+        """When all required config is present, status is 'ok'."""
+        env = MockEnv()
+        env.SITE_URL = "https://tasche.example.com"
+        env.ALLOWED_EMAILS = "user@example.com"
+        env.GITHUB_CLIENT_ID = "test-id"
+        env.GITHUB_CLIENT_SECRET = "test-secret"
+        env.CF_ACCOUNT_ID = "test-account"
+        env.CF_API_TOKEN = "test-token"
+
+        client = self._make_client(env)
+        resp = client.get("/api/health/config")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "ok"
+        # All items should be configured
+        for item in data["checks"]:
+            assert item["status"] == "ok", f"{item['name']} should be ok"
+
+    def test_missing_secrets_returns_degraded(self) -> None:
+        """When optional secrets are missing, status is 'degraded'."""
+        env = MockEnv()
+        env.SITE_URL = "https://tasche.example.com"
+        env.ALLOWED_EMAILS = "user@example.com"
+        env.GITHUB_CLIENT_ID = "test-id"
+        env.GITHUB_CLIENT_SECRET = "test-secret"
+        # CF_ACCOUNT_ID and CF_API_TOKEN NOT set
+
+        client = self._make_client(env)
+        resp = client.get("/api/health/config")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "degraded"
+        missing = [c for c in data["checks"] if c["status"] == "missing"]
+        missing_names = {c["name"] for c in missing}
+        assert "CF_ACCOUNT_ID" in missing_names
+        assert "CF_API_TOKEN" in missing_names
+
+    def test_missing_required_returns_error(self) -> None:
+        """When required vars are missing, status is 'error'."""
+        env = MockEnv()
+        # MockEnv sets defaults — clear them to simulate missing config
+        env.SITE_URL = ""
+        env.GITHUB_CLIENT_ID = ""
+        env.GITHUB_CLIENT_SECRET = ""
+
+        client = self._make_client(env)
+        resp = client.get("/api/health/config")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "error"
+        missing = {c["name"] for c in data["checks"] if c["status"] == "missing"}
+        assert "SITE_URL" in missing
+        assert "GITHUB_CLIENT_ID" in missing
+
+    def test_bindings_checked(self) -> None:
+        """D1, R2, KV, Queue, and AI bindings are verified."""
+        env = MockEnv()
+        env.SITE_URL = "https://tasche.example.com"
+        env.ALLOWED_EMAILS = "user@example.com"
+        env.GITHUB_CLIENT_ID = "test-id"
+        env.GITHUB_CLIENT_SECRET = "test-secret"
+        env.CF_ACCOUNT_ID = "test-account"
+        env.CF_API_TOKEN = "test-token"
+
+        client = self._make_client(env)
+        resp = client.get("/api/health/config")
+
+        data = resp.json()
+        check_names = {c["name"] for c in data["checks"]}
+        assert "DB" in check_names
+        assert "CONTENT" in check_names
+        assert "SESSIONS" in check_names
+        assert "ARTICLE_QUEUE" in check_names
+        assert "AI" in check_names

@@ -21,15 +21,7 @@ import traceback
 from datetime import UTC, datetime
 
 from articles.storage import article_key
-from wrappers import _to_js_value, d1_first
-
-# JsException import — only available inside Pyodide runtime
-try:
-    from pyodide.ffi import JsException  # type: ignore[import-not-found]
-except ImportError:
-
-    class JsException(Exception):  # type: ignore[no-redef]
-        """Stub that never matches outside Pyodide."""
+from wrappers import _to_js_value, d1_first, to_py_bytes
 
 # TTS model identifier
 _TTS_MODEL = "@cf/deepgram/aura-2-en"
@@ -268,8 +260,7 @@ async def process_tts(article_id: str, env: object, *, user_id: str) -> None:
         # Consume ReadableStream if the AI binding returns one
         if hasattr(audio_data, "arrayBuffer"):
             audio_data = await audio_data.arrayBuffer()
-        if hasattr(audio_data, "to_py"):
-            audio_data = bytes(audio_data.to_py())
+        audio_data = to_py_bytes(audio_data)
         if not audio_data:
             raise ValueError("Workers AI returned empty audio data")
 

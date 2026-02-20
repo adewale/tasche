@@ -548,7 +548,9 @@ def _make_mock_response(
     url: str = "https://example.com/article",
     headers: dict[str, str] | None = None,
 ) -> MagicMock:
-    """Create a mock httpx.Response."""
+    """Create a mock HTTP response compatible with HttpResponse interface."""
+    from src.wrappers import HttpError
+
     resp = MagicMock()
     resp.status_code = status_code
     resp.text = text
@@ -557,7 +559,7 @@ def _make_mock_response(
     resp.headers = headers or {"content-type": "text/html"}
     resp.raise_for_status = MagicMock()
     if status_code >= 400:
-        resp.raise_for_status.side_effect = Exception(f"HTTP {status_code}")
+        resp.raise_for_status.side_effect = HttpError(status_code, f"HTTP {status_code}")
     return resp
 
 
@@ -577,7 +579,7 @@ def _make_mock_client(
     page_response: MagicMock | None = None,
     image_response: MagicMock | None = None,
 ) -> AsyncMock:
-    """Create a mock httpx.AsyncClient context manager."""
+    """Create a mock HttpClient context manager."""
     if page_response is None:
         page_response = _make_mock_response()
     if image_response is None:

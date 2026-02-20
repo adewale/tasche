@@ -79,16 +79,21 @@ class TestCreateArticle:
         assert msg["type"] == "article_processing"
         assert msg["url"] == "https://example.com/article"
 
-    async def test_rejects_duplicate_url(self) -> None:
-        """POST /api/articles returns 409 when URL already exists."""
+    async def test_reprocesses_duplicate_url(self) -> None:
+        """POST /api/articles re-processes when URL already exists."""
         existing = ArticleFactory.create(
             user_id="user_001",
             original_url="https://example.com/existing",
         )
 
+        updates = []
+
         def execute(sql: str, params: list) -> list:
             if "original_url = ?" in sql:
                 return [existing]
+            if "UPDATE articles SET status" in sql:
+                updates.append(params)
+                return []
             return []
 
         db = MockD1(execute=execute)
@@ -101,8 +106,280 @@ class TestCreateArticle:
             cookies={COOKIE_NAME: session_id},
         )
 
-        assert resp.status_code == 409
-        assert "already exists" in resp.json()["detail"]
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["updated"] is True
+        assert data["id"] == existing["id"]
+        assert len(updates) == 1
+
+    async def test_finds_duplicate_via_final_url(self) -> None:
+        """POST /api/articles detects duplicate when submitted URL matches final_url."""
+        # Scenario: article was saved with original_url="https://example.com/old"
+        # but after processing, its final_url was set to "https://example.com/redirected".
+        # Now the user submits "https://example.com/redirected" — should find the duplicate.
+        existing = ArticleFactory.create(
+            id="existing_art",
+            user_id="user_001",
+            original_url="https://example.com/old",
+            final_url="https://example.com/redirected",
+        )
+
+        updates = []
+
+        def execute(sql: str, params: list) -> list:
+            if "original_url = ?" in sql:
+                # The submitted URL is "https://example.com/redirected" which does NOT
+                # match original_url, but DOES match final_url.
+                # The SQL is: WHERE user_id = ? AND (original_url = ?
+                # OR final_url = ? OR canonical_url = ?)
+                # params are: [user_id, url, url, url]
+                submitted_url = params[1]  # the URL being checked
+                if (
+                    submitted_url == existing["original_url"]
+                    or submitted_url == existing["final_url"]
+                    or submitted_url == existing["canonical_url"]
+                ):
+                    return [existing]
+                return []
+            if "UPDATE articles SET status" in sql:
+                updates.append(params)
+                return []
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles",
+            json={"url": "https://example.com/redirected"},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["updated"] is True
+        assert data["id"] == "existing_art"
+        assert data.get("created_at") == existing["created_at"]
+
+    async def test_finds_duplicate_via_canonical_url(self) -> None:
+        """POST /api/articles detects duplicate when submitted URL matches canonical_url."""
+        # Scenario: article was saved, processing set canonical_url to a clean URL.
+        # User submits that clean canonical URL — should detect it as duplicate.
+        existing = ArticleFactory.create(
+            id="existing_canon",
+            user_id="user_001",
+            original_url="https://example.com/page?utm_source=twitter",
+            final_url="https://example.com/page?utm_source=twitter",
+            canonical_url="https://example.com/page",
+        )
+
+        updates = []
+
+        def execute(sql: str, params: list) -> list:
+            if "original_url = ?" in sql:
+                submitted_url = params[1]
+                if (
+                    submitted_url == existing["original_url"]
+                    or submitted_url == existing["final_url"]
+                    or submitted_url == existing["canonical_url"]
+                ):
+                    return [existing]
+                return []
+            if "UPDATE articles SET status" in sql:
+                updates.append(params)
+                return []
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles",
+            json={"url": "https://example.com/page"},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["updated"] is True
+        assert data["id"] == "existing_canon"
+        assert data.get("created_at") == existing["created_at"]
+
+    async def test_reprocess_enqueues_with_submitted_url(self) -> None:
+        """When re-processing, the queue message uses the newly submitted URL, not original_url."""
+        existing = ArticleFactory.create(
+            id="existing_art_2",
+            user_id="user_001",
+            original_url="https://example.com/original-page",
+            final_url="https://example.com/final-page",
+        )
+
+        def execute(sql: str, params: list) -> list:
+            if "original_url = ?" in sql:
+                submitted_url = params[1]
+                if (
+                    submitted_url == existing["original_url"]
+                    or submitted_url == existing["final_url"]
+                    or submitted_url == existing["canonical_url"]
+                ):
+                    return [existing]
+                return []
+            return []
+
+        queue = MockQueue()
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db, article_queue=queue)
+
+        client, session_id = await _authenticated_client(env)
+        # User submits the final_url, not the original_url
+        resp = client.post(
+            "/api/articles",
+            json={"url": "https://example.com/final-page"},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["updated"] is True
+
+        # The queue message should use the submitted URL (final-page),
+        # which will be re-fetched by the processing pipeline
+        assert len(queue.messages) == 1
+        msg = queue.messages[0]
+        assert msg["url"] == "https://example.com/final-page"
+        assert msg["article_id"] == "existing_art_2"
+
+    async def test_create_article_with_real_url(self) -> None:
+        """POST /api/articles succeeds with a real-world URL."""
+        url = "https://okayfail.com/2025/in-praise-of-dhh.html"
+        calls: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            calls.append({"sql": sql, "params": params})
+            return []
+
+        queue = MockQueue()
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db, article_queue=queue)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles",
+            json={"url": url},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 201
+        data = resp.json()
+        assert "id" in data
+        assert data["status"] == "pending"
+
+        # Verify queue was sent with the correct URL
+        assert len(queue.messages) == 1
+        assert queue.messages[0]["url"] == url
+
+    async def test_duplicate_with_wrapped_d1_result(self) -> None:
+        """POST /api/articles handles D1 .first() returning a result wrapper.
+
+        In Pyodide, D1's .first() may return the full result wrapper
+        {results: [...], success, meta} instead of just the row.
+        The duplicate check must still extract the article ID correctly.
+        """
+        existing = ArticleFactory.create(
+            id="wrapped_art",
+            user_id="user_001",
+            original_url="https://okayfail.com/2025/test.html",
+        )
+        updates = []
+
+        def execute(sql: str, params: list) -> list:
+            if "original_url = ?" in sql:
+                # Simulate what Pyodide D1 .first() might return:
+                # the result wrapper instead of the row itself.
+                # d1_first() must unwrap this before returning.
+                return [existing]
+            if "UPDATE articles SET status" in sql:
+                updates.append(params)
+                return []
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles",
+            json={"url": "https://okayfail.com/2025/test.html"},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["id"] == "wrapped_art"
+        assert data["updated"] is True
+
+    async def test_create_article_sql_param_counts_match(self) -> None:
+        """Every SQL statement executed during article creation has matching placeholders/params."""
+        import re
+
+        calls: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            calls.append({"sql": sql, "params": params})
+            return []
+
+        queue = MockQueue()
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db, article_queue=queue)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles",
+            json={"url": "https://example.com/test-params"},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 201
+
+        for call in calls:
+            sql = call["sql"]
+            params = call["params"]
+            expected = len(re.findall(r"\?", sql))
+            actual = len(params)
+            assert expected == actual, (
+                f"SQL placeholder/param mismatch: {expected} placeholders but {actual} params.\n"
+                f"SQL: {sql!r}\n"
+                f"Params: {params!r}"
+            )
+
+    async def test_url_normalization_preserves_query_params(self) -> None:
+        """POST /api/articles preserves URL query parameters during validation."""
+        calls: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            calls.append({"sql": sql, "params": params})
+            return []
+
+        queue = MockQueue()
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db, article_queue=queue)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles",
+            json={"url": "https://example.com/article?utm_source=twitter&ref=123"},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 201
+
+        # Verify the queue message preserves the full URL with query params
+        assert len(queue.messages) == 1
+        msg = queue.messages[0]
+        assert "utm_source=twitter" in msg["url"]
+        assert "ref=123" in msg["url"]
 
     async def test_rejects_invalid_url(self) -> None:
         """POST /api/articles returns 422 for an invalid URL."""
@@ -137,6 +414,60 @@ class TestCreateArticle:
 
 
 class TestListArticles:
+    async def test_returns_pending_articles_with_null_fields(self) -> None:
+        """GET /api/articles returns articles with NULL optional fields."""
+        # A freshly-created article has many NULL fields before processing completes
+        pending_article = {
+            "id": "art_pending",
+            "user_id": "user_001",
+            "original_url": "https://okayfail.com/2025/in-praise-of-dhh.html",
+            "final_url": None,
+            "canonical_url": None,
+            "domain": "okayfail.com",
+            "title": None,
+            "excerpt": None,
+            "author": None,
+            "word_count": None,
+            "reading_time_minutes": None,
+            "image_count": 0,
+            "status": "pending",
+            "reading_status": "unread",
+            "is_favorite": 0,
+            "audio_key": None,
+            "audio_duration_seconds": None,
+            "audio_status": None,
+            "html_key": None,
+            "thumbnail_key": None,
+            "original_key": None,
+            "original_status": "unknown",
+            "scroll_position": 0.0,
+            "reading_progress": 0.0,
+            "created_at": "2025-01-15T10:00:00",
+            "updated_at": "2025-01-15T10:00:00",
+        }
+
+        def execute(sql: str, params: list) -> list:
+            if sql.startswith("SELECT") and "FROM articles" in sql and "LIMIT" in sql:
+                return [pending_article]
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get(
+            "/api/articles",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["id"] == "art_pending"
+        assert data[0]["status"] == "pending"
+        assert data[0]["title"] is None
+        assert data[0]["final_url"] is None
+
     async def test_returns_users_articles(self) -> None:
         """GET /api/articles returns a list of the user's articles."""
         articles = [
@@ -530,8 +861,242 @@ class TestGetArticleScreenshot:
 
 
 # ---------------------------------------------------------------------------
+# GET /api/articles/{article_id}/images/{filename} — Serve article images
+# ---------------------------------------------------------------------------
+
+
+class TestGetArticleImage:
+    async def test_returns_webp_image(self) -> None:
+        """GET /api/articles/{id}/images/{filename} returns image from R2."""
+        article = ArticleFactory.create(id="art_img", user_id="user_001")
+
+        def execute(sql: str, params: list) -> list:
+            if "id = ?" in sql and params[0] == "art_img":
+                return [article]
+            return []
+
+        db = MockD1(execute=execute)
+        r2 = MockR2()
+        env = MockEnv(db=db, content=r2)
+
+        await r2.put(
+            "articles/art_img/images/abc123.webp", b"\x00WEBP_IMAGE_DATA"
+        )
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get(
+            "/api/articles/art_img/images/abc123.webp",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "image/webp"
+        assert resp.headers["cache-control"] == "public, max-age=31536000, immutable"
+        assert resp.content == b"\x00WEBP_IMAGE_DATA"
+
+    async def test_returns_jpeg_image(self) -> None:
+        """GET /api/articles/{id}/images/{filename} returns correct type for .jpg."""
+        article = ArticleFactory.create(id="art_jpg", user_id="user_001")
+
+        def execute(sql: str, params: list) -> list:
+            if "id = ?" in sql and params[0] == "art_jpg":
+                return [article]
+            return []
+
+        db = MockD1(execute=execute)
+        r2 = MockR2()
+        env = MockEnv(db=db, content=r2)
+
+        await r2.put("articles/art_jpg/images/def456.jpg", b"\xff\xd8JPEG_DATA")
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get(
+            "/api/articles/art_jpg/images/def456.jpg",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "image/jpeg"
+
+    async def test_returns_404_when_image_not_in_r2(self) -> None:
+        """GET /api/articles/{id}/images/{filename} returns 404 when not in R2."""
+        article = ArticleFactory.create(id="art_noimg", user_id="user_001")
+
+        def execute(sql: str, params: list) -> list:
+            if "id = ?" in sql and params[0] == "art_noimg":
+                return [article]
+            return []
+
+        db = MockD1(execute=execute)
+        r2 = MockR2()  # Empty R2
+        env = MockEnv(db=db, content=r2)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get(
+            "/api/articles/art_noimg/images/missing.webp",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 404
+
+    async def test_returns_404_when_article_not_found(self) -> None:
+        """GET /api/articles/{id}/images/{filename} returns 404 for wrong article."""
+        db = MockD1(execute=lambda sql, params: [])
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get(
+            "/api/articles/nonexistent/images/abc123.webp",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 404
+
+    def test_requires_auth(self) -> None:
+        """GET /api/articles/{id}/images/{filename} returns 401 without auth."""
+        env = MockEnv()
+        app = _make_app(env)
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.get("/api/articles/some-id/images/abc123.webp")
+        assert resp.status_code == 401
+
+    async def test_returns_octet_stream_for_unknown_extension(self) -> None:
+        """GET /api/articles/{id}/images/{filename} falls back to octet-stream."""
+        article = ArticleFactory.create(id="art_bin", user_id="user_001")
+
+        def execute(sql: str, params: list) -> list:
+            if "id = ?" in sql and params[0] == "art_bin":
+                return [article]
+            return []
+
+        db = MockD1(execute=execute)
+        r2 = MockR2()
+        env = MockEnv(db=db, content=r2)
+
+        await r2.put("articles/art_bin/images/file.bin", b"\x00BINARY_DATA")
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get(
+            "/api/articles/art_bin/images/file.bin",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "application/octet-stream"
+
+
+# ---------------------------------------------------------------------------
 # GET /api/articles?audio_status=... — Filter by audio_status
 # ---------------------------------------------------------------------------
+
+
+class TestUpdateArticleMultipleFields:
+    async def test_updates_multiple_fields_at_once(self) -> None:
+        """PATCH /api/articles/{id} can update multiple fields at once."""
+        article = ArticleFactory.create(id="art_multi", user_id="user_001")
+        updated_article = {
+            **article,
+            "reading_status": "reading",
+            "is_favorite": 1,
+            "reading_progress": 0.5,
+        }
+
+        call_count = 0
+
+        def execute(sql: str, params: list) -> list:
+            nonlocal call_count
+            call_count += 1
+            if sql.startswith("SELECT") and "id = ?" in sql:
+                if call_count <= 1:
+                    return [article]
+                return [updated_article]
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.patch(
+            "/api/articles/art_multi",
+            json={
+                "reading_status": "reading",
+                "is_favorite": True,
+                "reading_progress": 0.5,
+            },
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["reading_status"] == "reading"
+        assert data["is_favorite"] == 1
+        assert data["reading_progress"] == 0.5
+
+
+class TestListenLaterIdempotency:
+    """Test TTS listen-later endpoint returns correct status for already-ready articles."""
+
+    async def test_listen_later_returns_200_when_audio_ready(self) -> None:
+        """POST /api/articles/{id}/listen-later returns 200 when audio ready."""
+        from src.tts.routes import router as tts_router
+
+        article = ArticleFactory.create(
+            id="art_audio_ready",
+            user_id="user_001",
+            audio_status="ready",
+            audio_key="articles/art_audio_ready/audio.mp3",
+        )
+
+        def execute(sql: str, params: list) -> list:
+            if "id = ?" in sql and params[0] == "art_audio_ready":
+                return [article]
+            return []
+
+        db = MockD1(execute=execute)
+        from tests.conftest import _authenticated_client as _auth_client
+
+        env = MockEnv(db=db)
+        client, session_id = await _auth_client(
+            env,
+            (tts_router, "/api/articles"),
+        )
+
+        resp = client.post(
+            "/api/articles/art_audio_ready/listen-later",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert (
+            resp.status_code == 200
+        ), f"Expected 200 for already-ready audio, got {resp.status_code}"
+        data = resp.json()
+        assert data["audio_status"] == "ready"
+
+
+class TestFilterByTag:
+    async def test_filters_by_tag_id(self) -> None:
+        """GET /api/articles?tag=tag_001 includes subquery filter in SQL."""
+        captured: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            captured.append({"sql": sql, "params": params})
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        client.get(
+            "/api/articles?tag=tag_001",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        select_calls = [c for c in captured if "SELECT" in c["sql"]]
+        assert len(select_calls) >= 1
+        sql = select_calls[0]["sql"]
+        assert "article_tags" in sql, "Tag filter should use article_tags subquery"
+        assert "tag_id = ?" in sql, "Tag filter should use parameterized tag_id"
+        assert "tag_001" in select_calls[0]["params"]
 
 
 class TestFilterByAudioStatus:

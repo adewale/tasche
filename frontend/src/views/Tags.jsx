@@ -100,6 +100,9 @@ export function Tags() {
                   class="tag-row-name"
                 >
                   {t.name}
+                  <span class="tag-row-count">
+                    {t.article_count === 1 ? '1 article' : (t.article_count || 0) + ' articles'}
+                  </span>
                 </a>
                 <div class="tag-row-actions">
                   <button

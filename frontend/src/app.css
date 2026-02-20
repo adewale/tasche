@@ -944,6 +944,15 @@ input, textarea {
 
 .tag-row-name {
   font-weight: 500;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.tag-row-count {
+  font-weight: 400;
+  font-size: 0.85em;
+  color: var(--text-muted);
 }
 
 .tag-row-actions {

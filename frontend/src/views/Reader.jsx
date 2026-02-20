@@ -5,7 +5,7 @@ import { playAudio } from '../components/AudioPlayer.jsx';
 import { articles, currentArticle, addToast } from '../state.js';
 import {
   IconArrowLeft, IconStar, IconExternalLink, IconPlay,
-  IconHeadphones, IconClock, IconDownload, IconCheck,
+  IconHeadphones, IconClock, IconDownload, IconCheck, IconCamera,
 } from '../components/Icons.jsx';
 import {
   getArticle,
@@ -394,6 +394,16 @@ export function Reader({ id }) {
             >
               <IconExternalLink /> Original
             </a>
+            {article.original_key && (
+              <a
+                href={'/api/articles/' + id + '/screenshot'}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="btn btn-sm btn-secondary"
+              >
+                <IconCamera size={14} /> Screenshot
+              </a>
+            )}
             <button class="btn btn-sm btn-danger" onClick={handleDelete}>
               Delete
             </button>

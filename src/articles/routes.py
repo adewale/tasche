@@ -18,7 +18,7 @@ from articles.health import check_original_url
 from articles.storage import delete_article_content, get_content, get_metadata
 from articles.urls import check_duplicate, extract_domain, validate_url
 from auth.dependencies import get_current_user
-from wrappers import _to_js_value, d1_first, d1_rows
+from wrappers import _to_js_value, d1_first, d1_rows, to_py_bytes
 
 router = APIRouter()
 
@@ -48,10 +48,7 @@ async def _stream_r2_object(
                         break
                     chunk = getattr(result, "value", None)
                     if chunk is not None:
-                        if hasattr(chunk, "to_py"):
-                            yield bytes(chunk.to_py())
-                        else:
-                            yield bytes(chunk)
+                        yield to_py_bytes(chunk)
             finally:
                 reader.releaseLock()
 
@@ -64,7 +61,7 @@ async def _stream_r2_object(
     # Fallback: load entire buffer (for mocks / non-streaming environments)
     image_data = await r2_obj.arrayBuffer()
     return Response(
-        content=bytes(image_data) if not isinstance(image_data, bytes) else image_data,
+        content=to_py_bytes(image_data),
         media_type=media_type,
         headers={"Cache-Control": cache_control},
     )
@@ -112,12 +109,14 @@ async def create_article(
     request: Request,
     user: dict[str, Any] = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """Save a new article.
+    """Save a new article, or re-process if the URL already exists.
 
     Accepts a JSON body with ``url`` (required) and ``title`` (optional).
-    Validates the URL, checks for duplicates across all three URL columns,
-    inserts the article into D1 with ``status='pending'``, and enqueues a
-    processing job to ``ARTICLE_QUEUE``.
+    If the URL already exists (across ``original_url``, ``final_url``, and
+    ``canonical_url``), resets the existing article to ``pending`` and
+    re-enqueues it for processing.  The response includes ``updated: true``
+    and the original ``created_at`` so the frontend can show an appropriate
+    toast.
     """
     body = await request.json()
     url = body.get("url", "")
@@ -139,38 +138,45 @@ async def create_article(
     db = env.DB
     user_id = user["user_id"]
 
-    # Check for duplicates
+    # Check for duplicates — if found, re-process rather than reject
     existing = await check_duplicate(db, user_id, url)
-    if existing is not None:
-        raise HTTPException(
-            status_code=409,
-            detail="Article with this URL already exists",
-        )
+    is_update = existing is not None
 
-    # Generate ID and insert
-    article_id = secrets.token_urlsafe(16)
-    domain = extract_domain(url)
     now = datetime.now(UTC).isoformat()
 
-    try:
+    if is_update:
+        article_id = existing["id"]
+        # Reset status so the pipeline re-processes the article
         await (
             db.prepare(
-                "INSERT INTO articles (id, user_id, original_url, domain, title, "
-                "status, reading_status, is_favorite, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, 'pending', 'unread', 0, ?, ?)"
+                "UPDATE articles SET status = 'pending', updated_at = ? WHERE id = ?"
             )
-            .bind(article_id, user_id, url, domain, title, now, now)
+            .bind(now, article_id)
             .run()
         )
-    except Exception as exc:
-        # Handle unique constraint violation (race condition)
-        exc_msg = str(exc).lower()
-        if "unique" in exc_msg or "constraint" in exc_msg:
-            raise HTTPException(
-                status_code=409,
-                detail="Article with this URL already exists",
-            ) from exc
-        raise
+    else:
+        article_id = secrets.token_urlsafe(16)
+        domain = extract_domain(url)
+
+        try:
+            await (
+                db.prepare(
+                    "INSERT INTO articles (id, user_id, original_url, domain, title, "
+                    "status, reading_status, is_favorite, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, 'pending', 'unread', 0, ?, ?)"
+                )
+                .bind(article_id, user_id, url, domain, title, now, now)
+                .run()
+            )
+        except Exception as exc:
+            # Handle unique constraint violation (race condition)
+            exc_msg = str(exc).lower()
+            if "unique" in exc_msg or "constraint" in exc_msg:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Article with this URL already exists",
+                ) from exc
+            raise
 
     # Enqueue processing job
     message = _to_js_value(
@@ -201,7 +207,11 @@ async def create_article(
             detail="Failed to enqueue article for processing",
         ) from exc
 
-    return {"id": article_id, "status": "pending"}
+    result: dict[str, Any] = {"id": article_id, "status": "pending"}
+    if is_update:
+        result["updated"] = True
+        result["created_at"] = existing.get("created_at", "")
+    return result
 
 
 @router.get("")
@@ -495,6 +505,55 @@ async def get_article_screenshot(
         )
 
     return await _stream_r2_object(obj, media_type="image/webp")
+
+
+# Extension-to-media-type mapping for article images.
+_IMAGE_MEDIA_TYPES: dict[str, str] = {
+    ".webp": "image/webp",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".gif": "image/gif",
+    ".svg": "image/svg+xml",
+}
+
+
+@router.get("/{article_id}/images/{filename}")
+async def get_article_image(
+    request: Request,
+    article_id: str,
+    filename: str,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> Response:
+    """Serve an article's archived image from R2.
+
+    Images are content-addressed by hash, so they are immutable once stored.
+    Returns an aggressive ``Cache-Control`` header accordingly.
+    """
+    env = request.scope["env"]
+    db = env.DB
+    r2 = env.CONTENT
+    user_id = user["user_id"]
+
+    await _get_user_article(db, article_id, user_id, fields="id")
+
+    r2_key = f"articles/{article_id}/images/{filename}"
+    obj = await r2.get(r2_key)
+    if obj is None:
+        raise HTTPException(status_code=404, detail="Image not found in storage")
+
+    # Derive media type from file extension
+    ext = ""
+    dot_pos = filename.rfind(".")
+    if dot_pos != -1:
+        ext = filename[dot_pos:].lower()
+    media_type = _IMAGE_MEDIA_TYPES.get(ext, "application/octet-stream")
+
+    return await _stream_r2_object(
+        obj,
+        media_type=media_type,
+        cache_control="public, max-age=31536000, immutable",
+    )
 
 
 @router.patch("/{article_id}")

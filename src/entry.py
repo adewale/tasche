@@ -36,7 +36,7 @@ except ImportError:
 
     asgi = None  # type: ignore[assignment]
 
-from fastapi import FastAPI  # noqa: E402
+from fastapi import FastAPI, Request  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
 from observability import ObservabilityMiddleware  # noqa: E402
@@ -90,6 +90,65 @@ app.add_middleware(ObservabilityMiddleware)
 async def health() -> dict[str, str]:
     """Simple liveness probe."""
     return {"status": "ok"}
+
+
+@app.get("/api/health/config")
+async def health_config(request: Request) -> dict:
+    """Verify that all required bindings and secrets are configured.
+
+    Returns a list of checks with their status (ok/missing) and an overall
+    status: ``ok`` (everything present), ``degraded`` (optional items missing),
+    or ``error`` (required items missing).
+    """
+    env = request.scope.get("env")
+
+    # (name, required, description)
+    _BINDINGS = [
+        ("DB", True, "D1 database"),
+        ("CONTENT", True, "R2 bucket for article content"),
+        ("SESSIONS", True, "KV namespace for auth sessions"),
+        ("ARTICLE_QUEUE", True, "Queue for async processing"),
+        ("AI", True, "Workers AI binding for TTS"),
+    ]
+    _VARS = [
+        ("SITE_URL", True, "Base URL for auth callbacks and bookmarklet"),
+        ("ALLOWED_EMAILS", True, "Comma-separated list of allowed emails"),
+        ("GITHUB_CLIENT_ID", True, "GitHub OAuth app client ID"),
+        ("GITHUB_CLIENT_SECRET", True, "GitHub OAuth app client secret"),
+        ("CF_ACCOUNT_ID", False, "Cloudflare account ID for Browser Rendering"),
+        ("CF_API_TOKEN", False, "Cloudflare API token for Browser Rendering"),
+    ]
+
+    checks = []
+    has_required_missing = False
+    has_optional_missing = False
+
+    for name, required, description in _BINDINGS + _VARS:
+        val = getattr(env, name, None) if env else None
+        present = val is not None and val != ""
+        status = "ok" if present else "missing"
+
+        if not present:
+            if required:
+                has_required_missing = True
+            else:
+                has_optional_missing = True
+
+        checks.append({
+            "name": name,
+            "required": required,
+            "status": status,
+            "description": description,
+        })
+
+    if has_required_missing:
+        overall = "error"
+    elif has_optional_missing:
+        overall = "degraded"
+    else:
+        overall = "ok"
+
+    return {"status": overall, "checks": checks}
 
 
 # ---------------------------------------------------------------------------
@@ -295,12 +354,9 @@ class Default(WorkerEntrypoint):
         for message in batch.messages:  # type: ignore[attr-defined]
             try:
                 raw_body = message.body
-                if hasattr(raw_body, "to_py"):
-                    body = raw_body.to_py()
-                elif isinstance(raw_body, str):
-                    body = json.loads(raw_body)
-                else:
-                    body = _to_py_safe(raw_body)
+                body = _to_py_safe(raw_body)
+                if isinstance(body, str):
+                    body = json.loads(body)
                 msg_type = body.get("type", "unknown")
 
                 handler = QUEUE_HANDLERS.get(msg_type)

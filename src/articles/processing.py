@@ -6,7 +6,7 @@ when an ``article_processing`` queue message is consumed.
 
 Steps:
  1. Update article status to 'processing'
- 2. Fetch page via httpx (follow redirects, capture final_url)
+ 2. Fetch page via http_fetch (follow redirects, capture final_url)
  3. Try Browser Rendering scrape if content looks JS-heavy
  4. Extract canonical_url from HTML
  5. Screenshots via Browser Rendering (thumbnail + full-page archival)
@@ -27,8 +27,6 @@ import json
 import traceback
 from datetime import UTC, datetime
 
-import httpx
-
 from articles.browser_rendering import BrowserRenderingError, scrape, screenshot
 from articles.extraction import (
     calculate_reading_time,
@@ -41,7 +39,7 @@ from articles.extraction import (
 from articles.images import download_images, store_images
 from articles.storage import article_key, store_content, store_metadata
 from articles.urls import _is_private_hostname, extract_domain
-from wrappers import d1_first
+from wrappers import HttpClient, HttpError, SafeEnv, d1_first
 
 # Minimum content length (characters) to consider HTML as "real" content.
 # Below this threshold, the page is likely JS-rendered and needs Browser Rendering.
@@ -85,7 +83,7 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
     db = env.DB  # type: ignore[attr-defined]
     r2 = env.CONTENT  # type: ignore[attr-defined]
 
-    # Pre-initialise variables that are assigned inside the httpx block but
+    # Pre-initialise variables that are assigned inside the HTTP block but
     # referenced after it.  This prevents UnboundLocalError when an exception
     # occurs before these variables are assigned.
     image_map: dict[str, str] = {}
@@ -108,8 +106,8 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
             .run()
         )
 
-        # Step 2: Fetch page via httpx, following redirects
-        async with httpx.AsyncClient(follow_redirects=True) as client:
+        # Step 2: Fetch page, following redirects
+        async with HttpClient() as client:
             html, final_url = await _fetch_page(client, original_url)
 
             # SSRF check: validate the final URL after redirects
@@ -120,8 +118,9 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
                 raise ValueError(f"Redirect to private/internal URL blocked: {final_url}")
 
             # Step 3: If content looks JS-heavy, try Browser Rendering
-            account_id = getattr(env, "CF_ACCOUNT_ID", None)
-            api_token = getattr(env, "CF_API_TOKEN", None)
+            safe_env = SafeEnv(env)
+            account_id = safe_env.get("CF_ACCOUNT_ID")
+            api_token = safe_env.get("CF_API_TOKEN")
             if not account_id or not api_token:
                 raise ValueError(
                     "CF_ACCOUNT_ID and CF_API_TOKEN must be configured. "
@@ -193,9 +192,12 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
         if existing and existing.get("title"):
             title = existing["title"]
 
-        # Step 8: Rewrite HTML image paths
+        # Step 8: Rewrite HTML image paths to API-served URLs
         if image_map:
-            clean_html = rewrite_image_paths(clean_html, image_map)
+            api_image_map = {
+                url: f"/api/{r2_key}" for url, r2_key in image_map.items()
+            }
+            clean_html = rewrite_image_paths(clean_html, api_image_map)
 
         # Step 9: Convert to Markdown
         markdown = html_to_markdown(clean_html)
@@ -285,12 +287,7 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
             )
         )
 
-    except (
-        ConnectionError,
-        TimeoutError,
-        httpx.ConnectError,
-        httpx.TimeoutException,
-    ):
+    except (ConnectionError, TimeoutError):
         # Transient network errors — let propagate for queue retry
         print(
             json.dumps(
@@ -303,8 +300,8 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
             )
         )
         raise
-    except httpx.HTTPStatusError as exc:
-        if exc.response.status_code >= 500:
+    except HttpError as exc:
+        if exc.status_code >= 500:
             # Server errors are transient — let propagate for queue retry
             print(
                 json.dumps(
@@ -373,10 +370,10 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
 
 
 async def _fetch_page(
-    client: httpx.AsyncClient,
+    client: HttpClient,
     url: str,
 ) -> tuple[str, str]:
-    """Fetch a page via httpx with redirect following.
+    """Fetch a page with redirect following.
 
     Returns
     -------
@@ -385,7 +382,7 @@ async def _fetch_page(
 
     Raises
     ------
-    httpx.HTTPStatusError
+    HttpError
         When the response status is 4xx or 5xx.
     """
     _MAX_CONTENT_LENGTH = 10_485_760  # 10 MB

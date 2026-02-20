@@ -157,17 +157,19 @@ class TestListTags:
                 "user_id": "user_001",
                 "name": "javascript",
                 "created_at": "2025-01-01",
+                "article_count": 5,
             },
             {
                 "id": "tag_2",
                 "user_id": "user_001",
                 "name": "python",
                 "created_at": "2025-01-02",
+                "article_count": 12,
             },
         ]
 
         def execute(sql: str, params: list) -> list:
-            if sql.startswith("SELECT") and "FROM tags" in sql:
+            if "FROM tags" in sql and "LEFT JOIN" in sql:
                 return tags
             return []
 
@@ -185,6 +187,68 @@ class TestListTags:
         assert len(data) == 2
         assert data[0]["name"] == "javascript"
         assert data[1]["name"] == "python"
+
+    async def test_returns_article_count_for_tags(self) -> None:
+        """GET /api/tags includes article_count for each tag."""
+        tags = [
+            {
+                "id": "tag_1",
+                "user_id": "user_001",
+                "name": "javascript",
+                "created_at": "2025-01-01",
+                "article_count": 5,
+            },
+            {
+                "id": "tag_2",
+                "user_id": "user_001",
+                "name": "python",
+                "created_at": "2025-01-02",
+                "article_count": 0,
+            },
+        ]
+
+        def execute(sql: str, params: list) -> list:
+            if "FROM tags" in sql and "LEFT JOIN" in sql:
+                return tags
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get(
+            "/api/tags",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data[0]["article_count"] == 5
+        assert data[1]["article_count"] == 0
+
+    async def test_list_tags_uses_left_join_with_group_by(self) -> None:
+        """GET /api/tags query uses LEFT JOIN and GROUP BY for article counts."""
+        calls: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            calls.append({"sql": sql, "params": params})
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        client.get(
+            "/api/tags",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        tag_queries = [c for c in calls if "FROM tags" in c["sql"]]
+        assert len(tag_queries) >= 1
+        sql = tag_queries[0]["sql"]
+        assert "LEFT JOIN article_tags" in sql
+        assert "GROUP BY" in sql
+        assert "article_count" in sql
 
     async def test_returns_empty_list_when_no_tags(self) -> None:
         """GET /api/tags returns an empty list when the user has no tags."""

@@ -161,7 +161,7 @@ async def check_duplicate(db: Any, user_id: str, url: str) -> dict[str, Any] | N
     """
     result = d1_first(
         await db.prepare(
-            "SELECT id FROM articles WHERE user_id = ? "
+            "SELECT id, created_at, status FROM articles WHERE user_id = ? "
             "AND (original_url = ? OR final_url = ? OR canonical_url = ?)"
         )
         .bind(user_id, url, url, url)

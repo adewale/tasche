@@ -10,8 +10,6 @@ from __future__ import annotations
 import hashlib
 from unittest.mock import AsyncMock, MagicMock
 
-import httpx
-
 from articles.images import download_images, store_images
 from tests.conftest import MockR2
 
@@ -297,7 +295,7 @@ class TestDownloadImagesNon200:
         html = _make_html_with_images(["https://cdn.example.com/timeout.jpg"])
 
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(side_effect=httpx.ConnectTimeout("timeout"))
+        mock_client.get = AsyncMock(side_effect=TimeoutError("timeout"))
 
         result = await download_images(mock_client, html)
         assert len(result) == 0

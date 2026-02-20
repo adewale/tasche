@@ -19,6 +19,7 @@ import {
   cacheArticlesForOffline,
   queueOfflineMutation,
 } from '../api.js';
+import { formatDate } from '../utils.js';
 
 const FILTERS = [
   { key: 'all', label: 'All' },
@@ -93,8 +94,13 @@ export function Library({ tag }) {
     }
 
     try {
-      await apiCreateArticle(url);
-      addToast('Article saved!', 'success');
+      var result = await apiCreateArticle(url);
+      if (result && result.updated) {
+        var date = result.created_at ? formatDate(result.created_at) : '';
+        addToast('Article was already added' + (date ? ' on ' + date : '') + '. Refreshing it now.', 'info');
+      } else {
+        addToast('Article saved!', 'success');
+      }
       setSaveUrl('');
       articles.value = [];
       offsetSignal.value = 0;

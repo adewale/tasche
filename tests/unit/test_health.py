@@ -14,7 +14,6 @@ import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import httpx
 from fastapi.testclient import TestClient
 
 from src.articles.routes import router
@@ -64,15 +63,14 @@ class TestCheckOriginalUrl:
         """HTTP 200 maps to 'available'."""
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.url = MagicMock()
-        mock_response.url.host = "example.com"
+        mock_response.url = "https://example.com/article"
 
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.head = AsyncMock(return_value=mock_response)
 
-        with patch("articles.health.httpx.AsyncClient", return_value=mock_client):
+        with patch("articles.health.HttpClient", return_value=mock_client):
             from articles.health import check_original_url
 
             result = await check_original_url("https://example.com/article")
@@ -83,15 +81,14 @@ class TestCheckOriginalUrl:
         """HTTP 200 after redirect maps to 'available'."""
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.url = MagicMock()
-        mock_response.url.host = "www.example.com"
+        mock_response.url = "https://www.example.com/article"
 
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.head = AsyncMock(return_value=mock_response)
 
-        with patch("articles.health.httpx.AsyncClient", return_value=mock_client):
+        with patch("articles.health.HttpClient", return_value=mock_client):
             from articles.health import check_original_url
 
             result = await check_original_url("https://example.com/article")
@@ -102,15 +99,14 @@ class TestCheckOriginalUrl:
         """HTTP 403 maps to 'paywalled'."""
         mock_response = MagicMock()
         mock_response.status_code = 403
-        mock_response.url = MagicMock()
-        mock_response.url.host = "example.com"
+        mock_response.url = "https://example.com/article"
 
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.head = AsyncMock(return_value=mock_response)
 
-        with patch("articles.health.httpx.AsyncClient", return_value=mock_client):
+        with patch("articles.health.HttpClient", return_value=mock_client):
             from articles.health import check_original_url
 
             result = await check_original_url("https://example.com/article")
@@ -121,15 +117,14 @@ class TestCheckOriginalUrl:
         """HTTP 401 maps to 'paywalled'."""
         mock_response = MagicMock()
         mock_response.status_code = 401
-        mock_response.url = MagicMock()
-        mock_response.url.host = "example.com"
+        mock_response.url = "https://example.com/article"
 
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.head = AsyncMock(return_value=mock_response)
 
-        with patch("articles.health.httpx.AsyncClient", return_value=mock_client):
+        with patch("articles.health.HttpClient", return_value=mock_client):
             from articles.health import check_original_url
 
             result = await check_original_url("https://example.com/article")
@@ -140,15 +135,14 @@ class TestCheckOriginalUrl:
         """HTTP 404 maps to 'gone'."""
         mock_response = MagicMock()
         mock_response.status_code = 404
-        mock_response.url = MagicMock()
-        mock_response.url.host = "example.com"
+        mock_response.url = "https://example.com/article"
 
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.head = AsyncMock(return_value=mock_response)
 
-        with patch("articles.health.httpx.AsyncClient", return_value=mock_client):
+        with patch("articles.health.HttpClient", return_value=mock_client):
             from articles.health import check_original_url
 
             result = await check_original_url("https://example.com/article")
@@ -159,15 +153,14 @@ class TestCheckOriginalUrl:
         """HTTP 410 maps to 'gone'."""
         mock_response = MagicMock()
         mock_response.status_code = 410
-        mock_response.url = MagicMock()
-        mock_response.url.host = "example.com"
+        mock_response.url = "https://example.com/article"
 
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.head = AsyncMock(return_value=mock_response)
 
-        with patch("articles.health.httpx.AsyncClient", return_value=mock_client):
+        with patch("articles.health.HttpClient", return_value=mock_client):
             from articles.health import check_original_url
 
             result = await check_original_url("https://example.com/article")
@@ -179,9 +172,9 @@ class TestCheckOriginalUrl:
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.head = AsyncMock(side_effect=httpx.ConnectError("DNS lookup failed"))
+        mock_client.head = AsyncMock(side_effect=ConnectionError("DNS lookup failed"))
 
-        with patch("articles.health.httpx.AsyncClient", return_value=mock_client):
+        with patch("articles.health.HttpClient", return_value=mock_client):
             from articles.health import check_original_url
 
             result = await check_original_url("https://dead-domain.example")
@@ -193,9 +186,9 @@ class TestCheckOriginalUrl:
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.head = AsyncMock(side_effect=httpx.ConnectTimeout("Timed out"))
+        mock_client.head = AsyncMock(side_effect=TimeoutError("Timed out"))
 
-        with patch("articles.health.httpx.AsyncClient", return_value=mock_client):
+        with patch("articles.health.HttpClient", return_value=mock_client):
             from articles.health import check_original_url
 
             result = await check_original_url("https://slow-domain.example")
@@ -206,15 +199,14 @@ class TestCheckOriginalUrl:
         """HTTP 500 maps to 'unknown'."""
         mock_response = MagicMock()
         mock_response.status_code = 500
-        mock_response.url = MagicMock()
-        mock_response.url.host = "example.com"
+        mock_response.url = "https://example.com/article"
 
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.head = AsyncMock(return_value=mock_response)
 
-        with patch("articles.health.httpx.AsyncClient", return_value=mock_client):
+        with patch("articles.health.HttpClient", return_value=mock_client):
             from articles.health import check_original_url
 
             result = await check_original_url("https://example.com/article")
@@ -276,15 +268,14 @@ class TestCheckOriginalUrlSsrf:
         """A redirect to a private IP returns 'unknown'."""
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.url = MagicMock()
-        mock_response.url.host = "127.0.0.1"
+        mock_response.url = "http://127.0.0.1/internal"
 
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.head = AsyncMock(return_value=mock_response)
 
-        with patch("articles.health.httpx.AsyncClient", return_value=mock_client):
+        with patch("articles.health.HttpClient", return_value=mock_client):
             from articles.health import check_original_url
 
             result = await check_original_url("https://redirect.example.com/to-local")
@@ -450,7 +441,7 @@ class TestMetadataJsonEnhanced:
         mock_client = _make_mock_client()
 
         with (
-            patch("articles.processing.httpx.AsyncClient", return_value=mock_client),
+            patch("articles.processing.HttpClient", return_value=mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -473,7 +464,7 @@ class TestMetadataJsonEnhanced:
         mock_client = _make_mock_client()
 
         with (
-            patch("articles.processing.httpx.AsyncClient", return_value=mock_client),
+            patch("articles.processing.HttpClient", return_value=mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -494,7 +485,7 @@ class TestMetadataJsonEnhanced:
         mock_client = _make_mock_client()
 
         with (
-            patch("articles.processing.httpx.AsyncClient", return_value=mock_client),
+            patch("articles.processing.HttpClient", return_value=mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -517,7 +508,7 @@ class TestMetadataJsonEnhanced:
         mock_client = _make_mock_client()
 
         with (
-            patch("articles.processing.httpx.AsyncClient", return_value=mock_client),
+            patch("articles.processing.HttpClient", return_value=mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -562,7 +553,7 @@ class TestCheckOriginalUrlOsError:
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.head = AsyncMock(side_effect=OSError("Network is unreachable"))
 
-        with patch("articles.health.httpx.AsyncClient", return_value=mock_client):
+        with patch("articles.health.HttpClient", return_value=mock_client):
             from articles.health import check_original_url
 
             result = await check_original_url("https://unreachable.example.com/page")

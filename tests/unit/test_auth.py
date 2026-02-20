@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -275,7 +275,7 @@ def _make_auth_app(env: Any) -> FastAPI:
     return test_app
 
 
-def _mock_github_responses(
+def _mock_http_fetch(
     token_data: dict[str, Any],
     user_data: dict[str, Any],
     *,
@@ -283,38 +283,30 @@ def _mock_github_responses(
     user_status: int = 200,
     emails_data: list[dict[str, Any]] | None = None,
     emails_status: int = 200,
-) -> MagicMock:
-    """Build a mock ``httpx.AsyncClient`` that returns canned responses.
+) -> AsyncMock:
+    """Build a mock ``http_fetch`` that returns canned ``HttpResponse`` objects.
 
-    Supports the single-client pattern (one context manager for all requests).
-    Routes .post() to token response, .get() to user or emails response by URL.
+    Routes by URL: token endpoint -> token response, /user/emails -> emails
+    response, /user -> user response.
     """
-    mock_token_resp = MagicMock()
-    mock_token_resp.json.return_value = token_data
-    mock_token_resp.status_code = token_status
+    from src.wrappers import HttpResponse
 
-    mock_user_resp = MagicMock()
-    mock_user_resp.json.return_value = user_data
-    mock_user_resp.status_code = user_status
+    token_resp = HttpResponse(status_code=token_status, _body=json.dumps(token_data).encode())
+    user_resp = HttpResponse(status_code=user_status, _body=json.dumps(user_data).encode())
+    emails_resp = HttpResponse(
+        status_code=emails_status, _body=json.dumps(emails_data or []).encode()
+    )
 
-    mock_emails_resp = MagicMock()
-    mock_emails_resp.json.return_value = emails_data or []
-    mock_emails_resp.status_code = emails_status
-
-    mock_client = AsyncMock()
-    mock_client.__aenter__.return_value = mock_client
-    mock_client.post.return_value = mock_token_resp
-
-    async def _get_by_url(url, **kwargs):
+    async def _fetch(url, *, method="GET", headers=None, body=None, form_data=None, timeout=10.0):
+        if "access_token" in url:
+            return token_resp
         if "emails" in url:
-            return mock_emails_resp
-        return mock_user_resp
+            return emails_resp
+        if "api.github.com/user" in url:
+            return user_resp
+        return HttpResponse(status_code=404, _body='{"error": "not found"}')
 
-    mock_client.get = AsyncMock(side_effect=_get_by_url)
-
-    mock_cls = MagicMock()
-    mock_cls.return_value = mock_client
-    return mock_cls
+    return AsyncMock(side_effect=_fetch)
 
 
 async def _setup_oauth_state(env: MockEnv) -> str:
@@ -348,14 +340,14 @@ class TestCallbackCsrfState:
         env = MockEnv(db=MockD1(execute=lambda sql, params: []))
         state = await _setup_oauth_state(env)
 
-        mock_cls = _mock_github_responses(
+        mock_fetch = _mock_http_fetch(
             token_data={"access_token": "gho_test"},
             user_data={"id": 1, "login": "user", "email": "test@example.com", "avatar_url": ""},
         )
 
         app = _make_auth_app(env)
         client = TestClient(app, raise_server_exceptions=False)
-        with patch("src.auth.routes.httpx.AsyncClient", mock_cls):
+        with patch("src.auth.routes.http_fetch", mock_fetch):
             resp = client.get(
                 f"/api/auth/callback?code=test_code&state={state}",
                 follow_redirects=False,
@@ -383,7 +375,7 @@ class TestCallbackGitHubErrors:
         env = MockEnv()
         state = await _setup_oauth_state(env)
 
-        mock_cls = _mock_github_responses(
+        mock_fetch = _mock_http_fetch(
             token_data={},
             user_data={},
             token_status=500,
@@ -391,7 +383,7 @@ class TestCallbackGitHubErrors:
 
         app = _make_auth_app(env)
         client = TestClient(app, raise_server_exceptions=False)
-        with patch("src.auth.routes.httpx.AsyncClient", mock_cls):
+        with patch("src.auth.routes.http_fetch", mock_fetch):
             resp = client.get(
                 f"/api/auth/callback?code=test_code&state={state}",
                 follow_redirects=False,
@@ -403,14 +395,14 @@ class TestCallbackGitHubErrors:
         env = MockEnv()
         state = await _setup_oauth_state(env)
 
-        mock_cls = _mock_github_responses(
+        mock_fetch = _mock_http_fetch(
             token_data={"error": "bad_verification_code"},
             user_data={},
         )
 
         app = _make_auth_app(env)
         client = TestClient(app, raise_server_exceptions=False)
-        with patch("src.auth.routes.httpx.AsyncClient", mock_cls):
+        with patch("src.auth.routes.http_fetch", mock_fetch):
             resp = client.get(
                 f"/api/auth/callback?code=test_code&state={state}",
                 follow_redirects=False,
@@ -422,7 +414,7 @@ class TestCallbackGitHubErrors:
         env = MockEnv()
         state = await _setup_oauth_state(env)
 
-        mock_cls = _mock_github_responses(
+        mock_fetch = _mock_http_fetch(
             token_data={"access_token": "gho_test"},
             user_data={},
             user_status=500,
@@ -430,7 +422,7 @@ class TestCallbackGitHubErrors:
 
         app = _make_auth_app(env)
         client = TestClient(app, raise_server_exceptions=False)
-        with patch("src.auth.routes.httpx.AsyncClient", mock_cls):
+        with patch("src.auth.routes.http_fetch", mock_fetch):
             resp = client.get(
                 f"/api/auth/callback?code=test_code&state={state}",
                 follow_redirects=False,
@@ -444,7 +436,7 @@ class TestCallbackRejectsUnauthorizedEmail:
         env = MockEnv(allowed_emails="allowed@example.com,admin@example.com")
         state = await _setup_oauth_state(env)
 
-        mock_cls = _mock_github_responses(
+        mock_fetch = _mock_http_fetch(
             token_data={"access_token": "gho_test_token"},
             user_data={
                 "id": 12345,
@@ -456,7 +448,7 @@ class TestCallbackRejectsUnauthorizedEmail:
 
         app = _make_auth_app(env)
         client = TestClient(app, raise_server_exceptions=False)
-        with patch("src.auth.routes.httpx.AsyncClient", mock_cls):
+        with patch("src.auth.routes.http_fetch", mock_fetch):
             resp = client.get(
                 f"/api/auth/callback?code=test_code&state={state}",
             )
@@ -471,7 +463,7 @@ class TestCallbackRejectsUnauthorizedEmail:
         )
         state = await _setup_oauth_state(env)
 
-        mock_cls = _mock_github_responses(
+        mock_fetch = _mock_http_fetch(
             token_data={"access_token": "gho_test_token"},
             user_data={
                 "id": 12345,
@@ -483,7 +475,7 @@ class TestCallbackRejectsUnauthorizedEmail:
 
         app = _make_auth_app(env)
         client = TestClient(app, raise_server_exceptions=False)
-        with patch("src.auth.routes.httpx.AsyncClient", mock_cls):
+        with patch("src.auth.routes.http_fetch", mock_fetch):
             resp = client.get(
                 f"/api/auth/callback?code=test_code&state={state}",
                 follow_redirects=False,
@@ -497,7 +489,7 @@ class TestCallbackRejectsUnauthorizedEmail:
         env = MockEnv(allowed_emails="", db=db)
         state = await _setup_oauth_state(env)
 
-        mock_cls = _mock_github_responses(
+        mock_fetch = _mock_http_fetch(
             token_data={"access_token": "gho_test_token"},
             user_data={
                 "id": 99999,
@@ -509,7 +501,7 @@ class TestCallbackRejectsUnauthorizedEmail:
 
         app = _make_auth_app(env)
         client = TestClient(app, raise_server_exceptions=False)
-        with patch("src.auth.routes.httpx.AsyncClient", mock_cls):
+        with patch("src.auth.routes.http_fetch", mock_fetch):
             resp = client.get(
                 f"/api/auth/callback?code=test_code&state={state}",
                 follow_redirects=False,
@@ -527,7 +519,7 @@ class TestCallbackCookieAttributes:
         )
         state = await _setup_oauth_state(env)
 
-        mock_cls = _mock_github_responses(
+        mock_fetch = _mock_http_fetch(
             token_data={"access_token": "gho_test_token"},
             user_data={
                 "id": 12345,
@@ -539,7 +531,7 @@ class TestCallbackCookieAttributes:
 
         app = _make_auth_app(env)
         client = TestClient(app, raise_server_exceptions=False)
-        with patch("src.auth.routes.httpx.AsyncClient", mock_cls):
+        with patch("src.auth.routes.http_fetch", mock_fetch):
             resp = client.get(
                 f"/api/auth/callback?code=test_code&state={state}",
                 follow_redirects=False,
@@ -552,6 +544,65 @@ class TestCallbackCookieAttributes:
         assert "path=/" in set_cookie.lower()
 
 
+class TestCallbackUserAgentHeader:
+    """Verify User-Agent is sent on GitHub API requests.
+
+    GitHub returns 403 if User-Agent is missing from requests to
+    api.github.com. We use http_fetch (js.fetch in Workers) to
+    ensure headers are reliably transmitted.
+    """
+
+    async def test_user_endpoint_receives_user_agent(self) -> None:
+        """http_fetch call for /user includes User-Agent header."""
+        db = MockD1(execute=lambda sql, params: [])
+        env = MockEnv(allowed_emails="test@example.com", db=db)
+        state = await _setup_oauth_state(env)
+
+        mock_fetch = _mock_http_fetch(
+            token_data={"access_token": "gho_test"},
+            user_data={"id": 1, "login": "user", "email": "test@example.com", "avatar_url": ""},
+        )
+
+        app = _make_auth_app(env)
+        client = TestClient(app, raise_server_exceptions=False)
+        with patch("src.auth.routes.http_fetch", mock_fetch):
+            client.get(
+                f"/api/auth/callback?code=test_code&state={state}",
+                follow_redirects=False,
+            )
+
+        # Find the /user call (not /user/emails) and check headers
+        user_calls = [
+            c for c in mock_fetch.call_args_list
+            if c.args and "api.github.com/user" in c.args[0] and "emails" not in c.args[0]
+        ]
+        assert len(user_calls) >= 1, "Expected at least one call to /user"
+        headers = user_calls[0].kwargs.get("headers", {})
+        assert "User-Agent" in headers, (
+            "User-Agent missing from /user request — GitHub returns 403 without it"
+        )
+
+    async def test_user_agent_missing_causes_403(self) -> None:
+        """Without User-Agent, GitHub returns 403 (simulated)."""
+        env = MockEnv()
+        state = await _setup_oauth_state(env)
+
+        mock_fetch = _mock_http_fetch(
+            token_data={"access_token": "gho_test"},
+            user_data={},
+            user_status=403,
+        )
+
+        app = _make_auth_app(env)
+        client = TestClient(app, raise_server_exceptions=False)
+        with patch("src.auth.routes.http_fetch", mock_fetch):
+            resp = client.get(
+                f"/api/auth/callback?code=test_code&state={state}",
+                follow_redirects=False,
+            )
+        assert resp.status_code == 502
+
+
 class TestCallbackPrivateEmail:
     async def test_fetches_email_from_user_emails_endpoint(self) -> None:
         """When /user returns no email, fetches from /user/emails."""
@@ -559,7 +610,7 @@ class TestCallbackPrivateEmail:
         env = MockEnv(allowed_emails="private@example.com", db=db)
         state = await _setup_oauth_state(env)
 
-        mock_cls = _mock_github_responses(
+        mock_fetch = _mock_http_fetch(
             token_data={"access_token": "gho_test"},
             user_data={"id": 1, "login": "user", "email": None, "avatar_url": ""},
             emails_data=[
@@ -570,7 +621,7 @@ class TestCallbackPrivateEmail:
 
         app = _make_auth_app(env)
         client = TestClient(app, raise_server_exceptions=False)
-        with patch("src.auth.routes.httpx.AsyncClient", mock_cls):
+        with patch("src.auth.routes.http_fetch", mock_fetch):
             resp = client.get(
                 f"/api/auth/callback?code=test_code&state={state}",
                 follow_redirects=False,
@@ -693,7 +744,7 @@ class TestCaseInsensitiveEmail:
         )
         state = await _setup_oauth_state(env)
 
-        mock_cls = _mock_github_responses(
+        mock_fetch = _mock_http_fetch(
             token_data={"access_token": "gho_test_token"},
             user_data={
                 "id": 12345,
@@ -705,7 +756,7 @@ class TestCaseInsensitiveEmail:
 
         app = _make_auth_app(env)
         client = TestClient(app, raise_server_exceptions=False)
-        with patch("src.auth.routes.httpx.AsyncClient", mock_cls):
+        with patch("src.auth.routes.http_fetch", mock_fetch):
             resp = client.get(
                 f"/api/auth/callback?code=test_code&state={state}",
                 follow_redirects=False,
@@ -741,7 +792,7 @@ class TestEmptyEmailReturns400:
         env = MockEnv(allowed_emails="test@example.com")
         state = await _setup_oauth_state(env)
 
-        mock_cls = _mock_github_responses(
+        mock_fetch = _mock_http_fetch(
             token_data={"access_token": "gho_test"},
             user_data={
                 "id": 1,
@@ -754,7 +805,7 @@ class TestEmptyEmailReturns400:
 
         app = _make_auth_app(env)
         client = TestClient(app, raise_server_exceptions=False)
-        with patch("src.auth.routes.httpx.AsyncClient", mock_cls):
+        with patch("src.auth.routes.http_fetch", mock_fetch):
             resp = client.get(
                 f"/api/auth/callback?code=test_code&state={state}",
                 follow_redirects=False,
@@ -774,14 +825,14 @@ class TestGitHubErrorFieldInTokenResponse:
         env = MockEnv()
         state = await _setup_oauth_state(env)
 
-        mock_cls = _mock_github_responses(
+        mock_fetch = _mock_http_fetch(
             token_data={"error": "bad_verification_code"},
             user_data={},
         )
 
         app = _make_auth_app(env)
         client = TestClient(app, raise_server_exceptions=False)
-        with patch("src.auth.routes.httpx.AsyncClient", mock_cls):
+        with patch("src.auth.routes.http_fetch", mock_fetch):
             resp = client.get(
                 f"/api/auth/callback?code=test_code&state={state}",
                 follow_redirects=False,
