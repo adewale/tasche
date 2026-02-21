@@ -16,6 +16,7 @@ from src.wrappers import (
     HAS_PYODIDE,
     JsException,
     SafeEnv,
+    _is_js_null_or_undefined,
     _is_js_undefined,
     _to_js_value,
     _to_py_safe,
@@ -107,6 +108,24 @@ class TestIsJsUndefined:
 
     def test_false_is_not_undefined(self) -> None:
         assert _is_js_undefined(False) is False
+
+
+class TestIsJsNullOrUndefined:
+    def test_none_is_null_or_undefined(self) -> None:
+        """Outside Pyodide, None maps to null/undefined."""
+        assert _is_js_null_or_undefined(None) is True
+
+    def test_string_is_not(self) -> None:
+        assert _is_js_null_or_undefined("hello") is False
+
+    def test_zero_is_not(self) -> None:
+        assert _is_js_null_or_undefined(0) is False
+
+    def test_empty_dict_is_not(self) -> None:
+        assert _is_js_null_or_undefined({}) is False
+
+    def test_false_is_not(self) -> None:
+        assert _is_js_null_or_undefined(False) is False
 
 
 # =========================================================================
@@ -287,6 +306,12 @@ class TestD1First:
     def test_empty_list_returns_none(self) -> None:
         """An empty list means no rows — return None."""
         assert d1_first([]) is None
+
+    def test_empty_namespace_returns_none(self) -> None:
+        """A SimpleNamespace with no attributes (simulating JsNull.__dict__)
+        should return None, not an empty dict."""
+        obj = SimpleNamespace()
+        assert d1_first(obj) is None
 
 
 # =========================================================================

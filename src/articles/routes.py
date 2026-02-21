@@ -18,7 +18,7 @@ from articles.health import check_original_url
 from articles.storage import delete_article_content, get_content, get_metadata
 from articles.urls import check_duplicate, extract_domain, validate_url
 from auth.dependencies import get_current_user
-from wrappers import _to_js_value, d1_first, d1_rows, to_py_bytes
+from wrappers import _to_js_value, d1_first, d1_rows, get_js_null, to_py_bytes
 
 router = APIRouter()
 
@@ -165,7 +165,11 @@ async def create_article(
                     "status, reading_status, is_favorite, created_at, updated_at) "
                     "VALUES (?, ?, ?, ?, ?, 'pending', 'unread', 0, ?, ?)"
                 )
-                .bind(article_id, user_id, url, domain, title, now, now)
+                .bind(
+                    article_id, user_id, url, domain,
+                    title if title is not None else get_js_null(),
+                    now, now,
+                )
                 .run()
             )
         except Exception as exc:

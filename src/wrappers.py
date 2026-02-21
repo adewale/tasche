@@ -100,8 +100,8 @@ def _to_py_safe(value: Any, depth: int = 0) -> Any:
     if value is None or not HAS_PYODIDE:
         return value
 
-    # Check for JS undefined
-    if _is_js_undefined(value):
+    # Check for JS null and undefined
+    if _is_js_null_or_undefined(value):
         return None
 
     # JsProxy objects need conversion
@@ -152,6 +152,30 @@ def to_py_bytes(value: Any) -> bytes:
 # ---------------------------------------------------------------------------
 # JS undefined detection
 # ---------------------------------------------------------------------------
+
+
+def _is_js_null_or_undefined(value: Any) -> bool:
+    """Return ``True`` if *value* represents JavaScript ``null`` or ``undefined``.
+
+    In Pyodide, ``undefined`` is a singleton on the ``js`` module, and
+    ``null`` is a ``JsNull`` type that is **not** Python ``None``.
+    Outside Pyodide we simply check for ``None``.
+    """
+    if not HAS_PYODIDE:
+        return value is None
+
+    # Pyodide exposes js.undefined as the singleton for JS undefined.
+    try:
+        if value is js.undefined:
+            return True
+    except AttributeError:
+        pass
+
+    # JS null becomes JsNull in Pyodide — not Python None.
+    if type(value).__name__ == "JsNull":
+        return True
+
+    return False
 
 
 def _is_js_undefined(value: Any) -> bool:
@@ -251,7 +275,7 @@ def d1_rows(results: Any) -> list[dict[str, Any]]:
     Outside Pyodide (in tests), *results* is expected to be a dict-like object
     with a ``"results"`` key containing a list of dicts already.
     """
-    if results is None:
+    if results is None or _is_js_null_or_undefined(results):
         return []
 
     if HAS_PYODIDE:
@@ -289,7 +313,7 @@ def d1_first(results: Any) -> dict[str, Any] | None:
     Outside Pyodide (in tests), *results* is expected to already be a dict
     or ``None``.
     """
-    if results is None:
+    if results is None or _is_js_null_or_undefined(results):
         return None
 
     if HAS_PYODIDE:
@@ -321,7 +345,8 @@ def d1_first(results: Any) -> dict[str, Any] | None:
     # Final attempt — if it has __dict__ (e.g. SimpleNamespace, JsProxy after to_py),
     # extract its attributes as a dict.
     if hasattr(converted, "__dict__"):
-        return dict(vars(converted))
+        result = dict(vars(converted))
+        return result if result else None
 
     try:
         return dict(converted)
