@@ -10,7 +10,7 @@
   // Required secrets (set via `pywrangler secret put`):
   // - GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET (GitHub OAuth)
   // - CF_ACCOUNT_ID, CF_API_TOKEN (Browser Rendering REST API)
-  "vars": { "ALLOWED_EMAILS": "", "SITE_URL": "https://tasche.<your-subdomain>.workers.dev" },
+  "vars": { "DISABLE_AUTH": "true", "ALLOWED_EMAILS": "", "SITE_URL": "https://tasche.<your-subdomain>.workers.dev" },
   "ai": { "binding": "AI" },
   "d1_databases": [{ "binding": "DB", "database_name": "tasche-db", "database_id": "7f0dfc00-1891-4d8a-9876-03dbd8cf6804" }],
   "r2_buckets": [{ "binding": "CONTENT", "bucket_name": "tasche-content" }],
@@ -35,20 +35,16 @@
   },
   "env": {
     "production": {
-      // TODO: Set production-specific database_id, KV id, and queue name
-      // - d1_databases[].database_id must point to the production D1 instance
-      // - kv_namespaces[].id must point to the production KV namespace
-      "workers_dev": false,
-      "vars": { "ALLOWED_EMAILS": "", "SITE_URL": "https://tasche.yourdomain.com" },
+      "workers_dev": true,
+      "vars": { "ALLOWED_EMAILS": "", "SITE_URL": "https://tasche-production.adewale-883.workers.dev" },
       "ai": { "binding": "AI" },
-      "d1_databases": [{ "binding": "DB" }],
-      "r2_buckets": [{ "binding": "CONTENT" }],
-      "kv_namespaces": [{ "binding": "SESSIONS" }],
+      "d1_databases": [{ "binding": "DB", "database_name": "tasche-production-db", "database_id": "58401394-d213-4749-ab04-bfa064dc7431" }],
+      "r2_buckets": [{ "binding": "CONTENT", "bucket_name": "tasche-production-content" }],
+      "kv_namespaces": [{ "binding": "SESSIONS", "id": "35956dabdaa04208a7770dee68c24a53" }],
       "queues": {
         "producers": [{ "binding": "ARTICLE_QUEUE", "queue": "tasche-articles-prod" }],
         "consumers": [{ "queue": "tasche-articles-prod", "max_batch_size": 10, "max_batch_timeout": 60 }]
-      },
-      "routes": [{ "pattern": "tasche.yourdomain.com", "custom_domain": true }]
+      }
     },
     "staging": {
       // TODO: Set staging-specific database_id, KV id, and queue name

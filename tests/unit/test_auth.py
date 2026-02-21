@@ -144,6 +144,74 @@ class TestGetCurrentUser:
 
 
 # =========================================================================
+# DISABLE_AUTH (dev mode)
+# =========================================================================
+
+
+class TestDisableAuth:
+    def setup_method(self) -> None:
+        """Reset the module-level dev user cache before each test."""
+        import src.auth.dependencies as deps
+        deps._dev_user = None
+
+    def test_returns_dev_user_without_cookie(self) -> None:
+        """DISABLE_AUTH=true returns a dev user with no session cookie."""
+        env = MockEnv(disable_auth="true")
+        app = _make_app_with_env(env)
+        client = TestClient(app)
+        resp = client.get("/me")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["user_id"] == "dev"
+        assert data["email"] == "dev@localhost"
+        assert data["username"] == "dev"
+
+    def test_does_not_bypass_when_flag_is_absent(self) -> None:
+        """Without DISABLE_AUTH, normal auth is enforced."""
+        env = MockEnv()
+        app = _make_app_with_env(env)
+        client = TestClient(app)
+        resp = client.get("/me")
+        assert resp.status_code == 401
+
+    def test_does_not_bypass_when_flag_is_false(self) -> None:
+        """DISABLE_AUTH=false does not bypass auth."""
+        env = MockEnv(disable_auth="false")
+        app = _make_app_with_env(env)
+        client = TestClient(app)
+        resp = client.get("/me")
+        assert resp.status_code == 401
+
+    def test_ignores_allowed_emails(self) -> None:
+        """DISABLE_AUTH=true skips ALLOWED_EMAILS check."""
+        env = MockEnv(disable_auth="true", allowed_emails="")
+        app = _make_app_with_env(env)
+        client = TestClient(app)
+        resp = client.get("/me")
+        assert resp.status_code == 200
+
+    def test_dev_user_is_cached(self) -> None:
+        """Second request uses cached dev user (no extra D1 insert)."""
+        import src.auth.dependencies as deps
+
+        db = MockD1()
+        env = MockEnv(disable_auth="true", db=db)
+        app = _make_app_with_env(env)
+        client = TestClient(app)
+
+        resp1 = client.get("/me")
+        assert resp1.status_code == 200
+
+        # Cache should now be populated
+        assert deps._dev_user is not None
+        assert deps._dev_user["user_id"] == "dev"
+
+        resp2 = client.get("/me")
+        assert resp2.status_code == 200
+        assert resp2.json()["user_id"] == "dev"
+
+
+# =========================================================================
 # ALLOWED_EMAILS parsing (src/auth/routes.py)
 # =========================================================================
 

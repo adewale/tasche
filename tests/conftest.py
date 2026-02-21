@@ -331,6 +331,7 @@ class MockEnv:
         site_url: str = "https://tasche.test",
         github_client_id: str = "test_client_id",
         github_client_secret: str = "test_client_secret",
+        disable_auth: str | None = None,
     ) -> None:
         self.DB = db or MockD1()
         self.CONTENT = content or MockR2()
@@ -341,6 +342,7 @@ class MockEnv:
         self.SITE_URL = site_url
         self.GITHUB_CLIENT_ID = github_client_id
         self.GITHUB_CLIENT_SECRET = github_client_secret
+        self.DISABLE_AUTH = disable_auth
 
 
 # ---------------------------------------------------------------------------
