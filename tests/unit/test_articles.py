@@ -1557,3 +1557,154 @@ class TestAuthRequired:
         client = TestClient(app, raise_server_exceptions=False)
         resp = client.delete("/api/articles/some_id")
         assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# POST /api/articles/{article_id}/retry — Retry failed/pending article
+# ---------------------------------------------------------------------------
+
+
+class TestRetryArticle:
+    async def test_retries_failed_article(self) -> None:
+        """POST /api/articles/{id}/retry re-queues a failed article."""
+        article = ArticleFactory.create(
+            id="art_fail", user_id="user_001", status="failed"
+        )
+        updates: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            if sql.startswith("SELECT") and "id = ?" in sql and params[0] == "art_fail":
+                return [article]
+            if sql.startswith("UPDATE"):
+                updates.append({"sql": sql, "params": params})
+            return []
+
+        queue = MockQueue()
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db, article_queue=queue)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles/art_fail/retry",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 202
+        data = resp.json()
+        assert data["id"] == "art_fail"
+        assert data["status"] == "pending"
+
+        # Verify D1 UPDATE set status='pending'
+        assert len(updates) >= 1
+        assert "pending" in updates[0]["sql"]
+
+        # Verify queue message
+        assert len(queue.messages) == 1
+        msg = queue.messages[0]
+        assert msg["type"] == "article_processing"
+        assert msg["article_id"] == "art_fail"
+
+    async def test_retries_pending_article(self) -> None:
+        """POST /api/articles/{id}/retry re-queues a pending (stuck) article."""
+        article = ArticleFactory.create(
+            id="art_stuck", user_id="user_001", status="pending"
+        )
+
+        def execute(sql: str, params: list) -> list:
+            if sql.startswith("SELECT") and "id = ?" in sql and params[0] == "art_stuck":
+                return [article]
+            return []
+
+        queue = MockQueue()
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db, article_queue=queue)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles/art_stuck/retry",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 202
+        assert resp.json()["status"] == "pending"
+        assert len(queue.messages) == 1
+
+    async def test_rejects_ready_article(self) -> None:
+        """POST /api/articles/{id}/retry returns 409 for a ready article."""
+        article = ArticleFactory.create(
+            id="art_ready", user_id="user_001", status="ready"
+        )
+
+        def execute(sql: str, params: list) -> list:
+            if sql.startswith("SELECT") and "id = ?" in sql and params[0] == "art_ready":
+                return [article]
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles/art_ready/retry",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 409
+        assert "retryable" in resp.json()["detail"].lower()
+
+    async def test_returns_404_for_unknown_article(self) -> None:
+        """POST /api/articles/{id}/retry returns 404 for nonexistent article."""
+        db = MockD1(execute=lambda sql, params: [])
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles/nonexistent/retry",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 404
+
+    def test_returns_401_without_auth(self) -> None:
+        """POST /api/articles/{id}/retry returns 401 without auth."""
+        env = MockEnv()
+        app = _make_app(env)
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.post("/api/articles/some-id/retry")
+        assert resp.status_code == 401
+
+    async def test_returns_503_on_queue_failure(self) -> None:
+        """POST /api/articles/{id}/retry returns 503 and marks failed on queue error."""
+        article = ArticleFactory.create(
+            id="art_qfail", user_id="user_001", status="failed"
+        )
+        updates: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            if sql.startswith("SELECT") and "id = ?" in sql and params[0] == "art_qfail":
+                return [article]
+            if sql.startswith("UPDATE"):
+                updates.append({"sql": sql, "params": params})
+            return []
+
+        class FailingQueue:
+            messages: list = []
+
+            async def send(self, message: Any, **kwargs: Any) -> None:
+                raise RuntimeError("Queue unavailable")
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db, article_queue=FailingQueue())
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles/art_qfail/retry",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 503
+        assert "enqueue" in resp.json()["detail"].lower()
+
+        # Should have 2 updates: first to 'pending', then to 'failed'
+        assert len(updates) >= 2
+        assert "failed" in updates[-1]["params"]

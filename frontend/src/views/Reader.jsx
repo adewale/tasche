@@ -6,6 +6,7 @@ import { articles, currentArticle, addToast } from '../state.js';
 import {
   IconArrowLeft, IconStar, IconExternalLink, IconPlay,
   IconHeadphones, IconClock, IconDownload, IconCheck, IconCamera,
+  IconRefresh,
 } from '../components/Icons.jsx';
 import {
   getArticle,
@@ -13,6 +14,7 @@ import {
   updateArticle,
   deleteArticle as apiDeleteArticle,
   listenLater as apiListenLater,
+  retryArticle as apiRetryArticle,
   checkOriginal as apiCheckOriginal,
   saveForOffline,
   saveAudioOffline,
@@ -27,6 +29,7 @@ export function Reader({ id }) {
   const [contentHtml, setContentHtml] = useState('');
   const [loadError, setLoadError] = useState(null);
   const [audioRequested, setAudioRequested] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [checkingOriginal, setCheckingOriginal] = useState(false);
   const [offlineStatus, setOfflineStatus] = useState({ cached: false, hasContent: false, hasAudio: false });
   const [savingOffline, setSavingOffline] = useState(false);
@@ -113,8 +116,10 @@ export function Reader({ id }) {
         html = renderMarkdown(art.markdown_content);
       } else if (art.excerpt) {
         html = '<p>' + escapeHtml(art.excerpt) + '</p>';
-      } else if (art.status === 'pending') {
+      } else if (art.status === 'pending' || art.status === 'processing') {
         html = '<p style="color:var(--text-muted)">Article is being processed. Refresh in a moment.</p>';
+      } else if (art.status === 'failed') {
+        html = '<p style="color:var(--text-muted)">Processing failed. Use the Retry button above to try again.</p>';
       } else {
         html =
           '<p style="color:var(--text-muted)">No content available. <a href="' +
@@ -210,6 +215,20 @@ export function Reader({ id }) {
     }
     setSavingAudioOffline(true);
     saveAudioOffline(id);
+  }
+
+  async function handleRetry() {
+    if (retrying) return;
+    setRetrying(true);
+    try {
+      await apiRetryArticle(id);
+      setArticle({ ...article, status: 'pending' });
+      addToast('Article re-queued for processing', 'success');
+    } catch (e) {
+      addToast(e.message, 'error');
+    } finally {
+      setRetrying(false);
+    }
   }
 
   async function handleCheckOriginal() {
@@ -403,6 +422,11 @@ export function Reader({ id }) {
               >
                 <IconCamera size={14} /> Screenshot
               </a>
+            )}
+            {(article.status === 'failed' || article.status === 'pending') && (
+              <button class="btn btn-sm btn-secondary" onClick={handleRetry} disabled={retrying}>
+                <IconRefresh size={14} /> {retrying ? 'Retrying...' : 'Retry'}
+              </button>
             )}
             <button class="btn btn-sm btn-danger" onClick={handleDelete}>
               Delete

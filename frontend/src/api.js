@@ -139,6 +139,11 @@ export function removeArticleTag(articleId, tagId) {
   return request('DELETE', '/api/articles/' + articleId + '/tags/' + tagId);
 }
 
+// Retry failed/pending article
+export function retryArticle(articleId) {
+  return request('POST', '/api/articles/' + articleId + '/retry');
+}
+
 // Original URL health check
 export function checkOriginal(articleId) {
   return request('POST', '/api/articles/' + articleId + '/check-original');

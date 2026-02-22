@@ -18,7 +18,7 @@ from articles.health import check_original_url
 from articles.storage import delete_article_content, get_content, get_metadata
 from articles.urls import check_duplicate, extract_domain, validate_url
 from auth.dependencies import get_current_user
-from wrappers import _to_js_value, d1_first, d1_null, d1_rows, stream_r2_body
+from wrappers import stream_r2_body
 
 router = APIRouter()
 
@@ -67,8 +67,8 @@ async def _get_user_article(
         It must **never** contain user-supplied input.  Only pass hard-coded
         column lists defined in this module.
     """
-    article = d1_first(
-        await db.prepare(f"SELECT {fields} FROM articles WHERE id = ? AND user_id = ?")
+    article = await (
+        db.prepare(f"SELECT {fields} FROM articles WHERE id = ? AND user_id = ?")
         .bind(article_id, user_id)
         .first()
     )
@@ -140,7 +140,7 @@ async def create_article(
                 )
                 .bind(
                     article_id, user_id, url, domain,
-                    d1_null(title),
+                    title,
                     now, now,
                 )
                 .run()
@@ -156,16 +156,13 @@ async def create_article(
             raise
 
     # Enqueue processing job
-    message = _to_js_value(
-        {
+    try:
+        await env.ARTICLE_QUEUE.send({
             "type": "article_processing",
             "article_id": article_id,
             "url": url,
             "user_id": user_id,
-        }
-    )
-    try:
-        await env.ARTICLE_QUEUE.send(message)
+        })
     except Exception as exc:
         # Mark article as failed if we cannot enqueue the processing job
         fail_now = datetime.now(UTC).isoformat()
@@ -260,8 +257,7 @@ async def list_articles(
     )
     params.extend([limit, offset])
 
-    results = await db.prepare(sql).bind(*params).all()
-    return d1_rows(results)
+    return await db.prepare(sql).bind(*params).all()
 
 
 @router.post("/batch-check-originals")
@@ -283,8 +279,8 @@ async def batch_check_originals(
     db = env.DB
     user_id = user["user_id"]
 
-    results_list = d1_rows(
-        await db.prepare(
+    results_list = await (
+        db.prepare(
             "SELECT id, original_url FROM articles WHERE user_id = ? "
             "AND (original_status = 'unknown' "
             "OR last_checked_at IS NULL "
@@ -650,6 +646,66 @@ async def delete_article(
         .bind(article_id, user_id)
         .run()
     )
+
+
+@router.post("/{article_id}/retry", status_code=202)
+async def retry_article(
+    request: Request,
+    article_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Re-queue a failed or stuck article for processing.
+
+    Only articles with ``status`` of ``failed`` or ``pending`` can be retried.
+    Resets the status to ``pending`` and enqueues a new processing job.
+    """
+    env = request.scope["env"]
+    db = env.DB
+    user_id = user["user_id"]
+
+    article = await _get_user_article(
+        db, article_id, user_id, fields="id, original_url, status"
+    )
+
+    if article["status"] not in ("failed", "pending"):
+        raise HTTPException(
+            status_code=409, detail="Article is not in a retryable state"
+        )
+
+    now = datetime.now(UTC).isoformat()
+    await (
+        db.prepare(
+            "UPDATE articles SET status = 'pending', updated_at = ? WHERE id = ?"
+        )
+        .bind(now, article_id)
+        .run()
+    )
+
+    try:
+        await env.ARTICLE_QUEUE.send({
+            "type": "article_processing",
+            "article_id": article_id,
+            "url": article["original_url"],
+            "user_id": user_id,
+        })
+    except Exception as exc:
+        fail_now = datetime.now(UTC).isoformat()
+        try:
+            await (
+                db.prepare(
+                    "UPDATE articles SET status = ?, updated_at = ? WHERE id = ?"
+                )
+                .bind("failed", fail_now, article_id)
+                .run()
+            )
+        except Exception:
+            pass
+        raise HTTPException(
+            status_code=503,
+            detail="Failed to enqueue article for processing",
+        ) from exc
+
+    return {"id": article_id, "status": "pending"}
 
 
 @router.post("/{article_id}/check-original")
