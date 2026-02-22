@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import traceback
 
-from wrappers import _to_py_safe
+from wrappers import SafeEnv, _to_py_safe
 
 # ---------------------------------------------------------------------------
 # HAS_PYODIDE guard — allows this module to be imported during tests even
@@ -266,9 +266,9 @@ class Default(WorkerEntrypoint):
         url = URL.new(request.url)
         path = url.pathname
 
-        # API routes → FastAPI
+        # API routes → FastAPI (wrap env so handlers get Safe* bindings)
         if path.startswith("/api/"):
-            return await asgi.fetch(app, request.js_object, self.env)
+            return await asgi.fetch(app, request.js_object, SafeEnv(self.env))
 
         # Static assets → ASSETS binding with SPA fallback
         asset_resp = await self.env.ASSETS.fetch(request.js_object)
@@ -291,20 +291,18 @@ class Default(WorkerEntrypoint):
 
         try:
             from articles.health import check_original_url
-            from wrappers import d1_rows
 
-            db = self.env.DB
+            env = SafeEnv(self.env)
+            db = env.DB
 
-            rows = d1_rows(
-                await db.prepare(
-                    "SELECT id, original_url FROM articles "
-                    "WHERE (original_status = 'unknown' "
-                    "OR last_checked_at IS NULL "
-                    "OR last_checked_at < datetime('now', '-30 days')) "
-                    "ORDER BY last_checked_at ASC NULLS FIRST "
-                    "LIMIT 10"
-                ).all()
-            )
+            rows = await db.prepare(
+                "SELECT id, original_url FROM articles "
+                "WHERE (original_status = 'unknown' "
+                "OR last_checked_at IS NULL "
+                "OR last_checked_at < datetime('now', '-30 days')) "
+                "ORDER BY last_checked_at ASC NULLS FIRST "
+                "LIMIT 10"
+            ).all()
 
             checked = 0
             for row in rows:
@@ -357,8 +355,8 @@ class Default(WorkerEntrypoint):
         """
         # Prefer the explicitly-passed env (raw handler signature) over
         # self.env which WorkerEntrypoint may or may not populate for queue
-        # invocations.
-        worker_env = env if env is not None else self.env
+        # invocations.  Wrap in SafeEnv so handlers get Safe* bindings.
+        worker_env = SafeEnv(env if env is not None else self.env)
 
         for message in batch.messages:  # type: ignore[attr-defined]
             try:

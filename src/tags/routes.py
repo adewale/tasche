@@ -19,7 +19,6 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from auth.dependencies import get_current_user
-from wrappers import d1_first, d1_rows
 
 router = APIRouter()
 article_tags_router = APIRouter()
@@ -34,8 +33,8 @@ async def _get_user_tag(
     db: Any, tag_id: str, user_id: str,
 ) -> dict[str, Any]:
     """Fetch a tag by ID for a user, or raise 404."""
-    tag = d1_first(
-        await db.prepare(
+    tag = await (
+        db.prepare(
             "SELECT id, user_id, name, created_at FROM tags "
             "WHERE id = ? AND user_id = ?"
         )
@@ -51,8 +50,8 @@ async def _get_user_article_id(
     db: Any, article_id: str, user_id: str,
 ) -> dict[str, Any]:
     """Verify an article belongs to a user, or raise 404."""
-    article = d1_first(
-        await db.prepare(
+    article = await (
+        db.prepare(
             "SELECT id FROM articles WHERE id = ? AND user_id = ?"
         )
         .bind(article_id, user_id)
@@ -92,8 +91,8 @@ async def create_tag(
     user_id = user["user_id"]
 
     # Check for duplicate tag name for this user
-    existing = d1_first(
-        await db.prepare(
+    existing = await (
+        db.prepare(
             "SELECT id FROM tags WHERE user_id = ? AND name = ?"
         )
         .bind(user_id, name)
@@ -132,7 +131,7 @@ async def list_tags(
     db = env.DB
     user_id = user["user_id"]
 
-    results = await (
+    return await (
         db.prepare(
             "SELECT t.id, t.user_id, t.name, t.created_at, "
             "COUNT(at.article_id) as article_count "
@@ -144,7 +143,6 @@ async def list_tags(
         .bind(user_id)
         .all()
     )
-    return d1_rows(results)
 
 
 @router.delete("/{tag_id}", status_code=204)
@@ -200,8 +198,8 @@ async def add_tag_to_article(
     await _get_user_tag(db, tag_id, user_id)
 
     # Check if association already exists
-    existing = d1_first(
-        await db.prepare(
+    existing = await (
+        db.prepare(
             "SELECT article_id FROM article_tags "
             "WHERE article_id = ? AND tag_id = ?"
         )
@@ -269,7 +267,7 @@ async def get_article_tags(
 
     await _get_user_article_id(db, article_id, user_id)
 
-    results = await (
+    return await (
         db.prepare(
             "SELECT t.id, t.user_id, t.name, t.created_at "
             "FROM tags t INNER JOIN article_tags at ON t.id = at.tag_id "
@@ -279,4 +277,3 @@ async def get_article_tags(
         .bind(article_id, user_id)
         .all()
     )
-    return d1_rows(results)

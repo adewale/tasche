@@ -10,8 +10,6 @@ import ipaddress
 from typing import Any
 from urllib.parse import urlparse
 
-from wrappers import d1_first
-
 # Hostnames that must be blocked to prevent SSRF
 _BLOCKED_HOSTNAMES = {
     "localhost",
@@ -159,12 +157,11 @@ async def check_duplicate(db: Any, user_id: str, url: str) -> dict[str, Any] | N
     dict or None
         The existing article row if a duplicate is found, otherwise ``None``.
     """
-    result = d1_first(
-        await db.prepare(
+    return await (
+        db.prepare(
             "SELECT id, created_at, status FROM articles WHERE user_id = ? "
             "AND (original_url = ? OR final_url = ? OR canonical_url = ?)"
         )
         .bind(user_id, url, url, url)
         .first()
     )
-    return result

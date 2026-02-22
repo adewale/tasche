@@ -22,7 +22,6 @@ from auth.session import (
     parse_allowed_emails,
     refresh_session,
 )
-from wrappers import SafeEnv
 
 # Module-level cache — avoids a D1 round-trip on every request after the first.
 _dev_user: dict[str, Any] | None = None
@@ -71,10 +70,9 @@ async def get_current_user(request: Request) -> dict[str, Any]:
         or the user's email is no longer in the allowed list.
     """
     env = request.scope["env"]
-    safe_env = SafeEnv(env)
 
     # Auth bypass — return dev user without any session or OAuth.
-    if safe_env.get("DISABLE_AUTH") == "true":
+    if env.get("DISABLE_AUTH") == "true":
         user_data = await _get_or_create_dev_user(env.DB)
         request.state.user_id = user_data["user_id"]
         return user_data
@@ -88,7 +86,7 @@ async def get_current_user(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
 
     # Re-check ALLOWED_EMAILS to handle revocation (whitelist is required)
-    allowed_raw = safe_env.get("ALLOWED_EMAILS", "")
+    allowed_raw = env.get("ALLOWED_EMAILS", "")
     allowed_emails = parse_allowed_emails(allowed_raw)
 
     if not allowed_emails:

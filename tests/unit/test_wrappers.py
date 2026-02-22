@@ -18,7 +18,12 @@ from src.wrappers import (
     HttpError,
     HttpResponse,
     JsException,
+    SafeAI,
+    SafeD1,
     SafeEnv,
+    SafeKV,
+    SafeQueue,
+    SafeR2,
     _is_js_null_or_undefined,
     _is_js_undefined,
     _to_js_value,
@@ -195,10 +200,35 @@ class TestSafeEnv:
         assert env.get("OPTIONAL_VAR", "default") == "default"
 
     def test_getattr_proxies_to_underlying(self) -> None:
-        """Attribute access proxies to the underlying env object."""
-        raw = SimpleNamespace(DB="my_db")
+        """Attribute access proxies to the underlying env object for non-binding attrs."""
+        raw = SimpleNamespace(CUSTOM_VAR="custom_value")
         env = SafeEnv(raw)
-        assert env.DB == "my_db"
+        assert env.CUSTOM_VAR == "custom_value"
+
+    def test_bindings_wrapped_at_init(self) -> None:
+        """Known bindings (DB, CONTENT, etc.) are wrapped in Safe* classes."""
+        from tests.conftest import MockAI, MockD1, MockKV, MockQueue, MockR2
+
+        raw = SimpleNamespace(
+            DB=MockD1(), CONTENT=MockR2(), SESSIONS=MockKV(),
+            ARTICLE_QUEUE=MockQueue(), AI=MockAI(),
+        )
+        env = SafeEnv(raw)
+        assert isinstance(env.DB, SafeD1)
+        assert isinstance(env.CONTENT, SafeR2)
+        assert isinstance(env.SESSIONS, SafeKV)
+        assert isinstance(env.ARTICLE_QUEUE, SafeQueue)
+        assert isinstance(env.AI, SafeAI)
+
+    def test_idempotent_wrapping(self) -> None:
+        """Wrapping an already-wrapped SafeEnv returns the same wrappers."""
+        from tests.conftest import MockD1, MockR2
+
+        raw = SimpleNamespace(DB=MockD1(), CONTENT=MockR2())
+        env1 = SafeEnv(raw)
+        env2 = SafeEnv(env1)
+        assert env2.DB is env1.DB
+        assert env2.CONTENT is env1.CONTENT
 
     def test_getattr_raises_for_private(self) -> None:
         """Private attributes (starting with _) raise AttributeError."""

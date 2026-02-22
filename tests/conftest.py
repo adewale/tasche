@@ -464,6 +464,9 @@ _TrackingD1 = TrackingD1
 def _make_test_app(env: Any, *routers: tuple[Any, str]) -> FastAPI:
     """Create a FastAPI app with env injection and the given routers.
 
+    Wraps ``env`` in ``SafeEnv`` to match the production entry point
+    (``entry.py``) which wraps env before any handler sees it.
+
     Each router argument should be a ``(router, prefix)`` tuple::
 
         app = _make_test_app(env, (articles_router, "/api/articles"))
@@ -471,11 +474,14 @@ def _make_test_app(env: Any, *routers: tuple[Any, str]) -> FastAPI:
             env, (tags_router, "/api/tags"), (article_tags_router, "/api/articles"),
         )
     """
+    from src.wrappers import SafeEnv
+
     test_app = FastAPI()
+    safe_env = SafeEnv(env)
 
     @test_app.middleware("http")
     async def inject_env(request, call_next):
-        request.scope["env"] = env
+        request.scope["env"] = safe_env
         return await call_next(request)
 
     for router_item, prefix in routers:

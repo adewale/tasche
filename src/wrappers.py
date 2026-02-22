@@ -334,25 +334,176 @@ def _to_js_value(value: Any) -> Any:
 
 
 # ---------------------------------------------------------------------------
-# SafeEnv — typed access to Worker bindings
+# Safe* binding wrappers — construction-time wrapping for all Cloudflare
+# bindings.  Application code receives these wrappers (via SafeEnv) and
+# never touches raw JS bindings directly.
+# ---------------------------------------------------------------------------
+
+
+class SafeD1Statement:
+    """Wraps a D1 prepared statement with automatic FFI conversion.
+
+    - ``bind()`` converts every ``None`` parameter to JS ``null`` via ``d1_null()``.
+    - ``first()`` converts the JsProxy result to a Python dict via ``d1_first()``.
+    - ``all()`` converts the JsProxy result to a list of dicts via ``d1_rows()``.
+    - ``run()`` passes through (no result conversion needed).
+    """
+
+    def __init__(self, stmt: Any) -> None:
+        self._stmt = stmt
+
+    def bind(self, *args: Any) -> SafeD1Statement:
+        """Bind parameters with automatic None→null conversion."""
+        safe_args = [d1_null(a) for a in args]
+        self._stmt = self._stmt.bind(*safe_args)
+        return self
+
+    async def first(self) -> dict[str, Any] | None:
+        """Execute and return the first row as a Python dict, or ``None``."""
+        return d1_first(await self._stmt.first())
+
+    async def all(self) -> list[dict[str, Any]]:
+        """Execute and return all rows as a list of Python dicts."""
+        return d1_rows(await self._stmt.all())
+
+    async def run(self) -> Any:
+        """Execute a write statement (INSERT/UPDATE/DELETE)."""
+        return await self._stmt.run()
+
+
+class SafeD1:
+    """Wraps a D1 database binding so all queries go through SafeD1Statement."""
+
+    def __init__(self, db: Any) -> None:
+        self._db = db
+
+    def prepare(self, sql: str) -> SafeD1Statement:
+        """Create a prepared statement wrapped in ``SafeD1Statement``."""
+        return SafeD1Statement(self._db.prepare(sql))
+
+
+class SafeR2:
+    """Wraps an R2 bucket binding with automatic FFI conversion for writes.
+
+    - ``put()`` converts Python bytes/bytearray/memoryview to JS Uint8Array.
+    - ``get()`` passes through (R2Objects are handled by ``stream_r2_body``).
+    - ``list()`` converts JsProxy results to Python dicts.
+    """
+
+    def __init__(self, r2: Any) -> None:
+        self._r2 = r2
+
+    async def put(self, key: str, data: Any, **kwargs: Any) -> None:
+        """Write a value to R2 with automatic bytes→Uint8Array conversion."""
+        if isinstance(data, (bytes, bytearray, memoryview)):
+            data = to_js_bytes(data)
+        await self._r2.put(key, data, **kwargs)
+
+    async def get(self, key: str) -> Any:
+        """Retrieve an object from R2.  Returns the raw R2Object."""
+        return await self._r2.get(key)
+
+    async def delete(self, key: str) -> None:
+        """Delete an object from R2."""
+        return await self._r2.delete(key)
+
+    async def list(self, **kwargs: Any) -> Any:
+        """List objects with automatic JsProxy→dict conversion."""
+        result = await self._r2.list(**kwargs)
+        if not isinstance(result, dict):
+            return _to_py_safe(result)
+        return result
+
+
+class SafeKV:
+    """Wraps a KV namespace binding.  Thin passthrough for consistency."""
+
+    def __init__(self, kv: Any) -> None:
+        self._kv = kv
+
+    async def get(self, key: str, **kwargs: Any) -> str | None:
+        """Retrieve a value by key."""
+        return await self._kv.get(key, **kwargs)
+
+    async def put(self, key: str, value: str, **kwargs: Any) -> None:
+        """Store a value with optional ``expirationTtl``."""
+        await self._kv.put(key, value, **kwargs)
+
+    async def delete(self, key: str) -> None:
+        """Delete a key."""
+        await self._kv.delete(key)
+
+
+class SafeQueue:
+    """Wraps a Queue producer binding with automatic dict→JS conversion."""
+
+    def __init__(self, queue: Any) -> None:
+        self._queue = queue
+
+    async def send(self, message: Any, **kwargs: Any) -> None:
+        """Send a message with automatic dict→JS Object conversion."""
+        if isinstance(message, dict):
+            message = _to_js_value(message)
+        await self._queue.send(message, **kwargs)
+
+
+class SafeAI:
+    """Wraps a Workers AI binding with automatic input conversion."""
+
+    def __init__(self, ai: Any) -> None:
+        self._ai = ai
+
+    async def run(self, model: str, inputs: Any = None, **kwargs: Any) -> Any:
+        """Run an AI model with automatic dict→JS Object input conversion."""
+        if isinstance(inputs, dict):
+            inputs = _to_js_value(inputs)
+        return await self._ai.run(model, inputs, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# SafeEnv — typed, safe access to all Worker bindings
 # ---------------------------------------------------------------------------
 
 
 class SafeEnv:
-    """Thin wrapper around a Worker ``env`` object.
+    """Construction-time wrapper for a Worker ``env`` object.
 
-    Provides a ``.get(key, default)`` accessor that handles both missing
-    attributes and JS ``undefined`` values — common when optional bindings or
-    vars are not configured.
-
-    Usage in a FastAPI handler::
+    Wraps every Cloudflare binding at ``__init__`` time so application code
+    can never accidentally bypass the FFI boundary::
 
         env = SafeEnv(request.scope["env"])
-        allowed = env.get("ALLOWED_EMAILS", "")
+        # env.DB is SafeD1 — auto-converts None→null, JsProxy→dict
+        # env.CONTENT is SafeR2 — auto-converts bytes→Uint8Array
+        # env.SESSIONS is SafeKV
+        # env.ARTICLE_QUEUE is SafeQueue — auto-converts dict→JS Object
+        # env.AI is SafeAI — auto-converts dict→JS Object
+        # env.get("SITE_URL") still works for env vars
+
+    Idempotent: wrapping an already-wrapped ``SafeEnv`` returns itself.
     """
 
     def __init__(self, env: Any) -> None:
+        # Idempotency guard — don't double-wrap
+        if isinstance(env, SafeEnv):
+            self._env = env._env
+            self.DB = env.DB
+            self.CONTENT = env.CONTENT
+            self.SESSIONS = env.SESSIONS
+            self.ARTICLE_QUEUE = env.ARTICLE_QUEUE
+            self.AI = env.AI
+            return
+
         self._env = env
+        db = getattr(env, "DB", None)
+        self.DB = SafeD1(db) if db is not None else None
+        content = getattr(env, "CONTENT", None)
+        self.CONTENT = SafeR2(content) if content is not None else None
+        sessions = getattr(env, "SESSIONS", None)
+        self.SESSIONS = SafeKV(sessions) if sessions is not None else None
+        queue = getattr(env, "ARTICLE_QUEUE", None)
+        self.ARTICLE_QUEUE = SafeQueue(queue) if queue is not None else None
+        ai = getattr(env, "AI", None)
+        self.AI = SafeAI(ai) if ai is not None else None
 
     def get(self, key: str, default: Any = None) -> Any:
         """Return the binding/var for *key*, or *default* if missing/undefined."""

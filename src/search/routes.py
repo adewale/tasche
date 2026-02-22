@@ -13,7 +13,6 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from auth.dependencies import get_current_user
-from wrappers import d1_rows
 
 router = APIRouter()
 
@@ -97,5 +96,4 @@ async def search_articles(
         "LIMIT ? OFFSET ?"
     )
 
-    results = await db.prepare(sql).bind(safe_q, user_id, limit, offset).all()
-    return d1_rows(results)
+    return await db.prepare(sql).bind(safe_q, user_id, limit, offset).all()

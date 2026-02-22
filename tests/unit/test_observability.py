@@ -37,10 +37,13 @@ def _make_app(env: Any | None = None) -> FastAPI:
     test_app = FastAPI()
 
     if env is not None:
+        from src.wrappers import SafeEnv
+
+        safe_env = SafeEnv(env)
 
         @test_app.middleware("http")
         async def inject_env(request: Request, call_next):
-            request.scope["env"] = env
+            request.scope["env"] = safe_env
             return await call_next(request)
 
     test_app.add_middleware(ObservabilityMiddleware)
@@ -247,11 +250,14 @@ class TestUserIdExtraction:
 
         # Build a custom app where the route sets request.state.user_id
         # (simulating what get_current_user does in real handlers).
+        from src.wrappers import SafeEnv
+
         test_app = FastAPI()
+        safe_env = SafeEnv(env)
 
         @test_app.middleware("http")
         async def inject_env(request: Request, call_next):
-            request.scope["env"] = env
+            request.scope["env"] = safe_env
             return await call_next(request)
 
         test_app.add_middleware(ObservabilityMiddleware)

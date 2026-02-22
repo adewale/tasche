@@ -10,8 +10,6 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from wrappers import _to_py_safe, r2_put
-
 
 def article_key(article_id: str, filename: str) -> str:
     """Generate an R2 object key for an article file.
@@ -52,7 +50,7 @@ async def store_content(r2: Any, article_id: str, html: str) -> dict[str, str]:
     """
     html_k = article_key(article_id, "content.html")
 
-    await r2_put(r2, html_k, html)
+    await r2.put(html_k, html)
 
     return {"html_key": html_k}
 
@@ -96,7 +94,7 @@ async def store_metadata(r2: Any, article_id: str, metadata: dict[str, Any]) -> 
         The R2 key where the metadata was stored.
     """
     key = article_key(article_id, "metadata.json")
-    await r2_put(r2, key, json.dumps(metadata))
+    await r2.put(key, json.dumps(metadata))
     return key
 
 
@@ -137,10 +135,7 @@ async def delete_article_content(r2: Any, article_id: str) -> None:
         if cursor is not None:
             list_kwargs["cursor"] = cursor
 
-        result = await r2.list(**list_kwargs)
-
-        # Handle both JsProxy and plain dict results
-        converted = _to_py_safe(result) if not isinstance(result, dict) else result
+        converted = await r2.list(**list_kwargs)
 
         objects = converted.get("objects", []) if isinstance(converted, dict) else []
         for obj in objects:

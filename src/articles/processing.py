@@ -39,7 +39,7 @@ from articles.extraction import (
 from articles.images import download_images, store_images
 from articles.storage import article_key, store_content, store_metadata
 from articles.urls import _is_private_hostname, extract_domain
-from wrappers import HttpClient, HttpError, SafeEnv, d1_first, d1_null, r2_put
+from wrappers import HttpClient, HttpError, SafeEnv
 
 # Minimum content length (characters) to consider HTML as "real" content.
 # Below this threshold, the page is likely JS-rendered and needs Browser Rendering.
@@ -154,7 +154,7 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
                     viewport_height=630,
                 )
                 thumbnail_key = article_key(article_id, "thumbnail.webp")
-                await r2_put(r2, thumbnail_key, thumb_data)
+                await r2.put(thumbnail_key, thumb_data)
             except BrowserRenderingError:
                 pass  # Per-URL failures are non-fatal
 
@@ -170,7 +170,7 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
                     full_page=True,
                 )
                 original_key = article_key(article_id, "original.webp")
-                await r2_put(r2, original_key, full_data)
+                await r2.put(original_key, full_data)
             except BrowserRenderingError:
                 pass  # Per-URL failures are non-fatal
 
@@ -186,8 +186,8 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
             image_map = await store_images(r2, article_id, images)
 
         # Preserve user-supplied title if one was provided at creation time
-        existing = d1_first(
-            await db.prepare("SELECT title FROM articles WHERE id = ?")
+        existing = await (
+            db.prepare("SELECT title FROM articles WHERE id = ?")
             .bind(article_id)
             .first()
         )
@@ -257,15 +257,15 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
             .bind(
                 title,
                 excerpt,
-                d1_null(author),
+                author,
                 word_count,
                 reading_time,
                 domain,
                 final_url,
                 canonical_url,
                 html_key,
-                d1_null(thumbnail_key),
-                d1_null(original_key),
+                thumbnail_key,
+                original_key,
                 len(image_map),
                 markdown,
                 "ready",

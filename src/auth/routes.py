@@ -2,8 +2,8 @@
 
 All outbound GitHub API communication uses ``http_fetch`` from ``wrappers``,
 which delegates to the native JS ``fetch()`` API in the Workers runtime and
-falls back to httpx in CPython tests.  D1 queries use the ``d1_first`` helper
-and parameterised SQL (``?`` placeholders).
+falls back to httpx in CPython tests.  D1 queries use parameterised SQL
+(``?`` placeholders) via the SafeD1 wrapper.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from auth.session import (
     delete_session,
     parse_allowed_emails,
 )
-from wrappers import SafeEnv, d1_first, http_fetch
+from wrappers import http_fetch
 
 router = APIRouter()
 
@@ -40,7 +40,7 @@ OAUTH_STATE_TTL = 600  # 10 minutes
 @router.get("/login")
 async def login(request: Request) -> RedirectResponse:
     """Redirect the user to GitHub's OAuth authorize page."""
-    env = SafeEnv(request.scope["env"])
+    env = request.scope["env"]
     client_id = env.get("GITHUB_CLIENT_ID", "")
     if not client_id:
         raise HTTPException(status_code=500, detail="GITHUB_CLIENT_ID is not configured")
@@ -49,8 +49,7 @@ async def login(request: Request) -> RedirectResponse:
 
     # Generate CSRF state token and store in KV with 10-minute TTL
     state = secrets.token_urlsafe(32)
-    raw_env = request.scope["env"]
-    await raw_env.SESSIONS.put(
+    await env.SESSIONS.put(
         f"{OAUTH_STATE_PREFIX}{state}", "1", expirationTtl=OAUTH_STATE_TTL
     )
 
@@ -76,13 +75,12 @@ async def callback(request: Request) -> RedirectResponse:
     if not state:
         raise HTTPException(status_code=400, detail="Missing state parameter")
 
-    raw_env = request.scope["env"]
-    stored_state = await raw_env.SESSIONS.get(f"{OAUTH_STATE_PREFIX}{state}")
+    env = request.scope["env"]
+    stored_state = await env.SESSIONS.get(f"{OAUTH_STATE_PREFIX}{state}")
     if stored_state is None:
         raise HTTPException(status_code=400, detail="Invalid or expired state")
-    await raw_env.SESSIONS.delete(f"{OAUTH_STATE_PREFIX}{state}")
+    await env.SESSIONS.delete(f"{OAUTH_STATE_PREFIX}{state}")
 
-    env = SafeEnv(raw_env)
     client_id = env.get("GITHUB_CLIENT_ID", "")
     if not client_id:
         raise HTTPException(status_code=500, detail="GITHUB_CLIENT_ID is not configured")
@@ -178,9 +176,9 @@ async def callback(request: Request) -> RedirectResponse:
     db = env.DB
     now = datetime.now(UTC).isoformat()
 
-    existing = d1_first(
-        await db.prepare("SELECT id FROM users WHERE github_id = ?").bind(github_id).first()
-    )
+    existing = await db.prepare(
+        "SELECT id FROM users WHERE github_id = ?"
+    ).bind(github_id).first()
 
     if existing:
         user_id = existing["id"]
@@ -211,7 +209,7 @@ async def callback(request: Request) -> RedirectResponse:
         "avatar_url": avatar_url,
         "created_at": now,
     }
-    session_id = await create_session(raw_env.SESSIONS, session_data)
+    session_id = await create_session(env.SESSIONS, session_data)
 
     # --- Set cookie and redirect ---
     is_secure = site_url.startswith("https://")
@@ -231,12 +229,11 @@ async def callback(request: Request) -> RedirectResponse:
 @router.post("/logout")
 async def logout(request: Request) -> Response:
     """Delete the session from KV and clear the session cookie."""
-    raw_env = request.scope["env"]
+    env = request.scope["env"]
     session_id = request.cookies.get(COOKIE_NAME)
     if session_id:
-        await delete_session(raw_env.SESSIONS, session_id)
+        await delete_session(env.SESSIONS, session_id)
 
-    env = SafeEnv(raw_env)
     is_secure = env.get("SITE_URL", "").startswith("https://")
     response = Response(status_code=200)
     response.delete_cookie(

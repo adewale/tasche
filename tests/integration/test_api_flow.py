@@ -365,9 +365,13 @@ def test_app(env: MockEnv) -> TestClient:
 
     test_application = FastAPI()
 
+    from src.wrappers import SafeEnv
+
+    safe_env = SafeEnv(env)
+
     @test_application.middleware("http")
     async def inject_env(request: StarletteRequest, call_next):
-        request.scope["env"] = env
+        request.scope["env"] = safe_env
         return await call_next(request)
 
     # Mount all the same routers as entry.py

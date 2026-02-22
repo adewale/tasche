@@ -21,7 +21,7 @@ import traceback
 from datetime import UTC, datetime
 
 from articles.storage import article_key
-from wrappers import _to_js_value, consume_readable_stream, d1_first, r2_put
+from wrappers import consume_readable_stream
 
 # TTS model identifier
 _TTS_MODEL = "@cf/deepgram/aura-2-en"
@@ -207,8 +207,8 @@ async def process_tts(article_id: str, env: object, *, user_id: str) -> None:
 
     try:
         # Idempotency check: skip if audio is already ready
-        existing = d1_first(
-            await db.prepare(
+        existing = await (
+            db.prepare(
                 "SELECT audio_status FROM articles WHERE id = ? AND user_id = ?"
             ).bind(article_id, user_id).first()
         )
@@ -226,8 +226,8 @@ async def process_tts(article_id: str, env: object, *, user_id: str) -> None:
         ).bind("generating", _now(), article_id, user_id).run()
 
         # Step 2: Fetch markdown content from D1
-        article = d1_first(
-            await db.prepare(
+        article = await (
+            db.prepare(
                 "SELECT markdown_content FROM articles"
                 " WHERE id = ? AND user_id = ?"
             ).bind(article_id, user_id).first()
@@ -254,8 +254,7 @@ async def process_tts(article_id: str, env: object, *, user_id: str) -> None:
             )
 
         # Step 4: Call Workers AI for TTS
-        inputs = _to_js_value({"text": tts_text})
-        audio_data = await ai.run(_TTS_MODEL, inputs)
+        audio_data = await ai.run(_TTS_MODEL, {"text": tts_text})
 
         # Consume ReadableStream if the AI binding returns one
         audio_data = await consume_readable_stream(audio_data)
@@ -264,7 +263,7 @@ async def process_tts(article_id: str, env: object, *, user_id: str) -> None:
 
         # Step 5: Store audio in R2
         audio_r2_key = article_key(article_id, "audio.mp3")
-        await r2_put(r2, audio_r2_key, audio_data)
+        await r2.put(audio_r2_key, audio_data)
 
         # Step 6: Update D1 with audio metadata
         duration = _estimate_duration(tts_text)

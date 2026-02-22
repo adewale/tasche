@@ -91,11 +91,14 @@ class TestDeleteSession:
 
 def _make_app_with_env(env: Any) -> FastAPI:
     """Create a minimal FastAPI app that injects ``env`` into the ASGI scope."""
+    from src.wrappers import SafeEnv
+
     test_app = FastAPI()
+    safe_env = SafeEnv(env)
 
     @test_app.middleware("http")
     async def inject_env(request, call_next):
-        request.scope["env"] = env
+        request.scope["env"] = safe_env
         return await call_next(request)
 
     @test_app.get("/me")
@@ -332,11 +335,14 @@ class TestAllowedEmailsParsing:
 
 def _make_auth_app(env: Any) -> FastAPI:
     """Create a FastAPI app with the auth router mounted, injecting env."""
+    from src.wrappers import SafeEnv
+
+    safe_env = SafeEnv(env)
     test_app = FastAPI()
 
     @test_app.middleware("http")
     async def inject_env(request, call_next):
-        request.scope["env"] = env
+        request.scope["env"] = safe_env
         return await call_next(request)
 
     test_app.include_router(router, prefix="/api/auth")

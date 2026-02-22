@@ -551,9 +551,13 @@ class TestConfigCheck:
         # Clone the app's routes into a test app with env injection
         test_app = FastAPI()
 
+        from src.wrappers import SafeEnv
+
+        safe_env = SafeEnv(env)
+
         @test_app.middleware("http")
         async def inject_env(request, call_next):
-            request.scope["env"] = env
+            request.scope["env"] = safe_env
             return await call_next(request)
 
         for route in app.routes:

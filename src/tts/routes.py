@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from articles.routes import _get_user_article
 from auth.dependencies import get_current_user
-from wrappers import _to_js_value, get_r2_size, stream_r2_body
+from wrappers import get_r2_size, stream_r2_body
 
 router = APIRouter()
 
@@ -70,13 +70,12 @@ async def listen_later(
     )
 
     # Enqueue TTS generation job
-    message = _to_js_value({
-        "type": "tts_generation",
-        "article_id": article_id,
-        "user_id": user_id,
-    })
     try:
-        await env.ARTICLE_QUEUE.send(message)
+        await env.ARTICLE_QUEUE.send({
+            "type": "tts_generation",
+            "article_id": article_id,
+            "user_id": user_id,
+        })
     except Exception:
         # Roll back D1 status on queue failure
         await (
