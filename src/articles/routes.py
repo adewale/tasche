@@ -708,6 +708,49 @@ async def retry_article(
     return {"id": article_id, "status": "pending"}
 
 
+@router.post("/{article_id}/process-now")
+async def process_now(
+    request: Request,
+    article_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Process an article inline (bypasses queue) for debugging.
+
+    Runs the full processing pipeline in the request handler so errors
+    are returned directly instead of being lost in queue handler logs.
+    Only articles with ``status`` of ``failed`` or ``pending`` can be
+    processed.
+    """
+    import traceback
+
+    from articles.processing import process_article
+
+    env = request.scope["env"]
+    db = env.DB
+    user_id = user["user_id"]
+
+    article = await _get_user_article(
+        db, article_id, user_id, fields="id, original_url, status"
+    )
+
+    if article["status"] not in ("failed", "pending"):
+        raise HTTPException(
+            status_code=409, detail="Article is not in a retryable state"
+        )
+
+    try:
+        await process_article(article_id, article["original_url"], env)
+        updated = await _get_user_article(db, article_id, user_id, fields="id, status, title, word_count")
+        return {"id": article_id, "result": "success", "article": updated}
+    except Exception as exc:
+        return {
+            "id": article_id,
+            "result": "error",
+            "error": str(exc),
+            "traceback": traceback.format_exc(),
+        }
+
+
 @router.post("/{article_id}/check-original")
 async def check_original(
     request: Request,
