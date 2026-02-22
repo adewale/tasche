@@ -309,7 +309,31 @@ The session cookie was set with `secure: True` unconditionally, which means brow
 
 **Lesson:** Derive the `secure` flag from `SITE_URL` — `True` when it starts with `https://`, `False` otherwise. This is a single line of code but completely blocks local testing if missed.
 
-### 27. Specs That Are Precise About the Backend and Vague About the Frontend Will Get Exactly a Backend
+### 27. 480 Tests Passing, Core Workflow Broken: The Runtime Gap
+
+Three separate bugs prevented the fundamental user journey ("save a URL and read it later") from ever working in production, despite 480 unit tests, 32 integration tests, and 15 Playwright smoke tests all passing:
+
+1. **Queue handler signature mismatch** — Workers passes `(batch, env, ctx)` to the queue handler, but the code only accepted `(self, batch)`. Result: `TypeError: takes 2 positional arguments but 4 were given`. The queue consumer silently crashed on every message.
+
+2. **python-readability uses `eval()`** — The content extraction library loads Mozilla Readability via `js.eval()`, which V8 isolates block. Result: `EvalError: Code generation from strings disallowed for this context`. The entire extraction pipeline was dead on arrival.
+
+3. **Python `None` → JS `undefined` in D1 bind** — D1 rejects `undefined` values; it needs `null`. Every nullable field in the processing pipeline's UPDATE statement would crash. Result: `D1_TYPE_ERROR: Type 'undefined' not supported`.
+
+All three bugs share the same root cause: **unit tests run in CPython, but the code runs in Pyodide inside V8 isolates**. These are fundamentally different runtimes:
+- CPython has `eval()`. Workers V8 doesn't.
+- CPython's `None` is `None`. Pyodide's `None` is JS `undefined`.
+- CPython method dispatch is standard. Workers' entrypoint passes extra arguments to `queue()`.
+
+The test suite verified *correctness of logic* but never verified *reachability in the runtime*. The mocked D1, mocked R2, mocked queue, and mocked HTTP meant the tests were testing a simulation of Cloudflare Workers, not actual Cloudflare Workers.
+
+**What would have caught these earlier:**
+- A single live smoke test that submits a URL and polls until `status=ready`
+- This should have been the very first test written, even before unit tests
+- The 14-step processing pipeline is the core value proposition — if it doesn't work, nothing else matters
+
+**Lesson:** For platform-specific runtimes (Pyodide, Workers, WASM), unit tests in the host language are necessary but not sufficient. A live integration test against the real platform must exist before any other testing. "All tests pass" means nothing if the tests don't exercise the actual runtime. The most important test is: can a user complete the primary workflow end-to-end on the real platform?
+
+### 28. Specs That Are Precise About the Backend and Vague About the Frontend Will Get Exactly a Backend
 
 This is the meta-lesson that encompasses all the above. The original spec had:
 - 14-step processing pipeline with numbered steps ← precise

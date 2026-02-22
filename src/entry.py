@@ -339,7 +339,7 @@ class Default(WorkerEntrypoint):
                 )
             )
 
-    async def queue(self, batch: object) -> None:  # type: ignore[override]
+    async def queue(self, batch: object, env: object = None, ctx: object = None) -> None:  # type: ignore[override]
         """Handle a batch of queue messages.
 
         Each message is expected to have a JSON body with at least a ``type``
@@ -350,7 +350,16 @@ class Default(WorkerEntrypoint):
         batch:
             The ``MessageBatch`` object from the Workers runtime.  Contains a
             ``messages`` iterable, each with a ``.body`` attribute.
+        env:
+            Worker env bindings (also available as ``self.env``).
+        ctx:
+            Execution context (also available as ``self.ctx``).
         """
+        # Prefer the explicitly-passed env (raw handler signature) over
+        # self.env which WorkerEntrypoint may or may not populate for queue
+        # invocations.
+        worker_env = env if env is not None else self.env
+
         for message in batch.messages:  # type: ignore[attr-defined]
             try:
                 raw_body = message.body
@@ -373,7 +382,7 @@ class Default(WorkerEntrypoint):
                     message.ack()
                     continue
 
-                await handler(body, self.env)
+                await handler(body, worker_env)
                 message.ack()
 
             except Exception:

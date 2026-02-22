@@ -122,7 +122,7 @@ class TestFullPipelineEndToEnd:
         #   original_key, image_count, markdown_content, status, updated_at, id
         title = params[0]
         excerpt = params[1]
-        author = params[2]
+        _author = params[2]  # noqa: F841
         word_count = params[3]
         reading_time = params[4]
         domain = params[5]

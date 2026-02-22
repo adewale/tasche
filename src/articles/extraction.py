@@ -6,7 +6,8 @@ image path rewriting.
 
 Libraries used:
 - beautifulsoup4 — HTML parsing (canonical URL extraction, image src extraction)
-- python-readability — article content extraction (Mozilla Readability algorithm)
+- python-readability — article content extraction (Mozilla Readability algorithm),
+  with a BeautifulSoup fallback for Cloudflare Workers where ``eval()`` is blocked.
 - markdownify — HTML to Markdown conversion
 """
 
@@ -15,9 +16,15 @@ from __future__ import annotations
 import math
 import re
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 from markdownify import markdownify
-from readability import parse as readability_parse
+
+# python-readability uses js.eval() internally which is blocked in Cloudflare
+# Workers.  Fall back to a BeautifulSoup-based extractor when unavailable.
+try:
+    from readability import parse as readability_parse
+except Exception:
+    readability_parse = None  # type: ignore[assignment]
 
 
 def extract_canonical_url(html: str) -> str | None:
@@ -45,10 +52,11 @@ def extract_canonical_url(html: str) -> str | None:
 
 
 def extract_article(html: str) -> dict:
-    """Extract article content from HTML using python-readability.
+    """Extract article content from HTML.
 
-    Uses the Mozilla Readability algorithm to identify the main article
-    content, stripping navigation, ads, and other boilerplate.
+    Uses python-readability (Mozilla Readability algorithm) when available.
+    Falls back to a BeautifulSoup heuristic extractor in Cloudflare Workers
+    where python-readability cannot load due to ``eval()`` restrictions.
 
     Parameters
     ----------
@@ -61,14 +69,130 @@ def extract_article(html: str) -> dict:
         Keys: ``title`` (str), ``html`` (str — clean article HTML),
         ``excerpt`` (str — short summary), ``byline`` (str | None — author).
     """
-    article = readability_parse(html)
-    content = article.content or ""
-    excerpt = article.excerpt or _make_excerpt(content)
+    if readability_parse is not None:
+        article = readability_parse(html)
+        content = article.content or ""
+        excerpt = article.excerpt or _make_excerpt(content)
+        return {
+            "title": article.title or "",
+            "html": content,
+            "excerpt": excerpt,
+            "byline": article.byline or None,
+        }
+
+    return _extract_article_bs4(html)
+
+
+# ---------------------------------------------------------------------------
+# BeautifulSoup fallback extractor (used in Workers where eval() is blocked)
+# ---------------------------------------------------------------------------
+
+# Tags that are never article content.
+_JUNK_TAGS = {
+    "script", "style", "nav", "footer", "header", "aside", "form",
+    "noscript", "iframe", "svg", "button", "input", "select", "textarea",
+}
+
+# Roles / classes / IDs that signal non-content regions.
+_JUNK_PATTERNS = re.compile(
+    r"nav|menu|sidebar|footer|header|comment|widget|advert|promo|social"
+    r"|related|share|signup|subscribe|cookie|banner|popup|modal",
+    re.IGNORECASE,
+)
+
+
+def _is_junk(tag: Tag) -> bool:
+    """Return True if a tag is likely boilerplate rather than article content."""
+    if tag.decomposed:
+        return False
+    if tag.name in _JUNK_TAGS:
+        return True
+    for attr in ("class", "id", "role"):
+        val = tag.get(attr, "")
+        text = " ".join(val) if isinstance(val, list) else str(val)
+        if text and _JUNK_PATTERNS.search(text):
+            return True
+    return False
+
+
+def _text_length(tag: Tag) -> int:
+    """Return the length of visible text inside a tag."""
+    return len(tag.get_text(strip=True))
+
+
+def _extract_article_bs4(html: str) -> dict:
+    """Extract article content using BeautifulSoup heuristics.
+
+    Identifies the largest content-bearing block element (``<article>``,
+    ``<main>``, or highest-scoring ``<div>``/``<section>``) and returns
+    its inner HTML.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+
+    # Extract fallback title from <title> tag
+    fallback_title = ""
+    title_tag = soup.find("title")
+    if title_tag:
+        fallback_title = title_tag.get_text(strip=True)
+
+    # Extract author from common meta tags
+    byline = None
+    for meta_name in ("author", "article:author", "dc.creator"):
+        meta = soup.find("meta", attrs={"name": meta_name}) or soup.find(
+            "meta", attrs={"property": meta_name}
+        )
+        if meta and meta.get("content"):
+            byline = meta["content"].strip()
+            break
+
+    # Remove junk elements
+    for tag in soup.find_all(True):
+        if _is_junk(tag):
+            tag.decompose()
+
+    # Try semantic containers first: <article>, then <main>
+    content_tag = None
+    for container_name in ("article", "main"):
+        candidates = soup.find_all(container_name)
+        if candidates:
+            # Pick the one with the most text
+            content_tag = max(candidates, key=_text_length)
+            break
+
+    # Fallback: score top-level block elements by text density
+    if content_tag is None or _text_length(content_tag) < 100:
+        best_score = 0
+        for tag in soup.find_all(["div", "section"]):
+            score = _text_length(tag)
+            # Penalise deeply nested containers (they're likely wrappers)
+            depth = len(list(tag.parents))
+            score = score - (depth * 10)
+            if score > best_score:
+                best_score = score
+                content_tag = tag
+
+    # Last resort: use the <body>
+    if content_tag is None:
+        content_tag = soup.find("body") or soup
+
+    # Extract title from <h1> inside the content container (preferred),
+    # falling back to the page <title>.
+    title = fallback_title
+    if content_tag is not None:
+        h1 = content_tag.find("h1")
+        if h1:
+            h1_text = h1.get_text(strip=True)
+            if h1_text:
+                title = h1_text
+
+    content_html = content_tag.decode_contents()
+    excerpt = _make_excerpt(content_html)
+
     return {
-        "title": article.title or "",
-        "html": content,
+        "title": title,
+        "html": content_html,
         "excerpt": excerpt,
-        "byline": article.byline or None,
+        "byline": byline,
     }
 
 

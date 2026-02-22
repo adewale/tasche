@@ -8,6 +8,7 @@ and image path rewriting.
 from __future__ import annotations
 
 from src.articles.extraction import (
+    _extract_article_bs4,
     calculate_reading_time,
     count_words,
     extract_article,
@@ -108,6 +109,114 @@ class TestExtractArticle:
         </html>
         """
         result = extract_article(html)
+        assert "<strong>" not in result["excerpt"]
+        assert "<p>" not in result["excerpt"]
+
+
+# =========================================================================
+# _extract_article_bs4 (fallback extractor)
+# =========================================================================
+
+
+class TestExtractArticleBs4:
+    def test_extracts_from_article_tag(self) -> None:
+        """Finds content inside <article> tags."""
+        html = """
+        <html>
+        <head><title>Page Title</title></head>
+        <body>
+            <nav><a href="/">Home</a></nav>
+            <article>
+                <h1>Article Title</h1>
+                <p>First paragraph of the article content.</p>
+                <p>Second paragraph with more details.</p>
+            </article>
+            <footer>Copyright 2026</footer>
+        </body>
+        </html>
+        """
+        result = _extract_article_bs4(html)
+        assert result["title"] == "Article Title"
+        assert "First paragraph" in result["html"]
+        assert "<nav>" not in result["html"]
+        assert "Copyright" not in result["html"]
+
+    def test_extracts_from_main_tag(self) -> None:
+        """Falls back to <main> when no <article> exists."""
+        html = """
+        <html>
+        <head><title>Page</title></head>
+        <body>
+            <header><h1>Site Name</h1></header>
+            <main>
+                <h1>Main Content Title</h1>
+                <p>The actual content goes here.</p>
+            </main>
+            <aside>Sidebar stuff</aside>
+        </body>
+        </html>
+        """
+        result = _extract_article_bs4(html)
+        assert result["title"] == "Main Content Title"
+        assert "actual content" in result["html"]
+
+    def test_extracts_from_largest_div(self) -> None:
+        """Falls back to largest div when no semantic containers exist."""
+        html = """
+        <html>
+        <head><title>Div Page</title></head>
+        <body>
+            <div class="sidebar"><p>Short.</p></div>
+            <div class="content">
+                <h1>Blog Post</h1>
+                <p>This is a much longer paragraph that contains the actual
+                article content that we want to extract from the page.</p>
+                <p>Another paragraph with even more content to ensure this
+                div scores higher than the sidebar.</p>
+            </div>
+        </body>
+        </html>
+        """
+        result = _extract_article_bs4(html)
+        assert result["title"] == "Blog Post"
+        assert "article content" in result["html"]
+
+    def test_extracts_author_from_meta(self) -> None:
+        """Extracts author from meta tags."""
+        html = """
+        <html>
+        <head>
+            <meta name="author" content="Jane Doe">
+            <title>Test</title>
+        </head>
+        <body><article><p>Content here.</p></article></body>
+        </html>
+        """
+        result = _extract_article_bs4(html)
+        assert result["byline"] == "Jane Doe"
+
+    def test_removes_nav_and_footer(self) -> None:
+        """Strips navigation and footer boilerplate."""
+        html = """
+        <html><body>
+            <nav><ul><li>Link 1</li><li>Link 2</li></ul></nav>
+            <article><p>Real content.</p></article>
+            <footer><p>Footer text</p></footer>
+        </body></html>
+        """
+        result = _extract_article_bs4(html)
+        assert "Real content" in result["html"]
+        assert "Link 1" not in result["html"]
+        assert "Footer text" not in result["html"]
+
+    def test_excerpt_is_plain_text(self) -> None:
+        """Excerpt has no HTML tags."""
+        html = """
+        <html><body>
+            <article><p>This is a <strong>bold</strong> paragraph.</p></article>
+        </body></html>
+        """
+        result = _extract_article_bs4(html)
         assert "<strong>" not in result["excerpt"]
         assert "<p>" not in result["excerpt"]
 
