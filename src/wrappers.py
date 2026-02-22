@@ -70,6 +70,79 @@ def get_js_null() -> Any:
 JS_NULL = None  # Lazy; call get_js_null() at runtime when needed.
 
 
+def d1_null(value: Any) -> Any:
+    """Convert Python ``None`` to JS ``null`` for D1 bind parameters.
+
+    D1 rejects ``undefined`` (which is what Python ``None`` becomes across
+    the Pyodide FFI boundary).  Use this helper to wrap any nullable value
+    before passing it to ``stmt.bind()``.
+
+    Outside Pyodide, returns the value unchanged.
+    """
+    if value is None:
+        return get_js_null()
+    return value
+
+
+async def consume_readable_stream(value: Any) -> bytes:
+    """Consume a JS ReadableStream (or ArrayBuffer) into Python bytes.
+
+    Workers AI and R2 may return ReadableStream objects that need to be
+    consumed via ``.arrayBuffer()`` before conversion to Python bytes.
+    This helper handles the detection and consumption so callers don't
+    need to duck-type JS objects directly.
+
+    Outside Pyodide, passes the value through ``to_py_bytes()`` directly.
+    """
+    if value is not None and hasattr(value, "arrayBuffer"):
+        value = await value.arrayBuffer()
+    return to_py_bytes(value)
+
+
+async def stream_r2_body(r2_obj: Any) -> Any:
+    """Yield Python bytes chunks from an R2 object's ReadableStream body.
+
+    This is the **only** place that should interact with ReadableStream's
+    ``getReader()`` / ``read()`` / ``releaseLock()`` protocol.  Business
+    logic should call this async generator instead of manipulating JS
+    ReadableStream objects directly.
+
+    Falls back to loading the entire buffer via ``consume_readable_stream``
+    when no streaming interface is available (e.g. in tests with mocks).
+    """
+    body = getattr(r2_obj, "body", None)
+
+    if body is not None and hasattr(body, "getReader"):
+        reader = body.getReader()
+        try:
+            while True:
+                result = await reader.read()
+                done = getattr(result, "done", True)
+                if done:
+                    break
+                chunk = getattr(result, "value", None)
+                if chunk is not None:
+                    yield to_py_bytes(chunk)
+        finally:
+            reader.releaseLock()
+    else:
+        # Fallback: load entire buffer
+        data = await consume_readable_stream(r2_obj)
+        yield data
+
+
+def get_r2_size(r2_obj: Any) -> int | None:
+    """Extract the ``size`` property from an R2 object.
+
+    Returns ``None`` if the property is missing or represents JS
+    ``undefined`` / ``null``.
+    """
+    size = getattr(r2_obj, "size", None)
+    if size is None or _is_js_null_or_undefined(size):
+        return None
+    return int(size)
+
+
 # ---------------------------------------------------------------------------
 # JsProxy -> Python conversion
 # ---------------------------------------------------------------------------

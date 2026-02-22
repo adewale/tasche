@@ -18,7 +18,7 @@ from articles.health import check_original_url
 from articles.storage import delete_article_content, get_content, get_metadata
 from articles.urls import check_duplicate, extract_domain, validate_url
 from auth.dependencies import get_current_user
-from wrappers import _to_js_value, d1_first, d1_rows, get_js_null, to_py_bytes
+from wrappers import _to_js_value, d1_first, d1_null, d1_rows, stream_r2_body
 
 router = APIRouter()
 
@@ -30,38 +30,11 @@ async def _stream_r2_object(
 ) -> Response:
     """Stream an R2 object as an HTTP response.
 
-    Tries to use the R2 ReadableStream body for true streaming.  Falls back to
-    loading the entire buffer via ``arrayBuffer()`` for mock / non-streaming
-    environments.
+    Uses :func:`wrappers.stream_r2_body` for all JS ReadableStream
+    interaction.  Falls back gracefully in mock / non-streaming environments.
     """
-    body = getattr(r2_obj, "body", None)
-
-    if body is not None and hasattr(body, "getReader"):
-
-        async def _stream():
-            reader = body.getReader()
-            try:
-                while True:
-                    result = await reader.read()
-                    done = getattr(result, "done", True)
-                    if done:
-                        break
-                    chunk = getattr(result, "value", None)
-                    if chunk is not None:
-                        yield to_py_bytes(chunk)
-            finally:
-                reader.releaseLock()
-
-        return StreamingResponse(
-            _stream(),
-            media_type=media_type,
-            headers={"Cache-Control": cache_control},
-        )
-
-    # Fallback: load entire buffer (for mocks / non-streaming environments)
-    image_data = await r2_obj.arrayBuffer()
-    return Response(
-        content=to_py_bytes(image_data),
+    return StreamingResponse(
+        stream_r2_body(r2_obj),
         media_type=media_type,
         headers={"Cache-Control": cache_control},
     )
@@ -167,7 +140,7 @@ async def create_article(
                 )
                 .bind(
                     article_id, user_id, url, domain,
-                    title if title is not None else get_js_null(),
+                    d1_null(title),
                     now, now,
                 )
                 .run()

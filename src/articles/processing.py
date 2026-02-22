@@ -39,21 +39,13 @@ from articles.extraction import (
 from articles.images import download_images, store_images
 from articles.storage import article_key, store_content, store_metadata
 from articles.urls import _is_private_hostname, extract_domain
-from wrappers import HttpClient, HttpError, SafeEnv, d1_first, get_js_null
+from wrappers import HttpClient, HttpError, SafeEnv, d1_first, d1_null
 
 # Minimum content length (characters) to consider HTML as "real" content.
 # Below this threshold, the page is likely JS-rendered and needs Browser Rendering.
 _MIN_CONTENT_LENGTH = 500
 
 
-def _null(value: object) -> object:
-    """Convert Python None to JS null for D1 bind parameters.
-
-    D1 rejects ``undefined`` (which is what Python ``None`` becomes across
-    the Pyodide FFI).  This helper maps ``None`` to a true JS ``null``
-    so that nullable columns are set correctly.
-    """
-    return get_js_null() if value is None else value
 
 
 def _is_js_heavy(html: str) -> bool:
@@ -265,15 +257,15 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
             .bind(
                 title,
                 excerpt,
-                _null(author),
+                d1_null(author),
                 word_count,
                 reading_time,
                 domain,
                 final_url,
                 canonical_url,
                 html_key,
-                _null(thumbnail_key),
-                _null(original_key),
+                d1_null(thumbnail_key),
+                d1_null(original_key),
                 len(image_map),
                 markdown,
                 "ready",

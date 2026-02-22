@@ -8,21 +8,29 @@ the non-Pyodide code paths produce correct results.
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from src.wrappers import (
     HAS_PYODIDE,
+    HttpClient,
+    HttpError,
+    HttpResponse,
     JsException,
     SafeEnv,
     _is_js_null_or_undefined,
     _is_js_undefined,
     _to_js_value,
     _to_py_safe,
+    consume_readable_stream,
     d1_first,
+    d1_null,
     d1_rows,
     get_js_null,
+    get_r2_size,
+    http_fetch,
+    stream_r2_body,
     to_py_bytes,
 )
 
@@ -381,3 +389,704 @@ class TestJsException:
         """JsException can be used in try/except."""
         with pytest.raises(JsException):
             raise JsException("test error")
+
+
+# =========================================================================
+# d1_null — None→null conversion for D1 bind parameters
+# =========================================================================
+
+
+class TestD1Null:
+    def test_none_returns_js_null(self) -> None:
+        """None must be converted to JS null (which is None outside Pyodide)."""
+        result = d1_null(None)
+        # Outside Pyodide, get_js_null() returns None — so result is None.
+        # The important thing is that the function calls get_js_null() rather
+        # than passing None through directly.  In Pyodide, this distinction
+        # matters: None→undefined vs get_js_null()→null.
+        assert result is None
+
+    def test_string_passthrough(self) -> None:
+        assert d1_null("hello") == "hello"
+
+    def test_int_passthrough(self) -> None:
+        assert d1_null(42) == 42
+
+    def test_zero_passthrough(self) -> None:
+        """0 is a valid value, not None — must not be converted to null."""
+        assert d1_null(0) == 0
+
+    def test_empty_string_passthrough(self) -> None:
+        """Empty string is a valid value, not None."""
+        assert d1_null("") == ""
+
+    def test_false_passthrough(self) -> None:
+        """False is a valid value, not None."""
+        assert d1_null(False) is False
+
+    def test_dict_passthrough(self) -> None:
+        data = {"key": "value"}
+        assert d1_null(data) is data
+
+    def test_list_passthrough(self) -> None:
+        data = [1, 2, 3]
+        assert d1_null(data) is data
+
+    def test_float_passthrough(self) -> None:
+        assert d1_null(3.14) == pytest.approx(3.14)
+
+
+# =========================================================================
+# consume_readable_stream — JS ReadableStream/ArrayBuffer → Python bytes
+# =========================================================================
+
+
+class TestConsumeReadableStream:
+    async def test_plain_bytes_passthrough(self) -> None:
+        """Plain bytes are returned unchanged."""
+        data = b"hello world"
+        result = await consume_readable_stream(data)
+        assert result == b"hello world"
+        assert isinstance(result, bytes)
+
+    async def test_none_returns_empty_bytes(self) -> None:
+        result = await consume_readable_stream(None)
+        assert result == b""
+
+    async def test_bytearray_converted(self) -> None:
+        data = bytearray(b"test data")
+        result = await consume_readable_stream(data)
+        assert result == b"test data"
+        assert isinstance(result, bytes)
+
+    async def test_object_with_array_buffer(self) -> None:
+        """Objects with .arrayBuffer() (like R2 bodies) are consumed."""
+        mock_stream = MagicMock()
+        mock_stream.arrayBuffer = AsyncMock(return_value=b"audio data")
+        result = await consume_readable_stream(mock_stream)
+        assert result == b"audio data"
+        mock_stream.arrayBuffer.assert_awaited_once()
+
+    async def test_object_without_array_buffer(self) -> None:
+        """Objects without .arrayBuffer() fall through to to_py_bytes."""
+        data = memoryview(b"raw bytes")
+        result = await consume_readable_stream(data)
+        assert result == b"raw bytes"
+
+    async def test_array_buffer_returns_bytearray(self) -> None:
+        """When arrayBuffer() returns bytearray, it is converted to bytes."""
+        mock_stream = MagicMock()
+        mock_stream.arrayBuffer = AsyncMock(return_value=bytearray(b"chunk"))
+        result = await consume_readable_stream(mock_stream)
+        assert result == b"chunk"
+        assert isinstance(result, bytes)
+
+
+# =========================================================================
+# stream_r2_body — async generator for R2 ReadableStream chunks
+# =========================================================================
+
+
+def _make_reader_result(*, done: bool, value: bytes | None = None) -> SimpleNamespace:
+    """Create a mock ReadableStream reader result."""
+    return SimpleNamespace(done=done, value=value)
+
+
+class TestStreamR2Body:
+    async def test_streams_readable_stream_chunks(self) -> None:
+        """When R2 object has a body with getReader, yields chunks."""
+        chunk1 = b"first chunk"
+        chunk2 = b"second chunk"
+
+        reader = MagicMock()
+        reader.read = AsyncMock(
+            side_effect=[
+                _make_reader_result(done=False, value=chunk1),
+                _make_reader_result(done=False, value=chunk2),
+                _make_reader_result(done=True),
+            ]
+        )
+        reader.releaseLock = MagicMock()
+
+        body = MagicMock()
+        body.getReader = MagicMock(return_value=reader)
+
+        r2_obj = SimpleNamespace(body=body)
+
+        chunks = []
+        async for chunk in stream_r2_body(r2_obj):
+            chunks.append(chunk)
+
+        assert chunks == [b"first chunk", b"second chunk"]
+        reader.releaseLock.assert_called_once()
+
+    async def test_releases_lock_on_exception(self) -> None:
+        """Reader lock is released even if an error occurs during reading."""
+        reader = MagicMock()
+        reader.read = AsyncMock(side_effect=RuntimeError("read failed"))
+        reader.releaseLock = MagicMock()
+
+        body = MagicMock()
+        body.getReader = MagicMock(return_value=reader)
+
+        r2_obj = SimpleNamespace(body=body)
+
+        with pytest.raises(RuntimeError, match="read failed"):
+            async for _ in stream_r2_body(r2_obj):
+                pass
+
+        reader.releaseLock.assert_called_once()
+
+    async def test_skips_none_chunks(self) -> None:
+        """Chunks where value is None are silently skipped."""
+        reader = MagicMock()
+        reader.read = AsyncMock(
+            side_effect=[
+                _make_reader_result(done=False, value=b"data"),
+                _make_reader_result(done=False, value=None),
+                _make_reader_result(done=True),
+            ]
+        )
+        reader.releaseLock = MagicMock()
+
+        body = MagicMock()
+        body.getReader = MagicMock(return_value=reader)
+
+        r2_obj = SimpleNamespace(body=body)
+
+        chunks = []
+        async for chunk in stream_r2_body(r2_obj):
+            chunks.append(chunk)
+
+        assert chunks == [b"data"]
+
+    async def test_fallback_no_body(self) -> None:
+        """When R2 object has no body, falls back to consume_readable_stream."""
+        r2_obj = MagicMock(spec=[])  # No attributes at all
+        r2_obj.arrayBuffer = AsyncMock(return_value=b"full content")
+
+        chunks = []
+        async for chunk in stream_r2_body(r2_obj):
+            chunks.append(chunk)
+
+        assert chunks == [b"full content"]
+
+    async def test_fallback_body_without_get_reader(self) -> None:
+        """When body exists but has no getReader, falls back to full load."""
+        r2_obj = MagicMock()
+        r2_obj.body = SimpleNamespace()  # body exists but no getReader
+        r2_obj.arrayBuffer = AsyncMock(return_value=b"buffered")
+
+        chunks = []
+        async for chunk in stream_r2_body(r2_obj):
+            chunks.append(chunk)
+
+        assert chunks == [b"buffered"]
+
+    async def test_single_chunk_stream(self) -> None:
+        """A stream that yields exactly one chunk works correctly."""
+        reader = MagicMock()
+        reader.read = AsyncMock(
+            side_effect=[
+                _make_reader_result(done=False, value=b"only chunk"),
+                _make_reader_result(done=True),
+            ]
+        )
+        reader.releaseLock = MagicMock()
+
+        body = MagicMock()
+        body.getReader = MagicMock(return_value=reader)
+
+        r2_obj = SimpleNamespace(body=body)
+
+        chunks = []
+        async for chunk in stream_r2_body(r2_obj):
+            chunks.append(chunk)
+
+        assert chunks == [b"only chunk"]
+
+    async def test_empty_stream(self) -> None:
+        """A stream that is immediately done yields nothing."""
+        reader = MagicMock()
+        reader.read = AsyncMock(
+            return_value=_make_reader_result(done=True),
+        )
+        reader.releaseLock = MagicMock()
+
+        body = MagicMock()
+        body.getReader = MagicMock(return_value=reader)
+
+        r2_obj = SimpleNamespace(body=body)
+
+        chunks = []
+        async for chunk in stream_r2_body(r2_obj):
+            chunks.append(chunk)
+
+        assert chunks == []
+        reader.releaseLock.assert_called_once()
+
+
+# =========================================================================
+# get_r2_size — extract size from R2 object
+# =========================================================================
+
+
+class TestGetR2Size:
+    def test_returns_size_as_int(self) -> None:
+        r2_obj = SimpleNamespace(size=12345)
+        assert get_r2_size(r2_obj) == 12345
+
+    def test_returns_none_when_no_size(self) -> None:
+        r2_obj = SimpleNamespace()
+        assert get_r2_size(r2_obj) is None
+
+    def test_returns_none_when_size_is_none(self) -> None:
+        r2_obj = SimpleNamespace(size=None)
+        assert get_r2_size(r2_obj) is None
+
+    def test_converts_string_size(self) -> None:
+        """Some JS interop may return size as a string-like number."""
+        r2_obj = SimpleNamespace(size="4096")
+        assert get_r2_size(r2_obj) == 4096
+
+    def test_zero_size(self) -> None:
+        """Zero is a valid size (empty file)."""
+        r2_obj = SimpleNamespace(size=0)
+        assert get_r2_size(r2_obj) == 0
+
+
+# =========================================================================
+# HttpError
+# =========================================================================
+
+
+class TestHttpError:
+    def test_is_exception_subclass(self) -> None:
+        assert issubclass(HttpError, Exception)
+
+    def test_status_code_attribute(self) -> None:
+        err = HttpError(404, "Not Found")
+        assert err.status_code == 404
+
+    def test_message_formatting(self) -> None:
+        err = HttpError(500, "Internal Server Error")
+        assert "500" in str(err)
+        assert "Internal Server Error" in str(err)
+
+    def test_empty_message(self) -> None:
+        err = HttpError(403)
+        assert err.status_code == 403
+        assert "403" in str(err)
+
+    def test_can_be_caught(self) -> None:
+        with pytest.raises(HttpError) as exc_info:
+            raise HttpError(502, "Bad Gateway")
+        assert exc_info.value.status_code == 502
+
+
+# =========================================================================
+# HttpResponse
+# =========================================================================
+
+
+class TestHttpResponse:
+    def test_json_parsing(self) -> None:
+        resp = HttpResponse(
+            status_code=200,
+            _body=b'{"key": "value", "count": 42}',
+        )
+        data = resp.json()
+        assert data == {"key": "value", "count": 42}
+
+    def test_json_parsing_array(self) -> None:
+        resp = HttpResponse(status_code=200, _body=b'[1, 2, 3]')
+        assert resp.json() == [1, 2, 3]
+
+    def test_text_property(self) -> None:
+        resp = HttpResponse(status_code=200, _body=b"Hello World")
+        assert resp.text == "Hello World"
+
+    def test_text_utf8(self) -> None:
+        resp = HttpResponse(status_code=200, _body="Ünïcödé".encode())
+        assert resp.text == "Ünïcödé"
+
+    def test_content_property(self) -> None:
+        body = b"\x89PNG\r\n\x1a\n"
+        resp = HttpResponse(status_code=200, _body=body)
+        assert resp.content == body
+        assert isinstance(resp.content, bytes)
+
+    def test_headers_with_values(self) -> None:
+        resp = HttpResponse(
+            status_code=200,
+            _body=b"",
+            _headers={"content-type": "application/json", "x-custom": "value"},
+        )
+        assert resp.headers["content-type"] == "application/json"
+        assert resp.headers["x-custom"] == "value"
+
+    def test_headers_when_none(self) -> None:
+        resp = HttpResponse(status_code=200, _body=b"")
+        assert resp.headers == {}
+
+    def test_url_attribute(self) -> None:
+        resp = HttpResponse(
+            status_code=200, _body=b"", url="https://example.com/page"
+        )
+        assert resp.url == "https://example.com/page"
+
+    def test_url_default_empty(self) -> None:
+        resp = HttpResponse(status_code=200, _body=b"")
+        assert resp.url == ""
+
+    def test_raise_for_status_200(self) -> None:
+        resp = HttpResponse(status_code=200, _body=b"OK")
+        resp.raise_for_status()  # Should not raise
+
+    def test_raise_for_status_201(self) -> None:
+        resp = HttpResponse(status_code=201, _body=b"Created")
+        resp.raise_for_status()  # Should not raise
+
+    def test_raise_for_status_301(self) -> None:
+        resp = HttpResponse(status_code=301, _body=b"Moved")
+        resp.raise_for_status()  # 3xx should not raise
+
+    def test_raise_for_status_400(self) -> None:
+        resp = HttpResponse(status_code=400, _body=b"Bad Request")
+        with pytest.raises(HttpError) as exc_info:
+            resp.raise_for_status()
+        assert exc_info.value.status_code == 400
+
+    def test_raise_for_status_404(self) -> None:
+        resp = HttpResponse(status_code=404, _body=b"Not Found")
+        with pytest.raises(HttpError) as exc_info:
+            resp.raise_for_status()
+        assert exc_info.value.status_code == 404
+
+    def test_raise_for_status_500(self) -> None:
+        resp = HttpResponse(status_code=500, _body=b"Internal Server Error")
+        with pytest.raises(HttpError) as exc_info:
+            resp.raise_for_status()
+        assert exc_info.value.status_code == 500
+
+    def test_raise_for_status_truncates_long_body(self) -> None:
+        """Error message should not include the entire response body."""
+        long_body = b"x" * 1000
+        resp = HttpResponse(status_code=500, _body=long_body)
+        with pytest.raises(HttpError) as exc_info:
+            resp.raise_for_status()
+        # The text[:500] truncation in raise_for_status
+        assert len(str(exc_info.value)) < 600
+
+
+# =========================================================================
+# http_fetch — CPython path (uses httpx)
+# =========================================================================
+
+
+class TestHttpFetch:
+    """Tests for http_fetch's CPython code path (httpx-based)."""
+
+    async def test_get_request(self) -> None:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.content = b"response body"
+        mock_resp.url = "https://example.com/"
+        mock_resp.headers = {"content-type": "text/html"}
+
+        mock_client = AsyncMock()
+        mock_client.request = AsyncMock(return_value=mock_resp)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            resp = await http_fetch("https://example.com/")
+
+        assert resp.status_code == 200
+        assert resp.text == "response body"
+        assert resp.url == "https://example.com/"
+
+    async def test_post_with_json(self) -> None:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 201
+        mock_resp.content = b'{"id": "abc"}'
+        mock_resp.url = "https://api.example.com/items"
+        mock_resp.headers = {}
+
+        mock_client = AsyncMock()
+        mock_client.request = AsyncMock(return_value=mock_resp)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            resp = await http_fetch(
+                "https://api.example.com/items",
+                method="POST",
+                json_data={"title": "Test"},
+            )
+
+        assert resp.status_code == 201
+        # Verify JSON content-type was set
+        call_args = mock_client.request.call_args
+        assert call_args.kwargs["headers"]["Content-Type"] == "application/json"
+        # Verify body contains serialized JSON
+        assert '"title"' in call_args.kwargs["content"]
+
+    async def test_post_with_form_data(self) -> None:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.content = b"ok"
+        mock_resp.url = "https://example.com/form"
+        mock_resp.headers = {}
+
+        mock_client = AsyncMock()
+        mock_client.request = AsyncMock(return_value=mock_resp)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            resp = await http_fetch(
+                "https://example.com/form",
+                method="POST",
+                form_data={"grant_type": "authorization_code", "code": "abc123"},
+            )
+
+        assert resp.status_code == 200
+        call_args = mock_client.request.call_args
+        assert (
+            call_args.kwargs["headers"]["Content-Type"]
+            == "application/x-www-form-urlencoded"
+        )
+
+    async def test_custom_headers(self) -> None:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.content = b""
+        mock_resp.url = "https://api.example.com/"
+        mock_resp.headers = {}
+
+        mock_client = AsyncMock()
+        mock_client.request = AsyncMock(return_value=mock_resp)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            await http_fetch(
+                "https://api.example.com/",
+                headers={"Authorization": "Bearer token123"},
+            )
+
+        call_args = mock_client.request.call_args
+        assert call_args.kwargs["headers"]["Authorization"] == "Bearer token123"
+
+    async def test_timeout_raises_timeout_error(self) -> None:
+        import httpx
+
+        mock_client = AsyncMock()
+        mock_client.request = AsyncMock(
+            side_effect=httpx.TimeoutException("timed out")
+        )
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            with pytest.raises(TimeoutError):
+                await http_fetch("https://slow.example.com/", timeout=1.0)
+
+    async def test_connection_error_raises_connection_error(self) -> None:
+        import httpx
+
+        mock_client = AsyncMock()
+        mock_client.request = AsyncMock(
+            side_effect=httpx.ConnectError("connection refused")
+        )
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            with pytest.raises(ConnectionError):
+                await http_fetch("https://down.example.com/")
+
+    async def test_follow_redirects_default_true(self) -> None:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.content = b""
+        mock_resp.url = "https://example.com/final"
+        mock_resp.headers = {}
+
+        mock_client = AsyncMock()
+        mock_client.request = AsyncMock(return_value=mock_resp)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("httpx.AsyncClient", return_value=mock_client) as mock_cls:
+            await http_fetch("https://example.com/redirect")
+
+        # Verify follow_redirects=True was passed to AsyncClient
+        mock_cls.assert_called_once()
+        call_kwargs = mock_cls.call_args.kwargs
+        assert call_kwargs["follow_redirects"] is True
+
+    async def test_follow_redirects_false(self) -> None:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 302
+        mock_resp.content = b""
+        mock_resp.url = "https://example.com/login"
+        mock_resp.headers = {"location": "https://example.com/callback"}
+
+        mock_client = AsyncMock()
+        mock_client.request = AsyncMock(return_value=mock_resp)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("httpx.AsyncClient", return_value=mock_client) as mock_cls:
+            resp = await http_fetch(
+                "https://example.com/login", follow_redirects=False
+            )
+
+        assert resp.status_code == 302
+        call_kwargs = mock_cls.call_args.kwargs
+        assert call_kwargs["follow_redirects"] is False
+
+
+# =========================================================================
+# HttpClient — async context manager wrapping http_fetch
+# =========================================================================
+
+
+class TestHttpClient:
+    async def test_context_manager_protocol(self) -> None:
+        """HttpClient supports async with."""
+        async with HttpClient() as client:
+            assert isinstance(client, HttpClient)
+
+    async def test_get_delegates_to_http_fetch(self) -> None:
+        expected = HttpResponse(status_code=200, _body=b"ok")
+        with patch(
+            "src.wrappers.http_fetch", new_callable=AsyncMock, return_value=expected,
+        ) as mock:
+            async with HttpClient() as client:
+                resp = await client.get("https://example.com/")
+        assert resp is expected
+        mock.assert_awaited_once_with(
+            "https://example.com/",
+            method="GET",
+            headers=None,
+            timeout=10.0,
+            follow_redirects=True,
+        )
+
+    async def test_get_with_custom_headers(self) -> None:
+        expected = HttpResponse(status_code=200, _body=b"")
+        with patch(
+            "src.wrappers.http_fetch", new_callable=AsyncMock, return_value=expected,
+        ) as mock:
+            async with HttpClient() as client:
+                await client.get(
+                    "https://example.com/",
+                    headers={"User-Agent": "Tasche/1.0"},
+                    timeout=30.0,
+                )
+        mock.assert_awaited_once_with(
+            "https://example.com/",
+            method="GET",
+            headers={"User-Agent": "Tasche/1.0"},
+            timeout=30.0,
+            follow_redirects=True,
+        )
+
+    async def test_post_with_json(self) -> None:
+        expected = HttpResponse(status_code=201, _body=b'{"id":"new"}')
+        with patch(
+            "src.wrappers.http_fetch", new_callable=AsyncMock, return_value=expected,
+        ) as mock:
+            async with HttpClient() as client:
+                resp = await client.post(
+                    "https://api.example.com/items",
+                    json={"title": "Test"},
+                )
+        assert resp.status_code == 201
+        mock.assert_awaited_once_with(
+            "https://api.example.com/items",
+            method="POST",
+            headers=None,
+            json_data={"title": "Test"},
+            form_data=None,
+            body=None,
+            timeout=10.0,
+        )
+
+    async def test_post_with_form_data(self) -> None:
+        expected = HttpResponse(status_code=200, _body=b"ok")
+        with patch(
+            "src.wrappers.http_fetch", new_callable=AsyncMock, return_value=expected,
+        ) as mock:
+            async with HttpClient() as client:
+                await client.post(
+                    "https://example.com/token",
+                    data={"grant_type": "authorization_code"},
+                )
+        mock.assert_awaited_once_with(
+            "https://example.com/token",
+            method="POST",
+            headers=None,
+            json_data=None,
+            form_data={"grant_type": "authorization_code"},
+            body=None,
+            timeout=10.0,
+        )
+
+    async def test_post_with_string_body(self) -> None:
+        expected = HttpResponse(status_code=200, _body=b"ok")
+        with patch(
+            "src.wrappers.http_fetch", new_callable=AsyncMock, return_value=expected,
+        ) as mock:
+            async with HttpClient() as client:
+                await client.post(
+                    "https://example.com/raw",
+                    data="raw body string",
+                )
+        mock.assert_awaited_once_with(
+            "https://example.com/raw",
+            method="POST",
+            headers=None,
+            json_data=None,
+            form_data=None,
+            body="raw body string",
+            timeout=10.0,
+        )
+
+    async def test_head_request(self) -> None:
+        expected = HttpResponse(status_code=200, _body=b"")
+        with patch(
+            "src.wrappers.http_fetch", new_callable=AsyncMock, return_value=expected,
+        ) as mock:
+            async with HttpClient() as client:
+                resp = await client.head("https://example.com/page")
+        assert resp.status_code == 200
+        mock.assert_awaited_once_with(
+            "https://example.com/page",
+            method="HEAD",
+            headers=None,
+            timeout=10.0,
+            follow_redirects=True,
+        )
+
+    async def test_head_no_follow_redirects(self) -> None:
+        expected = HttpResponse(status_code=301, _body=b"")
+        with patch(
+            "src.wrappers.http_fetch", new_callable=AsyncMock, return_value=expected,
+        ) as mock:
+            async with HttpClient() as client:
+                resp = await client.head(
+                    "https://example.com/old",
+                    follow_redirects=False,
+                )
+        assert resp.status_code == 301
+        mock.assert_awaited_once_with(
+            "https://example.com/old",
+            method="HEAD",
+            headers=None,
+            timeout=10.0,
+            follow_redirects=False,
+        )

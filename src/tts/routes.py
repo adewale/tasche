@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from articles.routes import _get_user_article
 from auth.dependencies import get_current_user
-from wrappers import _to_js_value, to_py_bytes
+from wrappers import _to_js_value, get_r2_size, stream_r2_body
 
 router = APIRouter()
 
@@ -133,47 +133,14 @@ async def get_audio(
     if audio_obj is None:
         raise HTTPException(status_code=404, detail="Audio file not found")
 
-    # Stream from R2 body if available, otherwise fall back to arrayBuffer
-    body = getattr(audio_obj, "body", None)
-
-    if body is not None and hasattr(body, "getReader"):
-        # R2 ReadableStream — read chunks via JS reader
-        async def _stream_body():
-            reader = body.getReader()
-            try:
-                while True:
-                    result = await reader.read()
-                    done = getattr(result, "done", True)
-                    if done:
-                        break
-                    chunk = getattr(result, "value", None)
-                    if chunk is not None:
-                        yield to_py_bytes(chunk)
-            finally:
-                reader.releaseLock()
-
-        headers = {"Cache-Control": "public, max-age=86400, immutable"}
-        content_length = getattr(audio_obj, "size", None)
-        if content_length is not None:
-            headers["Content-Length"] = str(content_length)
-
-        return StreamingResponse(
-            _stream_body(),
-            media_type="audio/mpeg",
-            headers=headers,
-        )
-
-    # Fallback: load entire buffer (for mocks / non-streaming environments)
-    audio_bytes = to_py_bytes(await audio_obj.arrayBuffer())
-
-    async def _stream():
-        yield audio_bytes
+    # Stream audio from R2 via wrappers boundary layer
+    headers = {"Cache-Control": "public, max-age=86400, immutable"}
+    content_length = get_r2_size(audio_obj)
+    if content_length is not None:
+        headers["Content-Length"] = str(content_length)
 
     return StreamingResponse(
-        _stream(),
+        stream_r2_body(audio_obj),
         media_type="audio/mpeg",
-        headers={
-            "Content-Length": str(len(audio_bytes)),
-            "Cache-Control": "public, max-age=86400, immutable",
-        },
+        headers=headers,
     )

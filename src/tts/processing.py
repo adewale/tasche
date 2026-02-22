@@ -21,7 +21,7 @@ import traceback
 from datetime import UTC, datetime
 
 from articles.storage import article_key
-from wrappers import _to_js_value, d1_first, to_py_bytes
+from wrappers import _to_js_value, consume_readable_stream, d1_first
 
 # TTS model identifier
 _TTS_MODEL = "@cf/deepgram/aura-2-en"
@@ -258,9 +258,7 @@ async def process_tts(article_id: str, env: object, *, user_id: str) -> None:
         audio_data = await ai.run(_TTS_MODEL, inputs)
 
         # Consume ReadableStream if the AI binding returns one
-        if hasattr(audio_data, "arrayBuffer"):
-            audio_data = await audio_data.arrayBuffer()
-        audio_data = to_py_bytes(audio_data)
+        audio_data = await consume_readable_stream(audio_data)
         if not audio_data:
             raise ValueError("Workers AI returned empty audio data")
 
