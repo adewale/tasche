@@ -127,6 +127,13 @@ def _to_py_safe(value: Any, depth: int = 0) -> Any:
             return [_to_py_safe(item, depth + 1) for item in converted]
         return converted
 
+    # Plain dicts/lists may still contain JsNull values from .to_py()
+    # recursion — scrub them.
+    if isinstance(value, dict):
+        return {k: _to_py_safe(v, depth + 1) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_to_py_safe(item, depth + 1) for item in value]
+
     # Already a Python type
     return value
 

@@ -87,8 +87,10 @@ async def search_articles(
     db = env.DB
     user_id = user["user_id"]
 
+    # Prefix columns with "articles." to avoid ambiguity with FTS5 table columns.
+    prefixed = ", ".join(f"articles.{c.strip()}" for c in _SEARCH_COLUMNS.split(","))
     sql = (
-        f"SELECT {_SEARCH_COLUMNS} FROM articles "
+        f"SELECT {prefixed} FROM articles "
         "INNER JOIN articles_fts ON articles.rowid = articles_fts.rowid "
         "WHERE articles_fts MATCH ? AND articles.user_id = ? "
         "ORDER BY articles_fts.rank "
