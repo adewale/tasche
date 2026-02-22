@@ -21,7 +21,7 @@ import traceback
 from datetime import UTC, datetime
 
 from articles.storage import article_key
-from wrappers import _to_js_value, consume_readable_stream, d1_first
+from wrappers import _to_js_value, consume_readable_stream, d1_first, r2_put
 
 # TTS model identifier
 _TTS_MODEL = "@cf/deepgram/aura-2-en"
@@ -264,7 +264,7 @@ async def process_tts(article_id: str, env: object, *, user_id: str) -> None:
 
         # Step 5: Store audio in R2
         audio_r2_key = article_key(article_id, "audio.mp3")
-        await r2.put(audio_r2_key, audio_data)
+        await r2_put(r2, audio_r2_key, audio_data)
 
         # Step 6: Update D1 with audio metadata
         duration = _estimate_duration(tts_text)

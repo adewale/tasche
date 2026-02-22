@@ -346,3 +346,38 @@ This is the meta-lesson that encompasses all the above. The original spec had:
 The implementation perfectly reflected this asymmetry: the backend was robust, tested, and hardened. The frontend existed but was perceived as incomplete because the spec never defined what "complete" looked like for the frontend.
 
 **Lesson:** Measure the precision of your spec across all layers. If the backend section has tables, schemas, and exact values, the frontend section needs wireframes, component specs, and state management patterns. Asymmetric precision produces asymmetric results.
+
+### 29. Python `bytes` Cannot Cross the FFI Boundary to R2
+
+R2's `.put()` method accepts JS types: `ReadableStream`, `ArrayBuffer`, `ArrayBufferView`, `string`, or `Blob`. Python `bytes` are **none of these** — they cross the Pyodide FFI as an opaque PyProxy that R2 rejects with `TypeError: parameter 2 is not of type 'ReadableStream or ArrayBuffer or ArrayBufferView or string or Blob'`.
+
+The fix is explicit conversion: `to_js(data)` converts Python `bytes` to a JS `Uint8Array`. `str` values work natively because JS strings are a primitive type that Pyodide passes through automatically.
+
+This bug affected every binary write: image storage, screenshot storage, and TTS audio storage. It went undetected because unit tests use mock R2 objects that accept any Python type.
+
+**The full Pyodide→JS type compatibility matrix:**
+
+| Python type | JS result | R2 `.put()` | D1 `.bind()` | KV `.put()` |
+|---|---|---|---|---|
+| `str` | JS string | OK | OK | OK |
+| `int` | JS number | N/A | OK | N/A |
+| `float` | JS number | N/A | OK | N/A |
+| `bool` | JS boolean | N/A | OK | N/A |
+| `None` | JS `undefined` | N/A | **FAILS** (use `d1_null()`) | N/A |
+| `bytes` | PyProxy | **FAILS** (use `to_js()`) | N/A | **FAILS** (use `to_js()`) |
+| `dict` | PyProxy/Map | **FAILS** (use `_to_js_value()`) | N/A | N/A |
+| `list` | PyProxy | **FAILS** (use `_to_js_value()`) | N/A | N/A |
+
+**Lesson:** Every Python type that isn't a primitive (`str`, `int`, `float`, `bool`) needs explicit conversion before passing to a Cloudflare binding. Centralise all writes through wrapper helpers (`r2_put()`, `d1_null()`, `_to_js_value()`) so the conversion happens in exactly one place. Mock-based tests cannot catch these failures — only a live smoke test can.
+
+### 30. The FFI Boundary Is a Write Problem, Not Just a Read Problem
+
+Earlier lessons (1, 10, 27) focused on the JS→Python direction: converting D1 results, R2 responses, and queue messages from JsProxy to native Python types. But the Python→JS direction is equally treacherous:
+
+- `None` → `undefined` (not `null`) breaks D1 `.bind()`
+- `bytes` → PyProxy (not `Uint8Array`) breaks R2 `.put()`
+- `dict` → Map (not Object) breaks queue `.send()`
+
+The centralised boundary layer (`wrappers.py`) must handle **both directions**. Every wrapper helper should be named for its purpose, not its mechanism: `d1_null()` (not `get_js_null()`), `r2_put()` (not `to_js_bytes()`), `stream_r2_body()` (not `getReader()`).
+
+**Lesson:** Design the FFI boundary layer as a bidirectional gateway. For each Cloudflare binding, there should be wrapper helpers for both reading (JS→Python) and writing (Python→JS). If you only wrap reads, writes will eventually break in production.

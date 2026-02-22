@@ -143,6 +143,38 @@ def get_r2_size(r2_obj: Any) -> int | None:
     return int(size)
 
 
+def to_js_bytes(data: bytes | bytearray | memoryview) -> Any:
+    """Convert Python bytes to a JS ``Uint8Array`` for R2 / Workers AI.
+
+    R2's ``.put()`` and Workers AI ``.run()`` reject Python ``bytes``
+    because the Pyodide FFI does not automatically convert them to a JS
+    buffer type.  This helper converts explicitly via ``to_js()``.
+
+    ``str`` values are accepted natively by R2 — do NOT use this helper
+    for string payloads.
+
+    Outside Pyodide, returns the data unchanged (for test mocks).
+    """
+    if not HAS_PYODIDE:
+        return data
+    return to_js(data)
+
+
+async def r2_put(r2: Any, key: str, data: Any) -> None:
+    """Write a value to R2 with correct FFI type conversion.
+
+    This is the **only** place that should call ``r2.put()`` for binary
+    data.  It converts Python ``bytes``/``bytearray``/``memoryview`` to
+    a JS ``Uint8Array`` before writing.  ``str`` values pass through
+    unchanged since R2 accepts JS strings natively.
+
+    Outside Pyodide, delegates directly to ``r2.put()`` (for test mocks).
+    """
+    if isinstance(data, (bytes, bytearray, memoryview)):
+        data = to_js_bytes(data)
+    await r2.put(key, data)
+
+
 # ---------------------------------------------------------------------------
 # JsProxy -> Python conversion
 # ---------------------------------------------------------------------------

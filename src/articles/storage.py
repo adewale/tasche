@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from wrappers import _to_py_safe
+from wrappers import _to_py_safe, r2_put
 
 
 def article_key(article_id: str, filename: str) -> str:
@@ -52,7 +52,7 @@ async def store_content(r2: Any, article_id: str, html: str) -> dict[str, str]:
     """
     html_k = article_key(article_id, "content.html")
 
-    await r2.put(html_k, html)
+    await r2_put(r2, html_k, html)
 
     return {"html_key": html_k}
 
@@ -96,7 +96,7 @@ async def store_metadata(r2: Any, article_id: str, metadata: dict[str, Any]) -> 
         The R2 key where the metadata was stored.
     """
     key = article_key(article_id, "metadata.json")
-    await r2.put(key, json.dumps(metadata))
+    await r2_put(r2, key, json.dumps(metadata))
     return key
 
 

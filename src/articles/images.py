@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 
 from articles.urls import _is_private_hostname
+from wrappers import r2_put
 
 # Mapping of MIME types to file extensions for stored images
 _MIME_TO_EXT: dict[str, str] = {
@@ -164,7 +165,7 @@ async def store_images(
         url_hash = hashlib.sha256(url.encode()).hexdigest()[:16]
         r2_key = f"articles/{article_id}/images/{url_hash}{ext}"
 
-        await r2.put(r2_key, data)
+        await r2_put(r2, r2_key, data)
         image_map[url] = r2_key
 
     return image_map

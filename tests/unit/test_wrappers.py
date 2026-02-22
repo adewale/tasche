@@ -30,7 +30,9 @@ from src.wrappers import (
     get_js_null,
     get_r2_size,
     http_fetch,
+    r2_put,
     stream_r2_body,
+    to_js_bytes,
     to_py_bytes,
 )
 
@@ -653,6 +655,65 @@ class TestGetR2Size:
         """Zero is a valid size (empty file)."""
         r2_obj = SimpleNamespace(size=0)
         assert get_r2_size(r2_obj) == 0
+
+
+# =========================================================================
+# to_js_bytes — Python bytes → JS Uint8Array conversion
+# =========================================================================
+
+
+class TestToJsBytes:
+    def test_bytes_passthrough_outside_pyodide(self) -> None:
+        """Outside Pyodide, bytes are returned unchanged."""
+        data = b"image data"
+        assert to_js_bytes(data) is data
+
+    def test_bytearray_passthrough_outside_pyodide(self) -> None:
+        data = bytearray(b"audio")
+        assert to_js_bytes(data) is data
+
+    def test_memoryview_passthrough_outside_pyodide(self) -> None:
+        data = memoryview(b"buffer")
+        assert to_js_bytes(data) is data
+
+
+# =========================================================================
+# r2_put — centralized R2 write with FFI conversion
+# =========================================================================
+
+
+class TestR2Put:
+    async def test_writes_bytes_to_r2(self) -> None:
+        """Python bytes are written to R2 (converted in Pyodide)."""
+        mock_r2 = AsyncMock()
+        await r2_put(mock_r2, "articles/abc/image.webp", b"image data")
+        mock_r2.put.assert_awaited_once_with(
+            "articles/abc/image.webp", b"image data"
+        )
+
+    async def test_writes_string_to_r2(self) -> None:
+        """String values pass through without conversion."""
+        mock_r2 = AsyncMock()
+        await r2_put(mock_r2, "articles/abc/content.html", "<html>hello</html>")
+        mock_r2.put.assert_awaited_once_with(
+            "articles/abc/content.html", "<html>hello</html>"
+        )
+
+    async def test_writes_bytearray_to_r2(self) -> None:
+        mock_r2 = AsyncMock()
+        await r2_put(mock_r2, "key", bytearray(b"data"))
+        mock_r2.put.assert_awaited_once()
+
+    async def test_writes_json_string_to_r2(self) -> None:
+        """JSON strings (from json.dumps) pass through unchanged."""
+        import json
+
+        mock_r2 = AsyncMock()
+        payload = json.dumps({"title": "Test", "word_count": 42})
+        await r2_put(mock_r2, "articles/abc/metadata.json", payload)
+        mock_r2.put.assert_awaited_once_with(
+            "articles/abc/metadata.json", payload
+        )
 
 
 # =========================================================================
