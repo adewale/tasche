@@ -212,7 +212,7 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
 
         # Step 12: Store metadata.json to R2
         content_hash = hashlib.sha256(clean_html.encode("utf-8")).hexdigest()
-        extraction_method = "readability"
+        extraction_method = "bs4"
         await store_metadata(
             r2,
             article_id,

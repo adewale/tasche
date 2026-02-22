@@ -1,6 +1,6 @@
 """Tests for Phase 4 — Content extraction utilities.
 
-Covers canonical URL extraction, article extraction via python-readability,
+Covers canonical URL extraction, article extraction via BeautifulSoup,
 HTML-to-Markdown conversion, word counting, reading time calculation,
 and image path rewriting.
 """

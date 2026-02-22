@@ -5,9 +5,7 @@ markdown conversion, word counting, reading time estimation, and
 image path rewriting.
 
 Libraries used:
-- beautifulsoup4 — HTML parsing (canonical URL extraction, image src extraction)
-- python-readability — article content extraction (Mozilla Readability algorithm),
-  with a BeautifulSoup fallback for Cloudflare Workers where ``eval()`` is blocked.
+- beautifulsoup4 — HTML parsing, content extraction, canonical URL extraction
 - markdownify — HTML to Markdown conversion
 """
 
@@ -18,13 +16,6 @@ import re
 
 from bs4 import BeautifulSoup, Tag
 from markdownify import markdownify
-
-# python-readability uses js.eval() internally which is blocked in Cloudflare
-# Workers.  Fall back to a BeautifulSoup-based extractor when unavailable.
-try:
-    from readability import parse as readability_parse
-except Exception:
-    readability_parse = None  # type: ignore[assignment]
 
 
 def extract_canonical_url(html: str) -> str | None:
@@ -54,9 +45,8 @@ def extract_canonical_url(html: str) -> str | None:
 def extract_article(html: str) -> dict:
     """Extract article content from HTML.
 
-    Uses python-readability (Mozilla Readability algorithm) when available.
-    Falls back to a BeautifulSoup heuristic extractor in Cloudflare Workers
-    where python-readability cannot load due to ``eval()`` restrictions.
+    Uses a BeautifulSoup heuristic extractor that identifies the main content
+    container and strips boilerplate elements.
 
     Parameters
     ----------
@@ -69,22 +59,11 @@ def extract_article(html: str) -> dict:
         Keys: ``title`` (str), ``html`` (str — clean article HTML),
         ``excerpt`` (str — short summary), ``byline`` (str | None — author).
     """
-    if readability_parse is not None:
-        article = readability_parse(html)
-        content = article.content or ""
-        excerpt = article.excerpt or _make_excerpt(content)
-        return {
-            "title": article.title or "",
-            "html": content,
-            "excerpt": excerpt,
-            "byline": article.byline or None,
-        }
-
     return _extract_article_bs4(html)
 
 
 # ---------------------------------------------------------------------------
-# BeautifulSoup fallback extractor (used in Workers where eval() is blocked)
+# BeautifulSoup content extractor
 # ---------------------------------------------------------------------------
 
 # Tags that are never article content.

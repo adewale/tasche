@@ -456,7 +456,7 @@ class TestMetadataJsonEnhanced:
         assert len(metadata["content_hash"]) == 64
 
     async def test_metadata_includes_extraction_method(self) -> None:
-        """metadata.json includes extraction_method field set to 'readability'."""
+        """metadata.json includes extraction_method field set to 'bs4'."""
         db = _TrackingD1()
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
@@ -474,7 +474,7 @@ class TestMetadataJsonEnhanced:
         metadata_key = "articles/art_method/metadata.json"
         assert metadata_key in r2._store
         metadata = json.loads(r2._store[metadata_key].decode("utf-8"))
-        assert metadata["extraction_method"] == "readability"
+        assert metadata["extraction_method"] == "bs4"
 
     async def test_metadata_includes_archived_at(self) -> None:
         """metadata.json includes an archived_at timestamp."""

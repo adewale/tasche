@@ -740,7 +740,8 @@ async def process_now(
 
     try:
         await process_article(article_id, article["original_url"], env)
-        updated = await _get_user_article(db, article_id, user_id, fields="id, status, title, word_count")
+        fields = "id, status, title, word_count"
+        updated = await _get_user_article(db, article_id, user_id, fields=fields)
         return {"id": article_id, "result": "success", "article": updated}
     except Exception as exc:
         return {
