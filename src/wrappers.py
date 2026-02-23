@@ -460,6 +460,32 @@ class SafeAI:
         return await self._ai.run(model, inputs, **kwargs)
 
 
+class SafeReadability:
+    """Wraps a Readability JS Worker Service Binding with automatic result conversion."""
+
+    def __init__(self, binding: Any) -> None:
+        self._binding = binding
+
+    async def parse(self, html: str, url: str) -> dict[str, Any]:
+        """Extract article content via the Readability Service Binding.
+
+        Parameters
+        ----------
+        html:
+            Raw HTML of the fetched page.
+        url:
+            Final URL after redirects (used by Readability for resolving relative URLs).
+
+        Returns
+        -------
+        dict
+            Keys: ``title``, ``html``, ``excerpt``, ``byline`` — matching
+            the contract of ``extraction.extract_article()``.
+        """
+        result = await self._binding.parse(html, url)
+        return _to_py_safe(result)
+
+
 # ---------------------------------------------------------------------------
 # SafeEnv — typed, safe access to all Worker bindings
 # ---------------------------------------------------------------------------
@@ -477,6 +503,7 @@ class SafeEnv:
         # env.SESSIONS is SafeKV
         # env.ARTICLE_QUEUE is SafeQueue — auto-converts dict→JS Object
         # env.AI is SafeAI — auto-converts dict→JS Object
+        # env.READABILITY is SafeReadability — auto-converts JsProxy→dict
         # env.get("SITE_URL") still works for env vars
 
     Idempotent: wrapping an already-wrapped ``SafeEnv`` returns itself.
@@ -491,6 +518,7 @@ class SafeEnv:
             self.SESSIONS = env.SESSIONS
             self.ARTICLE_QUEUE = env.ARTICLE_QUEUE
             self.AI = env.AI
+            self.READABILITY = env.READABILITY
             return
 
         self._env = env
@@ -504,6 +532,8 @@ class SafeEnv:
         self.ARTICLE_QUEUE = SafeQueue(queue) if queue is not None else None
         ai = getattr(env, "AI", None)
         self.AI = SafeAI(ai) if ai is not None else None
+        readability = getattr(env, "READABILITY", None)
+        self.READABILITY = SafeReadability(readability) if readability is not None else None
 
     def get(self, key: str, default: Any = None) -> Any:
         """Return the binding/var for *key*, or *default* if missing/undefined."""

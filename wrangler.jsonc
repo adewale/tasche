@@ -12,6 +12,7 @@
   // - CF_ACCOUNT_ID, CF_API_TOKEN (Browser Rendering REST API)
   "vars": { "DISABLE_AUTH": "true", "ALLOWED_EMAILS": "", "SITE_URL": "https://tasche.<your-subdomain>.workers.dev" },
   "ai": { "binding": "AI" },
+  "services": [{ "binding": "READABILITY", "service": "readability-worker", "entrypoint": "ReadabilityService" }],
   "d1_databases": [{ "binding": "DB", "database_name": "tasche-db", "database_id": "7f0dfc00-1891-4d8a-9876-03dbd8cf6804" }],
   "r2_buckets": [{ "binding": "CONTENT", "bucket_name": "tasche-content" }],
   "kv_namespaces": [{ "binding": "SESSIONS", "id": "7ca9ebd65b3e40638ec32f5c635483de" }],
@@ -38,6 +39,7 @@
       "workers_dev": true,
       "vars": { "ALLOWED_EMAILS": "", "SITE_URL": "https://tasche-production.adewale-883.workers.dev" },
       "ai": { "binding": "AI" },
+      "services": [{ "binding": "READABILITY", "service": "readability-worker", "entrypoint": "ReadabilityService" }],
       "d1_databases": [{ "binding": "DB", "database_name": "tasche-production-db", "database_id": "58401394-d213-4749-ab04-bfa064dc7431" }],
       "r2_buckets": [{ "binding": "CONTENT", "bucket_name": "tasche-production-content" }],
       "kv_namespaces": [{ "binding": "SESSIONS", "id": "35956dabdaa04208a7770dee68c24a53" }],
@@ -50,6 +52,7 @@
       "workers_dev": true,
       "vars": { "DISABLE_AUTH": "true", "ALLOWED_EMAILS": "", "SITE_URL": "https://tasche-staging.adewale-883.workers.dev" },
       "ai": { "binding": "AI" },
+      "services": [{ "binding": "READABILITY", "service": "readability-worker", "entrypoint": "ReadabilityService" }],
       "d1_databases": [{ "binding": "DB", "database_name": "tasche-staging-db", "database_id": "4a1d5914-2446-4cfd-be0b-a1c78a7d495e" }],
       "r2_buckets": [{ "binding": "CONTENT", "bucket_name": "tasche-staging-content" }],
       "kv_namespaces": [{ "binding": "SESSIONS", "id": "c14befabaecf4b758d28952cb60b9860" }],

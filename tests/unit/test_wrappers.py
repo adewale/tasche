@@ -24,6 +24,7 @@ from src.wrappers import (
     SafeKV,
     SafeQueue,
     SafeR2,
+    SafeReadability,
     _is_js_null_or_undefined,
     _is_js_undefined,
     _to_js_value,
@@ -207,11 +208,12 @@ class TestSafeEnv:
 
     def test_bindings_wrapped_at_init(self) -> None:
         """Known bindings (DB, CONTENT, etc.) are wrapped in Safe* classes."""
-        from tests.conftest import MockAI, MockD1, MockKV, MockQueue, MockR2
+        from tests.conftest import MockAI, MockD1, MockKV, MockQueue, MockR2, MockReadability
 
         raw = SimpleNamespace(
             DB=MockD1(), CONTENT=MockR2(), SESSIONS=MockKV(),
             ARTICLE_QUEUE=MockQueue(), AI=MockAI(),
+            READABILITY=MockReadability(),
         )
         env = SafeEnv(raw)
         assert isinstance(env.DB, SafeD1)
@@ -219,6 +221,7 @@ class TestSafeEnv:
         assert isinstance(env.SESSIONS, SafeKV)
         assert isinstance(env.ARTICLE_QUEUE, SafeQueue)
         assert isinstance(env.AI, SafeAI)
+        assert isinstance(env.READABILITY, SafeReadability)
 
     def test_idempotent_wrapping(self) -> None:
         """Wrapping an already-wrapped SafeEnv returns the same wrappers."""
@@ -1181,3 +1184,59 @@ class TestHttpClient:
             timeout=10.0,
             follow_redirects=False,
         )
+
+
+# =========================================================================
+# SafeReadability
+# =========================================================================
+
+
+class TestSafeReadability:
+    async def test_parse_returns_dict(self) -> None:
+        """SafeReadability.parse() returns a plain Python dict."""
+        mock_binding = AsyncMock()
+        mock_binding.parse.return_value = {
+            "title": "Test",
+            "html": "<p>Content</p>",
+            "excerpt": "Content",
+            "byline": "Author",
+        }
+        wrapper = SafeReadability(mock_binding)
+        result = await wrapper.parse("<html>...</html>", "https://example.com")
+        assert result == {
+            "title": "Test",
+            "html": "<p>Content</p>",
+            "excerpt": "Content",
+            "byline": "Author",
+        }
+        mock_binding.parse.assert_awaited_once_with(
+            "<html>...</html>", "https://example.com"
+        )
+
+    async def test_parse_handles_null_byline(self) -> None:
+        """SafeReadability.parse() handles null byline correctly."""
+        mock_binding = AsyncMock()
+        mock_binding.parse.return_value = {
+            "title": "No Author",
+            "html": "<p>Content</p>",
+            "excerpt": "Content",
+            "byline": None,
+        }
+        wrapper = SafeReadability(mock_binding)
+        result = await wrapper.parse("<html>...</html>", "https://example.com")
+        assert result["byline"] is None
+
+    def test_safe_env_none_readability(self) -> None:
+        """SafeEnv with no READABILITY attribute sets it to None."""
+        raw = SimpleNamespace()
+        env = SafeEnv(raw)
+        assert env.READABILITY is None
+
+    def test_safe_env_idempotent_readability(self) -> None:
+        """Wrapping an already-wrapped SafeEnv preserves READABILITY."""
+        from tests.conftest import MockReadability
+
+        raw = SimpleNamespace(READABILITY=MockReadability())
+        env1 = SafeEnv(raw)
+        env2 = SafeEnv(env1)
+        assert env2.READABILITY is env1.READABILITY

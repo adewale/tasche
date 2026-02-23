@@ -381,3 +381,41 @@ Earlier lessons (1, 10, 27) focused on the JS→Python direction: converting D1 
 The centralised boundary layer (`wrappers.py`) must handle **both directions**. Every wrapper helper should be named for its purpose, not its mechanism: `d1_null()` (not `get_js_null()`), `r2_put()` (not `to_js_bytes()`), `stream_r2_body()` (not `getReader()`).
 
 **Lesson:** Design the FFI boundary layer as a bidirectional gateway. For each Cloudflare binding, there should be wrapper helpers for both reading (JS→Python) and writing (Python→JS). If you only wrap reads, writes will eventually break in production.
+
+### 31. Miniflare Queue Consumer Is Unreliable
+
+The same `process_article()` code that works correctly when called inline via the fetch handler silently fails when invoked through Miniflare's queue consumer in local development. No errors appear in logs — the queue messages simply don't trigger the handler, or the handler runs but produces no visible output.
+
+This was discovered by building a `POST /api/articles/{id}/process-now` endpoint that runs the processing pipeline synchronously in the request handler. Both test articles processed successfully via this endpoint but had never processed via the queue.
+
+**Lesson:** Don't trust Miniflare's queue consumer for verifying queue-based workflows. Build an inline processing endpoint (`process-now`) for local development and debugging. The queue path must be verified on the real Cloudflare Workers runtime.
+
+### 32. python-readability Cannot Run in Cloudflare Workers
+
+`python-readability` calls `js.eval()` to load Mozilla Readability JS. Cloudflare Workers blocks `eval()` with `EvalError: Code generation from strings disallowed`. `js.Function()` is also blocked (equivalent to eval). `allow_eval_during_startup` is already the default and doesn't help. Eager-importing exceeds startup time limits.
+
+Every Python readability library that provides high-quality extraction requires lxml (a C extension unavailable in Pyodide). The only Pyodide-safe option is BeautifulSoup heuristic extraction, which lacks Readability's scoring algorithm.
+
+**Solution:** Service Binding to a JS Worker. Deploy a separate JavaScript Worker that bundles `@mozilla/readability` + `linkedom`, call via Service Binding RPC from the Python Worker. The RPC is in-process (~1-5ms), gives 100% Readability fidelity, and keeps the BS4 extractor as fallback.
+
+**Lesson:** When a Python library can't run in Pyodide due to runtime restrictions, consider Service Bindings to a JS Worker rather than porting the algorithm. JS Workers can use npm packages natively, and Service Binding RPC is in-process communication — not a network call. This pattern applies to any JS-native functionality that Python can't replicate in WebAssembly.
+
+### 33. Nearly Every Python Content Extraction Library Requires lxml
+
+Trafilatura (F1=0.958), Newspaper4k (F1=0.949), Goose3 (F1=0.896), ReadabiliPy, readability-lxml, jusText, Inscriptis — all require lxml as a hard dependency. lxml is a C extension built on libxml2/libxslt, making it incompatible with Pyodide/WebAssembly.
+
+The only Pyodide-safe options found: BoilerPy3 (zero deps, but text-only output — no HTML), article-extractor (pure Python, unproven), and hand-rolled BeautifulSoup heuristics.
+
+**Lesson:** Before choosing a Python library for a Pyodide/WASM project, check the full dependency tree for C extensions — not just the top-level deps. Most "pure Python" claims are aspirational. The lxml dependency is so pervasive in HTML processing that it effectively eliminates the entire Python content extraction ecosystem from Pyodide use.
+
+### 34. Commit History Reveals the Testing-Simulation Gap
+
+Across 25 commits over 8 days, 11 were corrective (fix-to-feature ratio nearly 1:1). The core user journey was broken for 7 of 8 days while test counts climbed from 203 to 480+. Three fatal runtime bugs hid behind CPython tests with mock Cloudflare bindings that accepted wrong types.
+
+The most damning statistic: the primary user journey ("save a URL, read it later") didn't work until commit 20 of 25.
+
+**What was avoidable:** All three fatal bugs (queue signature, eval() restriction, None→undefined) would have been caught by a single live smoke test on day 1. Feature churn (notes, listen_later — added then removed within minutes) could have been prevented by tighter spec review. Three FFI centralization commits could have been one if wrappers.py was designed bidirectional from the start.
+
+**What was inherent:** The Pyodide FFI type matrix is genuinely non-obvious (no docs say None→undefined). JsNull being distinct from None and not a JsProxy is a platform gotcha. Content extraction fallback (BS4 replacing readability due to eval()) is an inherent Workers constraint.
+
+**Lesson:** For novel runtimes, deploy to the real platform on day 1 with one smoke test. Every subsequent fix commit in this project was downstream of not doing this. Tests measure correctness of logic in the wrong runtime; smoke tests measure reachability of function in the right one.

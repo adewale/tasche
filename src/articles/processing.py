@@ -10,7 +10,7 @@ Steps:
  3. Try Browser Rendering scrape if content looks JS-heavy
  4. Extract canonical_url from HTML
  5. Screenshots via Browser Rendering (thumbnail + full-page archival)
- 6. Extract article content via readability
+ 6. Extract article content (Readability Service Binding with BS4 fallback)
  7. Download and store images
  8. Rewrite HTML image paths to local R2 paths
  9. Convert to Markdown
@@ -174,8 +174,22 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
             except BrowserRenderingError:
                 pass  # Per-URL failures are non-fatal
 
-            # Step 6: Extract article content via readability
-            article = extract_article(html)
+            # Step 6: Extract article content
+            # Prefer the Readability Service Binding (100% Mozilla fidelity)
+            # with BS4 heuristic fallback when the binding is unavailable.
+            readability = getattr(env, "READABILITY", None)
+            extraction_method = "bs4"
+            if readability is not None:
+                try:
+                    article = await readability.parse(html, final_url)
+                    if article.get("html"):
+                        extraction_method = "readability"
+                    else:
+                        article = extract_article(html)
+                except Exception:
+                    article = extract_article(html)
+            else:
+                article = extract_article(html)
             clean_html = article["html"]
             title = article["title"]
             excerpt = article["excerpt"]
@@ -212,7 +226,6 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
 
         # Step 12: Store metadata.json to R2
         content_hash = hashlib.sha256(clean_html.encode("utf-8")).hexdigest()
-        extraction_method = "bs4"
         await store_metadata(
             r2,
             article_id,

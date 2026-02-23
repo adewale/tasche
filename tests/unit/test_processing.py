@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, patch
 from tests.conftest import (
     MockEnv,
     MockR2,
+    MockReadability,
     _browser_env,
     _make_mock_client,
     _make_mock_response,
@@ -937,3 +938,126 @@ class TestProcessArticleExactAssertions:
         assert len(failed_updates) >= 1
         _sql, params = failed_updates[-1]
         assert params[0] == "failed"
+
+
+# =========================================================================
+# test_process_article — Readability Service Binding integration
+# =========================================================================
+
+
+class TestProcessArticleReadability:
+    async def test_uses_readability_when_available(self) -> None:
+        """When env.READABILITY is present, it is used instead of BS4."""
+        db = _TrackingD1()
+        r2 = MockR2()
+        readability = MockReadability(response={
+            "title": "Readability Title",
+            "html": "<p>Content from Readability.</p>",
+            "excerpt": "Content from Readability.",
+            "byline": "Readability Author",
+        })
+        env = _browser_env(MockEnv(db=db, content=r2, readability=readability))
+
+        mock_client = _make_mock_client()
+
+        with (
+            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+        ):
+            from articles.processing import process_article
+
+            await process_article("art_read", "https://example.com/article", env)
+
+        # Verify Readability was called
+        assert len(readability.calls) == 1
+        assert readability.calls[0]["url"] == "https://example.com/article"
+
+        # Verify metadata records readability as extraction method
+        metadata_key = "articles/art_read/metadata.json"
+        assert metadata_key in r2._store
+        metadata = json.loads(r2._store[metadata_key].decode("utf-8"))
+        assert metadata["extraction_method"] == "readability"
+
+    async def test_falls_back_to_bs4_when_no_binding(self) -> None:
+        """When env.READABILITY is None, BS4 extractor is used."""
+        db = _TrackingD1()
+        r2 = MockR2()
+        env = _browser_env(MockEnv(db=db, content=r2))  # No readability
+
+        mock_client = _make_mock_client()
+
+        with (
+            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+        ):
+            from articles.processing import process_article
+
+            await process_article("art_bs4", "https://example.com/article", env)
+
+        # Verify metadata records bs4 as extraction method
+        metadata_key = "articles/art_bs4/metadata.json"
+        assert metadata_key in r2._store
+        metadata = json.loads(r2._store[metadata_key].decode("utf-8"))
+        assert metadata["extraction_method"] == "bs4"
+
+    async def test_falls_back_to_bs4_on_readability_error(self) -> None:
+        """When Readability raises, fall back to BS4 instead of failing."""
+        db = _TrackingD1()
+        r2 = MockR2()
+        readability = MockReadability()
+        readability.parse = AsyncMock(side_effect=RuntimeError("Service unavailable"))
+        env = _browser_env(MockEnv(db=db, content=r2, readability=readability))
+
+        mock_client = _make_mock_client()
+
+        with (
+            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+        ):
+            from articles.processing import process_article
+
+            await process_article("art_fallback", "https://example.com/article", env)
+
+        # Should still succeed (status = ready) using BS4 fallback
+        ready_updates = [
+            (sql, params)
+            for sql, params in db.executed
+            if "status" in sql and "ready" in str(params)
+        ]
+        assert len(ready_updates) >= 1
+
+        # Verify metadata records bs4 as extraction method
+        metadata_key = "articles/art_fallback/metadata.json"
+        assert metadata_key in r2._store
+        metadata = json.loads(r2._store[metadata_key].decode("utf-8"))
+        assert metadata["extraction_method"] == "bs4"
+
+    async def test_falls_back_to_bs4_on_empty_readability_result(self) -> None:
+        """When Readability returns empty html, fall back to BS4."""
+        db = _TrackingD1()
+        r2 = MockR2()
+        readability = MockReadability(response={
+            "title": "",
+            "html": "",
+            "excerpt": "",
+            "byline": None,
+        })
+        env = _browser_env(MockEnv(db=db, content=r2, readability=readability))
+
+        mock_client = _make_mock_client()
+
+        with (
+            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+        ):
+            from articles.processing import process_article
+
+            await process_article("art_empty", "https://example.com/article", env)
+
+        # Readability was called but returned empty, so BS4 should be used
+        assert len(readability.calls) == 1
+
+        metadata_key = "articles/art_empty/metadata.json"
+        assert metadata_key in r2._store
+        metadata = json.loads(r2._store[metadata_key].decode("utf-8"))
+        assert metadata["extraction_method"] == "bs4"

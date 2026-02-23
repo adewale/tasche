@@ -300,6 +300,27 @@ class MockAI:
         return self._response
 
 
+class MockReadability:
+    """In-memory mock of the Readability Service Binding.
+
+    Returns a configurable extraction result for any ``parse()`` call.
+    """
+
+    def __init__(self, response: dict[str, Any] | None = None) -> None:
+        self._response = response or {
+            "title": "Test Article",
+            "html": "<p>Test content with enough text for processing.</p>",
+            "excerpt": "Test content with enough text for processing.",
+            "byline": "Test Author",
+        }
+        self.calls: list[dict[str, str]] = []
+
+    async def parse(self, html: str, url: str) -> dict[str, Any]:
+        """Record the call and return the configured response."""
+        self.calls.append({"html_length": str(len(html)), "url": url})
+        return self._response
+
+
 # ---------------------------------------------------------------------------
 # Mock Env (combines all bindings)
 # ---------------------------------------------------------------------------
@@ -315,6 +336,7 @@ class MockEnv:
     - ``SESSIONS`` — KV namespace
     - ``ARTICLE_QUEUE`` — Queue producer
     - ``AI`` — Workers AI
+    - ``READABILITY`` — Readability Service Binding (optional)
     - ``ALLOWED_EMAILS`` — env var (string)
     - ``SITE_URL`` — env var (string)
     """
@@ -327,6 +349,7 @@ class MockEnv:
         sessions: MockKV | None = None,
         article_queue: MockQueue | None = None,
         ai: MockAI | None = None,
+        readability: MockReadability | None = None,
         allowed_emails: str = "test@example.com",
         site_url: str = "https://tasche.test",
         github_client_id: str = "test_client_id",
@@ -338,6 +361,7 @@ class MockEnv:
         self.SESSIONS = sessions or MockKV()
         self.ARTICLE_QUEUE = article_queue or MockQueue()
         self.AI = ai or MockAI()
+        self.READABILITY = readability
         self.ALLOWED_EMAILS = allowed_emails
         self.SITE_URL = site_url
         self.GITHUB_CLIENT_ID = github_client_id
