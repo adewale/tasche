@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'preact/hooks';
 import { Header } from '../components/Header.jsx';
 import { TagPicker } from '../components/TagPicker.jsx';
+import { ReaderToolbar } from '../components/ReaderToolbar.jsx';
 import { playAudio } from '../components/AudioPlayer.jsx';
 import { articles, currentArticle, addToast } from '../state.js';
+import { readerPrefs, getReaderStyle } from '../readerPrefs.js';
 import {
   IconArrowLeft, IconStar, IconExternalLink, IconPlay,
   IconHeadphones, IconClock, IconDownload, IconCheck, IconCamera,
@@ -319,6 +321,7 @@ export function Reader({ id }) {
               </span>
             )}
           </div>
+          <TagPicker articleId={id} />
           <div class={'original-status original-status--' + ostatus}>
             {ostatus === 'available' && (
               <span>
@@ -430,12 +433,14 @@ export function Reader({ id }) {
               Delete
             </button>
           </div>
-          <TagPicker articleId={id} />
         </div>
-        <article
-          class="reader-content"
-          dangerouslySetInnerHTML={{ __html: contentHtml }}
-        />
+        <div style={getReaderStyle(readerPrefs.value)}>
+          <ReaderToolbar />
+          <article
+            class="reader-content"
+            dangerouslySetInnerHTML={{ __html: contentHtml }}
+          />
+        </div>
       </main>
     </>
   );

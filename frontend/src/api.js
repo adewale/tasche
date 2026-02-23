@@ -75,9 +75,10 @@ export function getArticle(id) {
   return request('GET', '/api/articles/' + id);
 }
 
-export function createArticle(url, title) {
+export function createArticle(url, title, listenLater) {
   const body = { url };
   if (title) body.title = title;
+  if (listenLater) body.listen_later = true;
   return request('POST', '/api/articles', body);
 }
 

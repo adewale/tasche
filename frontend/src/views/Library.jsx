@@ -2,7 +2,7 @@ import { useState, useEffect } from 'preact/hooks';
 import { Header } from '../components/Header.jsx';
 import { ArticleCard } from '../components/ArticleCard.jsx';
 import { Pagination } from '../components/Pagination.jsx';
-import { IconBookOpen } from '../components/Icons.jsx';
+import { IconBookOpen, IconHeadphones } from '../components/Icons.jsx';
 import {
   articles,
   filter as filterSignal,
@@ -32,6 +32,7 @@ const FILTERS = [
 
 export function Library({ tag }) {
   const [saveUrl, setSaveUrl] = useState('');
+  const [listenLater, setListenLater] = useState(false);
   const currentFilter = filterSignal.value;
   const articleList = articles.value;
   const isLoading = loadingSignal.value;
@@ -94,14 +95,15 @@ export function Library({ tag }) {
     }
 
     try {
-      var result = await apiCreateArticle(url);
+      var result = await apiCreateArticle(url, null, listenLater);
       if (result && result.updated) {
         var date = result.created_at ? formatDate(result.created_at) : '';
         addToast('Article was already added' + (date ? ' on ' + date : '') + '. Refreshing it now.', 'info');
       } else {
-        addToast('Article saved!', 'success');
+        addToast(listenLater ? 'Article saved! Audio will be generated.' : 'Article saved!', 'success');
       }
       setSaveUrl('');
+      setListenLater(false);
       articles.value = [];
       offsetSignal.value = 0;
       hasMoreSignal.value = true;
@@ -164,6 +166,14 @@ export function Library({ tag }) {
                   onInput={function (e) { setSaveUrl(e.target.value); }}
                   onKeyDown={handleKeyDown}
                 />
+                <button
+                  class={'btn listen-toggle' + (listenLater ? ' listen-toggle--active' : '')}
+                  title={listenLater ? 'Audio will be generated' : 'Save & generate audio'}
+                  onClick={function () { setListenLater(!listenLater); }}
+                  type="button"
+                >
+                  <IconHeadphones size={16} />
+                </button>
                 <button class="btn btn-primary" onClick={handleSave}>
                   Save
                 </button>

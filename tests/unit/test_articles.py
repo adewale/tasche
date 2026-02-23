@@ -407,6 +407,95 @@ class TestCreateArticle:
 
         assert resp.status_code == 422
 
+    async def test_listen_later_sets_audio_status_pending(self) -> None:
+        """POST /api/articles with listen_later=true sets audio_status to pending."""
+        calls: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            calls.append({"sql": sql, "params": params})
+            return []
+
+        queue = MockQueue()
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db, article_queue=queue)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles",
+            json={"url": "https://example.com/listen", "listen_later": True},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["status"] == "pending"
+
+        # Verify the INSERT includes audio_status
+        insert_calls = [c for c in calls if c["sql"].startswith("INSERT")]
+        assert len(insert_calls) == 1
+        assert "audio_status" in insert_calls[0]["sql"]
+        assert "'pending'" in insert_calls[0]["sql"]
+
+    async def test_listen_later_false_omits_audio_status(self) -> None:
+        """POST /api/articles without listen_later does not set audio_status."""
+        calls: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            calls.append({"sql": sql, "params": params})
+            return []
+
+        queue = MockQueue()
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db, article_queue=queue)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles",
+            json={"url": "https://example.com/no-listen"},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 201
+
+        insert_calls = [c for c in calls if c["sql"].startswith("INSERT")]
+        assert len(insert_calls) == 1
+        assert "audio_status" not in insert_calls[0]["sql"]
+
+    async def test_listen_later_on_duplicate_sets_audio_status(self) -> None:
+        """POST /api/articles with listen_later=true on duplicate sets audio_status."""
+        existing = ArticleFactory.create(
+            user_id="user_001",
+            original_url="https://example.com/dup-listen",
+        )
+
+        updates: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            if "original_url = ?" in sql:
+                return [existing]
+            if "UPDATE articles SET" in sql:
+                updates.append({"sql": sql, "params": params})
+                return []
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles",
+            json={"url": "https://example.com/dup-listen", "listen_later": True},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["updated"] is True
+
+        # Verify the UPDATE includes audio_status
+        assert len(updates) == 1
+        assert "audio_status" in updates[0]["sql"]
+
 
 # ---------------------------------------------------------------------------
 # GET /api/articles — List articles

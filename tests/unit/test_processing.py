@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, patch
 
 from tests.conftest import (
     MockEnv,
+    MockQueue,
     MockR2,
     MockReadability,
     _browser_env,
@@ -1061,3 +1062,66 @@ class TestProcessArticleReadability:
         assert metadata_key in r2._store
         metadata = json.loads(r2._store[metadata_key].decode("utf-8"))
         assert metadata["extraction_method"] == "bs4"
+
+
+# =========================================================================
+# test_process_article — auto-TTS enqueue after processing
+# =========================================================================
+
+
+class TestProcessArticleAutoTTS:
+    async def test_enqueues_tts_when_audio_status_pending(self) -> None:
+        """After processing, TTS is auto-enqueued if audio_status is 'pending'."""
+
+        def result_fn(sql, params):
+            if "SELECT audio_status, user_id FROM articles" in sql:
+                return [{"audio_status": "pending", "user_id": "user_001"}]
+            return []
+
+        db = _TrackingD1(result_fn=result_fn)
+        r2 = MockR2()
+        queue = MockQueue()
+        env = _browser_env(MockEnv(db=db, content=r2, article_queue=queue))
+
+        mock_client = _make_mock_client()
+
+        with (
+            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+        ):
+            from articles.processing import process_article
+
+            await process_article("art_tts", "https://example.com/article", env)
+
+        # Verify TTS generation message was sent to the queue
+        tts_messages = [m for m in queue.messages if m.get("type") == "tts_generation"]
+        assert len(tts_messages) == 1
+        assert tts_messages[0]["article_id"] == "art_tts"
+        assert tts_messages[0]["user_id"] == "user_001"
+
+    async def test_does_not_enqueue_tts_when_audio_status_not_pending(self) -> None:
+        """After processing, TTS is NOT enqueued if audio_status is not 'pending'."""
+
+        def result_fn(sql, params):
+            if "SELECT audio_status, user_id FROM articles" in sql:
+                return [{"audio_status": None, "user_id": "user_001"}]
+            return []
+
+        db = _TrackingD1(result_fn=result_fn)
+        r2 = MockR2()
+        queue = MockQueue()
+        env = _browser_env(MockEnv(db=db, content=r2, article_queue=queue))
+
+        mock_client = _make_mock_client()
+
+        with (
+            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+        ):
+            from articles.processing import process_article
+
+            await process_article("art_notts", "https://example.com/article", env)
+
+        # No TTS messages should be in the queue
+        tts_messages = [m for m in queue.messages if m.get("type") == "tts_generation"]
+        assert len(tts_messages) == 0

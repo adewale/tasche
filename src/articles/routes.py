@@ -94,6 +94,7 @@ async def create_article(
     body = await request.json()
     url = body.get("url", "")
     title = body.get("title")
+    listen_later = bool(body.get("listen_later", False))
 
     # Validate field lengths
     if isinstance(url, str) and len(url) > 2048:
@@ -120,31 +121,59 @@ async def create_article(
     if is_update:
         article_id = existing["id"]
         # Reset status so the pipeline re-processes the article
-        await (
-            db.prepare(
-                "UPDATE articles SET status = 'pending', updated_at = ? WHERE id = ?"
+        if listen_later:
+            await (
+                db.prepare(
+                    "UPDATE articles SET status = 'pending', audio_status = 'pending', "
+                    "updated_at = ? WHERE id = ?"
+                )
+                .bind(now, article_id)
+                .run()
             )
-            .bind(now, article_id)
-            .run()
-        )
+        else:
+            await (
+                db.prepare(
+                    "UPDATE articles SET status = 'pending', updated_at = ? WHERE id = ?"
+                )
+                .bind(now, article_id)
+                .run()
+            )
     else:
         article_id = secrets.token_urlsafe(16)
         domain = extract_domain(url)
 
         try:
-            await (
-                db.prepare(
-                    "INSERT INTO articles (id, user_id, original_url, domain, title, "
-                    "status, reading_status, is_favorite, created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, 'pending', 'unread', 0, ?, ?)"
+            if listen_later:
+                await (
+                    db.prepare(
+                        "INSERT INTO articles "
+                        "(id, user_id, original_url, domain, title, "
+                        "status, reading_status, is_favorite, "
+                        "audio_status, created_at, updated_at) "
+                        "VALUES (?, ?, ?, ?, ?, 'pending', "
+                        "'unread', 0, 'pending', ?, ?)"
+                    )
+                    .bind(
+                        article_id, user_id, url, domain,
+                        title,
+                        now, now,
+                    )
+                    .run()
                 )
-                .bind(
-                    article_id, user_id, url, domain,
-                    title,
-                    now, now,
+            else:
+                await (
+                    db.prepare(
+                        "INSERT INTO articles (id, user_id, original_url, domain, title, "
+                        "status, reading_status, is_favorite, created_at, updated_at) "
+                        "VALUES (?, ?, ?, ?, ?, 'pending', 'unread', 0, ?, ?)"
+                    )
+                    .bind(
+                        article_id, user_id, url, domain,
+                        title,
+                        now, now,
+                    )
+                    .run()
                 )
-                .run()
-            )
         except Exception as exc:
             # Handle unique constraint violation (race condition)
             exc_msg = str(exc).lower()

@@ -307,6 +307,41 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
             )
         )
 
+        # Auto-enqueue TTS if listen_later was requested at save time
+        try:
+            art_row = await (
+                db.prepare(
+                    "SELECT audio_status, user_id FROM articles WHERE id = ?"
+                )
+                .bind(article_id)
+                .first()
+            )
+            if art_row and art_row.get("audio_status") == "pending":
+                await env.ARTICLE_QUEUE.send({
+                    "type": "tts_generation",
+                    "article_id": article_id,
+                    "user_id": art_row.get("user_id", ""),
+                })
+                print(
+                    json.dumps(
+                        {
+                            "event": "tts_auto_enqueued",
+                            "article_id": article_id,
+                        }
+                    )
+                )
+        except Exception:
+            # Non-fatal: TTS can be requested manually later
+            print(
+                json.dumps(
+                    {
+                        "event": "tts_auto_enqueue_failed",
+                        "article_id": article_id,
+                        "error": traceback.format_exc(),
+                    }
+                )
+            )
+
     except (ConnectionError, TimeoutError):
         # Transient network errors — let propagate for queue retry
         print(

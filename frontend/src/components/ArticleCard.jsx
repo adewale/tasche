@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'preact/hooks';
 import { formatDate } from '../utils.js';
 import { addToast, isOffline, articles } from '../state.js';
-import { updateArticle, deleteArticle as apiDeleteArticle, getArticleTags, queueOfflineMutation, isOfflineCached } from '../api.js';
-import { IconStar, IconTrash, IconCheck } from './Icons.jsx';
+import { updateArticle, deleteArticle as apiDeleteArticle, getArticleTags, listenLater as apiListenLater, queueOfflineMutation, isOfflineCached } from '../api.js';
+import { playAudio } from './AudioPlayer.jsx';
+import { IconStar, IconTrash, IconCheck, IconHeadphones, IconPlay, IconClock, IconArchive } from './Icons.jsx';
 
 const tagCache = new Map();
 
@@ -80,11 +81,61 @@ export function ArticleCard({ article, onDelete }) {
     }
   }
 
+  async function handleListenLater(e) {
+    e.stopPropagation();
+    try {
+      await apiListenLater(a.id);
+      articles.value = articles.value.map(function (art) {
+        return art.id === a.id ? { ...art, audio_status: 'pending' } : art;
+      });
+      addToast('Audio generation queued', 'success');
+    } catch (err) {
+      if (err.status === 409) {
+        addToast('Audio generation is already in progress', 'info');
+      } else {
+        addToast(err.message, 'error');
+      }
+    }
+  }
+
+  function handlePlayAudio(e) {
+    e.stopPropagation();
+    playAudio(a.id, a.title || '');
+  }
+
+  async function handleArchiveToggle(e) {
+    e.stopPropagation();
+    var newStatus = a.reading_status === 'archived' ? 'unread' : 'archived';
+    try {
+      await updateArticle(a.id, { reading_status: newStatus });
+      articles.value = articles.value.map(function (art) {
+        return art.id === a.id ? { ...art, reading_status: newStatus } : art;
+      });
+      addToast(newStatus === 'archived' ? 'Archived' : 'Moved to unread', 'success');
+    } catch (err) {
+      if (isOffline.value) {
+        queueOfflineMutation('/api/articles/' + a.id, 'PATCH', { reading_status: newStatus });
+        articles.value = articles.value.map(function (art) {
+          return art.id === a.id ? { ...art, reading_status: newStatus } : art;
+        });
+        addToast('Queued for sync', 'info');
+      } else {
+        addToast(err.message, 'error');
+      }
+    }
+  }
+
   function handleTagClick(e, tagId) {
     e.stopPropagation();
     e.preventDefault();
     window.location.hash = '#/?tag=' + tagId;
   }
+
+  var audioStatus = a.audio_status;
+  var hasAudio = audioStatus === 'ready';
+  var audioPending = audioStatus === 'pending' || audioStatus === 'generating';
+  var canRequestAudio = !hasAudio && !audioPending;
+  var isArchived = a.reading_status === 'archived';
 
   var thumbnailSrc = a.thumbnail_key ? '/api/articles/' + a.id + '/thumbnail' : null;
 
@@ -116,7 +167,20 @@ export function ArticleCard({ article, onDelete }) {
         <div class="article-card-content">
           <div class="article-card-title">{a.title || a.original_url}</div>
           <div class="article-card-meta">
-            <span class="article-card-domain">{a.domain || ''}</span>
+            {a.domain && (
+              <span class="article-card-domain">
+                <img
+                  class="favicon"
+                  src={'https://www.google.com/s2/favicons?domain=' + a.domain + '&sz=16'}
+                  alt=""
+                  width="14"
+                  height="14"
+                  loading="lazy"
+                  onError={function (e) { e.target.style.display = 'none'; }}
+                />
+                {a.domain}
+              </span>
+            )}
             {readingTime && <span>{readingTime}</span>}
             <span>{formatDate(a.created_at)}</span>
             <span class={'reading-status-badge ' + statusClass}>{statusClass}</span>
@@ -153,6 +217,28 @@ export function ArticleCard({ article, onDelete }) {
           })}
         </div>
         <div class="article-card-actions">
+          {hasAudio && (
+            <button class="audio-ready" title="Play audio" onClick={handlePlayAudio}>
+              <IconPlay />
+            </button>
+          )}
+          {audioPending && (
+            <button class="audio-pending" title="Generating audio..." disabled>
+              <IconClock />
+            </button>
+          )}
+          {canRequestAudio && (
+            <button title="Listen later" onClick={handleListenLater}>
+              <IconHeadphones />
+            </button>
+          )}
+          <button
+            class={isArchived ? 'archived' : ''}
+            title={isArchived ? 'Move to unread' : 'Archive'}
+            onClick={handleArchiveToggle}
+          >
+            <IconArchive filled={isArchived} />
+          </button>
           <button
             class={'fav-btn' + (isFav ? ' favorited' : '')}
             title="Toggle favorite"
