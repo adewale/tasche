@@ -132,7 +132,7 @@ test.describe('Search', () => {
 test.describe('Tags', () => {
   test('tags page loads', async ({ page }) => {
     await page.goto('/#/tags');
-    await expect(page.locator('h2.section-title')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('h2.section-title').first()).toBeVisible({ timeout: 10000 });
   });
 
   test('create and delete a tag via API', async ({ request }) => {
@@ -220,7 +220,7 @@ test.describe('Navigation', () => {
     await expect(page.locator('input[placeholder="New tag name..."]')).toBeVisible({ timeout: 5000 });
 
     await page.locator('a[href="#/settings"]').click();
-    await expect(page.locator('h2.section-title')).toHaveText('Settings', { timeout: 5000 });
+    await expect(page.locator('h2.section-title').first()).toHaveText('Settings', { timeout: 5000 });
 
     await page.locator('.header-logo').click();
     await expect(page.locator('.save-form')).toBeVisible({ timeout: 5000 });

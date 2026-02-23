@@ -91,11 +91,17 @@ test.describe('Reader — change reading status', () => {
     const statusSelect = page.locator('select.input-inline-select');
     await expect(statusSelect).toBeVisible({ timeout: 5000 });
 
-    // Reader auto-sets to "reading" on open, so change to "archived"
+    // Wait for auto-set to "reading" to settle on the server before changing
+    await page.waitForTimeout(1500);
+
+    // Change to "archived"
     await statusSelect.selectOption('archived');
 
     // Wait for toast confirming status update
     await expect(page.locator('.toast')).toBeVisible({ timeout: 5000 });
+
+    // Give the PATCH request time to complete on the server
+    await page.waitForTimeout(1000);
 
     // Verify via API
     const getResp = await request.get(`/api/articles/${id}`);
@@ -422,10 +428,10 @@ test.describe('Batch operations', () => {
 test.describe('Settings — bookmarklet', () => {
   test('bookmarklet link is displayed', async ({ page }) => {
     await page.goto('/#/settings');
-    await expect(page.locator('h2.section-title')).toHaveText('Settings', { timeout: 10000 });
+    await expect(page.locator('h2.section-title').first()).toHaveText('Settings', { timeout: 10000 });
 
     // Should show bookmarklet section
-    await expect(page.locator('text=Bookmarklet')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole('heading', { name: 'Bookmarklet' })).toBeVisible({ timeout: 5000 });
   });
 });
 
