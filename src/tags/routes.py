@@ -145,6 +145,56 @@ async def list_tags(
     )
 
 
+@router.patch("/{tag_id}")
+async def rename_tag(
+    request: Request,
+    tag_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Rename an existing tag.
+
+    Accepts a JSON body with ``name`` (required).  The new name must be
+    non-empty and unique among the user's tags.
+    """
+    body = await request.json()
+    name = body.get("name", "").strip()
+
+    if not name:
+        raise HTTPException(status_code=422, detail="Tag name is required")
+
+    if len(name) > 100:
+        raise HTTPException(
+            status_code=400, detail="Tag name must not exceed 100 characters",
+        )
+
+    env = request.scope["env"]
+    db = env.DB
+    user_id = user["user_id"]
+
+    await _get_user_tag(db, tag_id, user_id)
+
+    # Check for duplicate tag name for this user (excluding current tag)
+    existing = await (
+        db.prepare(
+            "SELECT id FROM tags WHERE user_id = ? AND name = ? AND id != ?"
+        )
+        .bind(user_id, name, tag_id)
+        .first()
+    )
+    if existing is not None:
+        raise HTTPException(
+            status_code=409, detail="Tag with this name already exists",
+        )
+
+    await (
+        db.prepare("UPDATE tags SET name = ? WHERE id = ? AND user_id = ?")
+        .bind(name, tag_id, user_id)
+        .run()
+    )
+
+    return {"id": tag_id, "user_id": user_id, "name": name}
+
+
 @router.delete("/{tag_id}", status_code=204)
 async def delete_tag(
     request: Request,

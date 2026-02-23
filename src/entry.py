@@ -164,12 +164,22 @@ from articles.routes import router as articles_router  # noqa: E402
 
 app.include_router(articles_router, prefix="/api/articles", tags=["articles"])
 
+# Data export router
+from articles.export import router as export_router  # noqa: E402
+
+app.include_router(export_router, prefix="/api/export", tags=["export"])
+
 # Phase 5: tags router
 from tags.routes import article_tags_router  # noqa: E402
 from tags.routes import router as tags_router  # noqa: E402
 
 app.include_router(tags_router, prefix="/api/tags", tags=["tags"])
 app.include_router(article_tags_router, prefix="/api/articles", tags=["tags"])
+
+# Tag rules router (auto-tagging)
+from tags.rules import router as tag_rules_router  # noqa: E402
+
+app.include_router(tag_rules_router, prefix="/api/tag-rules", tags=["tag-rules"])
 
 # Phase 5: search router
 from search.routes import router as search_router  # noqa: E402
@@ -180,6 +190,23 @@ app.include_router(search_router, prefix="/api/search", tags=["search"])
 from tts.routes import router as tts_router  # noqa: E402
 
 app.include_router(tts_router, prefix="/api/articles", tags=["tts"])
+
+# Highlights router
+from highlights.routes import article_highlights_router  # noqa: E402
+from highlights.routes import router as highlights_router  # noqa: E402
+
+app.include_router(highlights_router, prefix="/api/highlights", tags=["highlights"])
+app.include_router(article_highlights_router, prefix="/api/articles", tags=["highlights"])
+
+# Stats router
+from stats.routes import router as stats_router  # noqa: E402
+
+app.include_router(stats_router, prefix="/api/stats", tags=["stats"])
+
+# Feeds router
+from feeds.routes import router as feeds_router  # noqa: E402
+
+app.include_router(feeds_router, prefix="/api/feeds", tags=["feeds"])
 
 
 # ---------------------------------------------------------------------------
@@ -285,7 +312,8 @@ class Default(WorkerEntrypoint):
         """Handle a Cron Trigger event.
 
         Runs periodic health checks on articles whose original_status is
-        'unknown' or hasn't been checked in 30+ days.
+        'unknown' or hasn't been checked in 30+ days, and refreshes all
+        active RSS/Atom feed subscriptions.
         """
         from datetime import UTC, datetime
 
@@ -327,11 +355,67 @@ class Default(WorkerEntrypoint):
                     {"event": "scheduled_health_check", "checked": checked}
                 )
             )
+
+            # Refresh all active feeds for all users with feeds
+            try:
+                from feeds.processing import refresh_all_feeds
+
+                user_rows = await db.prepare(
+                    "SELECT DISTINCT user_id FROM feeds WHERE is_active = 1"
+                ).all()
+
+                for user_row in user_rows:
+                    uid = user_row.get("user_id")
+                    if uid:
+                        await refresh_all_feeds(env, uid)
+            except Exception:
+                print(
+                    json.dumps(
+                        {
+                            "event": "scheduled_feed_refresh_error",
+                            "error": traceback.format_exc()[-1000:],
+                        }
+                    )
+                )
+
         except Exception:
             print(
                 json.dumps(
                     {
                         "event": "scheduled_error",
+                        "error": traceback.format_exc()[-1000:],
+                    }
+                )
+            )
+
+    async def email(self, message: object, env: object = None, ctx: object = None) -> None:
+        """Handle an incoming email via Cloudflare Email Routing.
+
+        Parses the email, sanitizes the HTML content, and creates a new
+        article in D1 with the newsletter content.
+
+        Parameters
+        ----------
+        message:
+            The ``ForwardableEmailMessage`` JS object from the Workers
+            runtime.  Properties: ``from``, ``to``, ``headers``, ``raw``,
+            ``rawSize``.
+        env:
+            Worker env bindings (also available as ``self.env``).
+        ctx:
+            Execution context (also available as ``self.ctx``).
+        """
+        from articles.email_ingest import process_email
+
+        worker_env = SafeEnv(env if env is not None else self.env)
+
+        try:
+            await process_email(message, worker_env)
+        except Exception:
+            print(
+                json.dumps(
+                    {
+                        "event": "email_handler_error",
                         "error": traceback.format_exc()[-1000:],
                     }
                 )

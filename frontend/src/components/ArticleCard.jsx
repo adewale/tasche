@@ -3,11 +3,11 @@ import { formatDate } from '../utils.js';
 import { addToast, isOffline, articles } from '../state.js';
 import { updateArticle, deleteArticle as apiDeleteArticle, getArticleTags, listenLater as apiListenLater, queueOfflineMutation, isOfflineCached } from '../api.js';
 import { playAudio } from './AudioPlayer.jsx';
-import { IconStar, IconTrash, IconCheck, IconHeadphones, IconPlay, IconClock, IconArchive } from './Icons.jsx';
+import { IconStar, IconTrash, IconCheck, IconCheckSquare, IconHeadphones, IconPlay, IconClock, IconArchive, IconMarkdown } from './Icons.jsx';
 
 const tagCache = new Map();
 
-export function ArticleCard({ article, onDelete }) {
+export function ArticleCard({ article, onDelete, selectMode, selected, onToggleSelect }) {
   const a = article;
   const readingTime = a.reading_time_minutes ? a.reading_time_minutes + ' min read' : '';
   const statusClass = a.reading_status || 'unread';
@@ -42,6 +42,11 @@ export function ArticleCard({ article, onDelete }) {
   }, [a.id]);
 
   function handleClick(e) {
+    if (selectMode) {
+      e.preventDefault();
+      if (onToggleSelect) onToggleSelect(a.id);
+      return;
+    }
     if (e.target.closest('.article-card-actions')) return;
     if (e.target.closest('.tag-chip')) return;
     window.location.hash = '#/article/' + a.id;
@@ -131,6 +136,11 @@ export function ArticleCard({ article, onDelete }) {
     window.location.hash = '#/?tag=' + tagId;
   }
 
+  function handleMarkdown(e) {
+    e.stopPropagation();
+    window.location.hash = '#/article/' + a.id + '/markdown';
+  }
+
   var audioStatus = a.audio_status;
   var hasAudio = audioStatus === 'ready';
   var audioPending = audioStatus === 'pending' || audioStatus === 'generating';
@@ -139,8 +149,13 @@ export function ArticleCard({ article, onDelete }) {
 
   var thumbnailSrc = a.thumbnail_key ? '/api/articles/' + a.id + '/thumbnail' : null;
 
+  var cardClass = 'article-card';
+  if (isProcessing) cardClass += ' article-card--processing';
+  if (selectMode) cardClass += ' article-card--selectable';
+  if (selected) cardClass += ' article-card--checked';
+
   return (
-    <div class={'article-card' + (isProcessing ? ' article-card--processing' : '')} onClick={handleClick}>
+    <div class={cardClass} onClick={handleClick}>
       {isProcessing && (
         <div class="processing-overlay">
           <div class="spinner"></div>
@@ -150,6 +165,11 @@ export function ArticleCard({ article, onDelete }) {
         </div>
       )}
       <div class="article-card-body">
+        {selectMode && (
+          <div class="article-card-checkbox">
+            <IconCheckSquare size={20} checked={!!selected} />
+          </div>
+        )}
         {thumbnailSrc && !thumbError ? (
           <div class="article-card-thumbnail">
             <img
@@ -232,6 +252,9 @@ export function ArticleCard({ article, onDelete }) {
               <IconHeadphones />
             </button>
           )}
+          <button title="View Markdown" onClick={handleMarkdown}>
+            <IconMarkdown />
+          </button>
           <button
             class={isArchived ? 'archived' : ''}
             title={isArchived ? 'Move to unread' : 'Archive'}

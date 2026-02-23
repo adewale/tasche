@@ -16,6 +16,7 @@ var DEFAULTS = {
   lineHeight: 'comfortable',
   contentWidth: 'medium',
   fontFamily: 'serif',
+  theme: 'auto',
 };
 
 function loadPrefs() {

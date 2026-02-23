@@ -19,7 +19,7 @@ export const searchResults = signal([]);
 export const searchQuery = signal('');
 
 // Filters & pagination
-export const filter = signal('all'); // all, unread, reading, archived, favorites
+export const filter = signal('unread'); // all, unread, reading, archived, favorites
 export const offset = signal(0);
 export const limit = signal(20);
 export const hasMore = signal(true);

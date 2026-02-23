@@ -26,6 +26,9 @@ const SYNC_QUEUE_KEY = 'tasche-sync-queue';
 // Maximum number of articles in the offline cache before LRU eviction
 const MAX_OFFLINE_ARTICLES = 100;
 
+// Default number of articles to auto-precache
+const DEFAULT_PRECACHE_LIMIT = 20;
+
 // ---------------------------------------------------------------------------
 // Install — cache app shell
 // ---------------------------------------------------------------------------
@@ -309,6 +312,14 @@ self.addEventListener('message', (event) => {
       event.waitUntil(handleCheckOfflineStatus(event));
       break;
 
+    case 'AUTO_PRECACHE':
+      event.waitUntil(handleAutoPrecache(event));
+      break;
+
+    case 'GET_CACHE_STATS':
+      event.waitUntil(handleGetCacheStats(event));
+      break;
+
     case 'SKIP_WAITING':
       self.skipWaiting();
       break;
@@ -474,5 +485,155 @@ async function handleCheckOfflineStatus(event) {
       hasContent: !!(entry && entry.hasContent),
       hasAudio: !!(entry && entry.hasAudio),
     });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Auto-precache — automatically cache recent unread articles
+// ---------------------------------------------------------------------------
+
+async function handleAutoPrecache(event) {
+  var limit = (event.data && event.data.limit) || DEFAULT_PRECACHE_LIMIT;
+  var cached = 0;
+  var skipped = 0;
+  var failed = 0;
+
+  try {
+    // Fetch list of recent unread articles
+    var listUrl = '/api/articles?reading_status=unread&limit=' + limit + '&sort=created_at:desc';
+    var listResp = await fetch(listUrl, { credentials: 'include' });
+    if (!listResp.ok) {
+      throw new Error('Failed to fetch article list: ' + listResp.status);
+    }
+
+    var articles = await listResp.json();
+    if (!Array.isArray(articles) || articles.length === 0) {
+      notifyClients({
+        type: 'AUTO_PRECACHE_COMPLETE',
+        cached: 0,
+        skipped: 0,
+        failed: 0,
+        total: 0,
+      });
+      return;
+    }
+
+    var cache = await caches.open(OFFLINE_CACHE);
+    var meta = await getOfflineMeta();
+
+    // Only cache articles that are ready (have content) and not already cached
+    for (var i = 0; i < articles.length; i++) {
+      var article = articles[i];
+      if (!article.id) continue;
+
+      // Skip articles that are still processing
+      if (article.status && article.status !== 'ready') {
+        skipped++;
+        continue;
+      }
+
+      // Skip if already in offline cache with content
+      if (meta[article.id] && meta[article.id].hasContent) {
+        skipped++;
+        continue;
+      }
+
+      try {
+        var detailUrl = '/api/articles/' + article.id;
+        var contentUrl = '/api/articles/' + article.id + '/content';
+
+        var detailResp = await fetch(detailUrl, { credentials: 'include' });
+        if (!detailResp.ok) {
+          failed++;
+          continue;
+        }
+
+        var contentResp = await fetch(contentUrl, { credentials: 'include' });
+        if (!contentResp.ok) {
+          failed++;
+          continue;
+        }
+
+        await cache.put(detailUrl, detailResp.clone());
+        await cache.put(contentUrl, contentResp.clone());
+
+        var existing = meta[article.id] || {};
+        meta[article.id] = {
+          hasContent: true,
+          hasAudio: existing.hasAudio || false,
+          accessedAt: Date.now(),
+          autoCached: true,
+        };
+
+        cached++;
+      } catch (err) {
+        failed++;
+      }
+    }
+
+    // Evict old entries if over the limit
+    meta = await evictIfNeeded(meta);
+    await saveOfflineMeta(meta);
+
+    notifyClients({
+      type: 'AUTO_PRECACHE_COMPLETE',
+      cached: cached,
+      skipped: skipped,
+      failed: failed,
+      total: articles.length,
+    });
+  } catch (err) {
+    notifyClients({
+      type: 'AUTO_PRECACHE_ERROR',
+      error: err.message,
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Cache stats — report number of cached articles and estimated size
+// ---------------------------------------------------------------------------
+
+async function handleGetCacheStats(event) {
+  try {
+    var meta = await getOfflineMeta();
+    var articleIds = Object.keys(meta);
+    var articleCount = articleIds.length;
+
+    // Estimate cache size by checking stored responses
+    var totalSize = 0;
+    var cache = await caches.open(OFFLINE_CACHE);
+    var keys = await cache.keys();
+
+    for (var i = 0; i < keys.length; i++) {
+      var key = keys[i];
+      // Skip the metadata key
+      if (key.url && key.url.endsWith(OFFLINE_META_KEY)) continue;
+      try {
+        var resp = await cache.match(key);
+        if (resp) {
+          var blob = await resp.clone().blob();
+          totalSize += blob.size;
+        }
+      } catch (e) {
+        // ignore individual size check errors
+      }
+    }
+
+    if (event.source) {
+      event.source.postMessage({
+        type: 'CACHE_STATS',
+        articleCount: articleCount,
+        totalSize: totalSize,
+      });
+    }
+  } catch (err) {
+    if (event.source) {
+      event.source.postMessage({
+        type: 'CACHE_STATS',
+        articleCount: 0,
+        totalSize: 0,
+      });
+    }
   }
 }

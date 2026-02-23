@@ -1,20 +1,49 @@
-import { useState, useEffect } from 'preact/hooks';
+import { useState, useEffect, useRef } from 'preact/hooks';
 import { Header } from '../components/Header.jsx';
 import { tags as tagsSignal, addToast } from '../state.js';
 import {
   listTags,
   createTag as apiCreateTag,
   deleteTag as apiDeleteTag,
+  renameTag as apiRenameTag,
+  getTagRules,
+  createTagRule as apiCreateTagRule,
+  deleteTagRule as apiDeleteTagRule,
 } from '../api.js';
+import { IconPencil } from '../components/Icons.jsx';
+
+var MATCH_TYPE_LABELS = {
+  domain: 'Domain',
+  title_contains: 'Title Contains',
+  url_contains: 'URL Contains',
+};
 
 export function Tags() {
-  const [tagName, setTagName] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
-  const tagList = tagsSignal.value;
+  var [tagName, setTagName] = useState('');
+  var [isLoading, setIsLoading] = useState(true);
+  var [editingTagId, setEditingTagId] = useState(null);
+  var [editName, setEditName] = useState('');
+  var editInputRef = useRef(null);
+  var tagList = tagsSignal.value;
 
-  useEffect(() => {
+  // Tag rules state
+  var [rules, setRules] = useState([]);
+  var [rulesLoading, setRulesLoading] = useState(true);
+  var [ruleTagId, setRuleTagId] = useState('');
+  var [ruleMatchType, setRuleMatchType] = useState('domain');
+  var [rulePattern, setRulePattern] = useState('');
+
+  useEffect(function () {
     loadTags();
+    loadRules();
   }, []);
+
+  useEffect(function () {
+    if (editingTagId && editInputRef.current) {
+      editInputRef.current.focus();
+      editInputRef.current.select();
+    }
+  }, [editingTagId]);
 
   async function loadTags() {
     setIsLoading(true);
@@ -27,15 +56,27 @@ export function Tags() {
     }
   }
 
+  async function loadRules() {
+    setRulesLoading(true);
+    try {
+      var data = await getTagRules();
+      setRules(data);
+    } catch (e) {
+      addToast('Failed to load tag rules: ' + e.message, 'error');
+    } finally {
+      setRulesLoading(false);
+    }
+  }
+
   async function handleCreateTag() {
-    const name = tagName.trim();
+    var name = tagName.trim();
     if (!name) {
       addToast('Enter a tag name', 'error');
       return;
     }
     try {
-      const tag = await apiCreateTag(name);
-      const newTags = [...tagsSignal.value, tag];
+      var tag = await apiCreateTag(name);
+      var newTags = [...tagsSignal.value, tag];
       newTags.sort(function (a, b) { return a.name.localeCompare(b.name); });
       tagsSignal.value = newTags;
       setTagName('');
@@ -50,14 +91,102 @@ export function Tags() {
     try {
       await apiDeleteTag(tagId);
       tagsSignal.value = tagsSignal.value.filter(function (t) { return t.id !== tagId; });
+      // Also remove rules for this tag
+      setRules(rules.filter(function (r) { return r.tag_id !== tagId; }));
       addToast('Tag deleted', 'success');
     } catch (e) {
       addToast(e.message, 'error');
     }
   }
 
+  function startRename(tag) {
+    setEditingTagId(tag.id);
+    setEditName(tag.name);
+  }
+
+  function cancelRename() {
+    setEditingTagId(null);
+    setEditName('');
+  }
+
+  async function saveRename(tagId) {
+    var trimmed = editName.trim();
+    if (!trimmed) {
+      addToast('Tag name cannot be empty', 'error');
+      return;
+    }
+    var currentTag = tagsSignal.value.find(function (t) { return t.id === tagId; });
+    if (currentTag && currentTag.name === trimmed) {
+      cancelRename();
+      return;
+    }
+    try {
+      var updated = await apiRenameTag(tagId, trimmed);
+      var newTags = tagsSignal.value.map(function (t) {
+        if (t.id === tagId) {
+          return Object.assign({}, t, { name: updated.name });
+        }
+        return t;
+      });
+      newTags.sort(function (a, b) { return a.name.localeCompare(b.name); });
+      tagsSignal.value = newTags;
+      setEditingTagId(null);
+      setEditName('');
+      addToast('Tag renamed', 'success');
+    } catch (e) {
+      addToast(e.message, 'error');
+    }
+  }
+
+  function handleEditKeyDown(e, tagId) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      saveRename(tagId);
+    } else if (e.key === 'Escape') {
+      cancelRename();
+    }
+  }
+
   function handleKeyDown(e) {
     if (e.key === 'Enter') handleCreateTag();
+  }
+
+  async function handleCreateRule() {
+    if (!ruleTagId) {
+      addToast('Select a tag', 'error');
+      return;
+    }
+    var pattern = rulePattern.trim();
+    if (!pattern) {
+      addToast('Enter a pattern', 'error');
+      return;
+    }
+    try {
+      var rule = await apiCreateTagRule({
+        tag_id: ruleTagId,
+        match_type: ruleMatchType,
+        pattern: pattern,
+      });
+      setRules([].concat(rules, [rule]));
+      setRulePattern('');
+      addToast('Rule created', 'success');
+    } catch (e) {
+      addToast(e.message, 'error');
+    }
+  }
+
+  async function handleDeleteRule(ruleId) {
+    try {
+      await apiDeleteTagRule(ruleId);
+      setRules(rules.filter(function (r) { return r.id !== ruleId; }));
+      addToast('Rule deleted', 'success');
+    } catch (e) {
+      addToast(e.message, 'error');
+    }
+  }
+
+  function handleRuleKeyDown(e) {
+    if (e.key === 'Enter') handleCreateRule();
   }
 
   return (
@@ -93,21 +222,141 @@ export function Tags() {
             </div>
           )}
           {tagList.map(function (t) {
+            var isEditing = editingTagId === t.id;
             return (
               <div class="tag-row" key={t.id}>
-                <a
-                  href={'#/?tag=' + encodeURIComponent(t.id)}
-                  class="tag-row-name"
-                >
-                  {t.name}
-                  <span class="tag-row-count">
-                    {t.article_count === 1 ? '1 article' : (t.article_count || 0) + ' articles'}
+                {isEditing ? (
+                  <div class="tag-row-edit">
+                    <input
+                      ref={editInputRef}
+                      class="input tag-row-edit-input"
+                      type="text"
+                      value={editName}
+                      onInput={function (e) { setEditName(e.target.value); }}
+                      onKeyDown={function (e) { handleEditKeyDown(e, t.id); }}
+                      onBlur={function () { cancelRename(); }}
+                    />
+                  </div>
+                ) : (
+                  <a
+                    href={'#/?tag=' + encodeURIComponent(t.id)}
+                    class="tag-row-name"
+                  >
+                    {t.name}
+                    <span class="tag-row-count">
+                      {t.article_count === 1 ? '1 article' : (t.article_count || 0) + ' articles'}
+                    </span>
+                  </a>
+                )}
+                <div class="tag-row-actions">
+                  {isEditing ? (
+                    <>
+                      <button
+                        class="btn btn-sm btn-primary"
+                        onMouseDown={function (e) { e.preventDefault(); saveRename(t.id); }}
+                      >
+                        Save
+                      </button>
+                      <button
+                        class="btn btn-sm btn-secondary"
+                        onMouseDown={function (e) { e.preventDefault(); cancelRename(); }}
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        class="btn btn-sm btn-secondary"
+                        onClick={function () { startRename(t); }}
+                        title="Rename tag"
+                      >
+                        <IconPencil size={14} />
+                      </button>
+                      <button
+                        class="btn btn-sm btn-danger"
+                        onClick={function () { handleDeleteTag(t.id); }}
+                      >
+                        Delete
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Tag Rules Section */}
+        <h2 class="section-title" style={{ marginTop: '40px' }}>Tag Rules</h2>
+        <p class="tag-rules-description">
+          Rules automatically tag new articles based on their domain, title, or URL.
+        </p>
+
+        {tagList.length > 0 && (
+          <div class="tag-rule-form">
+            <select
+              class="input tag-rule-select"
+              value={ruleTagId}
+              onChange={function (e) { setRuleTagId(e.target.value); }}
+            >
+              <option value="">Select tag...</option>
+              {tagList.map(function (t) {
+                return <option key={t.id} value={t.id}>{t.name}</option>;
+              })}
+            </select>
+            <select
+              class="input tag-rule-select"
+              value={ruleMatchType}
+              onChange={function (e) { setRuleMatchType(e.target.value); }}
+            >
+              <option value="domain">Domain</option>
+              <option value="title_contains">Title Contains</option>
+              <option value="url_contains">URL Contains</option>
+            </select>
+            <input
+              class="input"
+              type="text"
+              placeholder={ruleMatchType === 'domain' ? 'example.com' : 'pattern...'}
+              value={rulePattern}
+              onInput={function (e) { setRulePattern(e.target.value); }}
+              onKeyDown={handleRuleKeyDown}
+            />
+            <button class="btn btn-primary" onClick={handleCreateRule}>
+              Add Rule
+            </button>
+          </div>
+        )}
+
+        {rulesLoading && (
+          <div class="loading">
+            <div class="spinner"></div>
+          </div>
+        )}
+
+        <div class="tags-list" style={{ marginTop: '12px' }}>
+          {!rulesLoading && rules.length === 0 && (
+            <div class="empty-state">
+              <div class="empty-state-title">No rules yet</div>
+              <div class="empty-state-text">
+                Add a rule to automatically tag articles when they are saved.
+              </div>
+            </div>
+          )}
+          {rules.map(function (r) {
+            return (
+              <div class="tag-row" key={r.id}>
+                <div class="tag-rule-info">
+                  <span class="tag-chip">{r.tag_name}</span>
+                  <span class="tag-rule-match-type">
+                    {MATCH_TYPE_LABELS[r.match_type] || r.match_type}
                   </span>
-                </a>
+                  <span class="tag-rule-pattern">{r.pattern}</span>
+                </div>
                 <div class="tag-row-actions">
                   <button
                     class="btn btn-sm btn-danger"
-                    onClick={function () { handleDeleteTag(t.id); }}
+                    onClick={function () { handleDeleteRule(r.id); }}
                   >
                     Delete
                   </button>

@@ -46,6 +46,102 @@ from wrappers import HttpClient, HttpError, SafeEnv
 _MIN_CONTENT_LENGTH = 500
 
 
+async def apply_auto_tags(
+    env: object,
+    article_id: str,
+    domain: str,
+    title: str,
+    url: str,
+) -> int:
+    """Apply tag rules to an article based on its metadata.
+
+    Fetches all tag_rules from D1, evaluates each against the article's
+    domain, title, and URL, and creates article-tag associations for
+    matching rules.
+
+    Parameters
+    ----------
+    env:
+        Worker environment with ``DB`` binding.
+    article_id:
+        The article to tag.
+    domain:
+        The article's domain (e.g. ``example.com``).
+    title:
+        The article's title.
+    url:
+        The article's final URL after redirects.
+
+    Returns
+    -------
+    int
+        Number of tags applied.
+    """
+    import fnmatch
+
+    db = env.DB  # type: ignore[attr-defined]
+
+    rules = await db.prepare("SELECT tag_id, match_type, pattern FROM tag_rules").all()
+
+    if not rules:
+        return 0
+
+    matched_tag_ids: set[str] = set()
+    title_lower = (title or "").lower()
+    url_lower = (url or "").lower()
+    domain_lower = (domain or "").lower()
+
+    for rule in rules:
+        match_type = rule.get("match_type", "")
+        pattern = rule.get("pattern", "")
+        tag_id = rule.get("tag_id", "")
+
+        if not pattern or not tag_id:
+            continue
+
+        matched = False
+        if match_type == "domain":
+            # Exact match or glob match (supports wildcards like *.example.com)
+            pattern_lower = pattern.lower()
+            if domain_lower == pattern_lower:
+                matched = True
+            elif fnmatch.fnmatch(domain_lower, pattern_lower):
+                matched = True
+        elif match_type == "title_contains":
+            if pattern.lower() in title_lower:
+                matched = True
+        elif match_type == "url_contains":
+            if pattern.lower() in url_lower:
+                matched = True
+
+        if matched:
+            matched_tag_ids.add(tag_id)
+
+    applied = 0
+    for tag_id in matched_tag_ids:
+        try:
+            await (
+                db.prepare("INSERT OR IGNORE INTO article_tags (article_id, tag_id) VALUES (?, ?)")
+                .bind(article_id, tag_id)
+                .run()
+            )
+            applied += 1
+        except Exception:
+            # Non-fatal: skip this tag association if it fails
+            pass
+
+    if applied > 0:
+        print(
+            json.dumps(
+                {
+                    "event": "auto_tags_applied",
+                    "article_id": article_id,
+                    "tags_applied": applied,
+                }
+            )
+        )
+
+    return applied
 
 
 def _is_js_heavy(html: str) -> bool:
@@ -108,18 +204,41 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
             .run()
         )
 
-        # Step 2: Fetch page, following redirects
+        # Check if raw HTML was pre-supplied (e.g. bookmarklet content capture).
+        # If so, skip the HTTP fetch and use the pre-supplied content.
+        raw_key = article_key(article_id, "raw.html")
+        pre_supplied_html: str | None = None
+        raw_obj = await r2.get(raw_key)
+        if raw_obj is not None:
+            pre_supplied_html = await raw_obj.text()
+
+        # Step 2: Fetch page, following redirects (skipped when content pre-supplied)
         async with HttpClient() as client:
-            html, final_url = await _fetch_page(client, original_url)
+            if pre_supplied_html is not None:
+                html = pre_supplied_html
+                final_url = original_url
+                print(
+                    json.dumps(
+                        {
+                            "event": "using_pre_supplied_content",
+                            "article_id": article_id,
+                            "content_length": len(html),
+                        }
+                    )
+                )
+            else:
+                html, final_url = await _fetch_page(client, original_url)
 
-            # SSRF check: validate the final URL after redirects
-            from urllib.parse import urlparse
+                # SSRF check: validate the final URL after redirects
+                from urllib.parse import urlparse
 
-            parsed_final = urlparse(final_url)
-            if parsed_final.hostname and _is_private_hostname(parsed_final.hostname):
-                raise ValueError(f"Redirect to private/internal URL blocked: {final_url}")
+                parsed_final = urlparse(final_url)
+                if parsed_final.hostname and _is_private_hostname(parsed_final.hostname):
+                    raise ValueError(f"Redirect to private/internal URL blocked: {final_url}")
 
             # Step 3: If content looks JS-heavy, try Browser Rendering
+            # (skip when content was pre-supplied — the user's browser already
+            # rendered any JS)
             safe_env = SafeEnv(env)
             account_id = safe_env.get("CF_ACCOUNT_ID")
             api_token = safe_env.get("CF_API_TOKEN")
@@ -129,7 +248,7 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
                     "Set them via `wrangler secret put`."
                 )
 
-            if _is_js_heavy(html):
+            if pre_supplied_html is None and _is_js_heavy(html):
                 try:
                     html = await scrape(client, final_url, account_id, api_token)
                 except BrowserRenderingError:
@@ -187,11 +306,15 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
                     else:
                         article = extract_article(html)
                 except Exception as exc:
-                    print(json.dumps({
-                        "event": "readability_fallback",
-                        "article_id": article_id,
-                        "error": str(exc)[:200],
-                    }))
+                    print(
+                        json.dumps(
+                            {
+                                "event": "readability_fallback",
+                                "article_id": article_id,
+                                "error": str(exc)[:200],
+                            }
+                        )
+                    )
                     article = extract_article(html)
             else:
                 article = extract_article(html)
@@ -206,18 +329,14 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
 
         # Preserve user-supplied title if one was provided at creation time
         existing = await (
-            db.prepare("SELECT title FROM articles WHERE id = ?")
-            .bind(article_id)
-            .first()
+            db.prepare("SELECT title FROM articles WHERE id = ?").bind(article_id).first()
         )
         if existing and existing.get("title"):
             title = existing["title"]
 
         # Step 8: Rewrite HTML image paths to API-served URLs
         if image_map:
-            api_image_map = {
-                url: f"/api/{r2_key}" for url, r2_key in image_map.items()
-            }
+            api_image_map = {url: f"/api/{r2_key}" for url, r2_key in image_map.items()}
             clean_html = rewrite_image_paths(clean_html, api_image_map)
 
         # Step 9: Convert to Markdown
@@ -295,6 +414,21 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
 
         # Step 14: FTS5 indexing is handled by D1 triggers automatically.
 
+        # Step 15: Apply auto-tagging rules
+        try:
+            await apply_auto_tags(env, article_id, domain, title, final_url)
+        except Exception:
+            # Non-fatal: auto-tagging failure should not block processing
+            print(
+                json.dumps(
+                    {
+                        "event": "auto_tag_failed",
+                        "article_id": article_id,
+                        "error": traceback.format_exc()[-500:],
+                    }
+                )
+            )
+
         print(
             json.dumps(
                 {
@@ -310,18 +444,18 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
         # Auto-enqueue TTS if listen_later was requested at save time
         try:
             art_row = await (
-                db.prepare(
-                    "SELECT audio_status, user_id FROM articles WHERE id = ?"
-                )
+                db.prepare("SELECT audio_status, user_id FROM articles WHERE id = ?")
                 .bind(article_id)
                 .first()
             )
             if art_row and art_row.get("audio_status") == "pending":
-                await env.ARTICLE_QUEUE.send({
-                    "type": "tts_generation",
-                    "article_id": article_id,
-                    "user_id": art_row.get("user_id", ""),
-                })
+                await env.ARTICLE_QUEUE.send(
+                    {
+                        "type": "tts_generation",
+                        "article_id": article_id,
+                        "user_id": art_row.get("user_id", ""),
+                    }
+                )
                 print(
                     json.dumps(
                         {

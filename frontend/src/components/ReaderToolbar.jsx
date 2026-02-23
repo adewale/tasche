@@ -61,6 +61,16 @@ export function ReaderToolbar() {
           { value: 'sans-serif', label: 'Sans', title: 'Sans-serif font' },
         ]}
       />
+      <SegmentedControl
+        label="Theme"
+        prefKey="theme"
+        options={[
+          { value: 'auto', label: 'Auto', title: 'Follow system theme' },
+          { value: 'light', label: 'Light', title: 'Light theme' },
+          { value: 'sepia', label: 'Sepia', title: 'Sepia theme' },
+          { value: 'dark', label: 'Dark', title: 'Dark theme' },
+        ]}
+      />
     </div>
   );
 }

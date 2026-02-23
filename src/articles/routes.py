@@ -14,8 +14,14 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
 
+from articles.epub import epub_filename, generate_epub
 from articles.health import check_original_url
-from articles.storage import delete_article_content, get_content, get_metadata
+from articles.storage import (
+    article_key,
+    delete_article_content,
+    get_content,
+    get_metadata,
+)
 from articles.urls import check_duplicate, extract_domain, validate_url
 from auth.dependencies import get_current_user
 from wrappers import stream_r2_body
@@ -52,6 +58,16 @@ _VALID_READING_STATUSES = {"unread", "reading", "archived"}
 _VALID_STATUSES = {"pending", "processing", "ready", "failed"}
 _VALID_AUDIO_STATUSES = {"pending", "generating", "ready", "failed"}
 
+# Allowlist of safe sort options — maps user-facing key to SQL ORDER BY clause.
+# Prevents SQL injection by never interpolating user input directly.
+_VALID_SORT_OPTIONS: dict[str, str] = {
+    "newest": "created_at DESC",
+    "oldest": "created_at ASC",
+    "shortest": "reading_time_minutes ASC NULLS LAST",
+    "longest": "reading_time_minutes DESC NULLS LAST",
+    "title_asc": "title ASC",
+}
+
 
 async def _get_user_article(
     db: Any,
@@ -84,7 +100,12 @@ async def create_article(
 ) -> dict[str, Any]:
     """Save a new article, or re-process if the URL already exists.
 
-    Accepts a JSON body with ``url`` (required) and ``title`` (optional).
+    Accepts a JSON body with ``url`` (required), ``title`` (optional), and
+    ``content`` (optional HTML string).  When ``content`` is provided, the
+    raw HTML is stored directly in R2 so the processing pipeline can skip
+    the HTTP fetch step -- useful for paywalled pages where the user's
+    browser can see the content but the server cannot.
+
     If the URL already exists (across ``original_url``, ``final_url``, and
     ``canonical_url``), resets the existing article to ``pending`` and
     re-enqueues it for processing.  The response includes ``updated: true``
@@ -94,6 +115,7 @@ async def create_article(
     body = await request.json()
     url = body.get("url", "")
     title = body.get("title")
+    content = body.get("content")
     listen_later = bool(body.get("listen_later", False))
 
     # Validate field lengths
@@ -101,6 +123,16 @@ async def create_article(
         raise HTTPException(status_code=400, detail="URL must not exceed 2048 characters")
     if title is not None and isinstance(title, str) and len(title) > 500:
         raise HTTPException(status_code=400, detail="Title must not exceed 500 characters")
+    # Validate content: must be a string and not exceed 5 MB
+    _MAX_CONTENT_SIZE = 5_242_880  # 5 MB
+    if content is not None:
+        if not isinstance(content, str):
+            raise HTTPException(status_code=400, detail="Content must be a string")
+        if len(content) > _MAX_CONTENT_SIZE:
+            raise HTTPException(
+                status_code=400,
+                detail="Content must not exceed 5 MB",
+            )
 
     # Validate URL
     try:
@@ -184,6 +216,14 @@ async def create_article(
                 ) from exc
             raise
 
+    # If content was provided (e.g. from the bookmarklet capturing page HTML),
+    # store the raw HTML in R2 under the article's content key so the
+    # processing pipeline can skip the HTTP fetch step.
+    if content:
+        r2 = env.CONTENT
+        raw_key = article_key(article_id, "raw.html")
+        await r2.put(raw_key, content)
+
     # Enqueue processing job
     try:
         await env.ARTICLE_QUEUE.send({
@@ -225,6 +265,7 @@ async def list_articles(
     is_favorite: bool | None = Query(default=None),
     audio_status: str | None = Query(default=None),
     tag: str | None = Query(default=None),
+    sort: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     user: dict[str, Any] = Depends(get_current_user),
@@ -232,8 +273,12 @@ async def list_articles(
     """List the authenticated user's articles.
 
     Supports optional filtering by ``status``, ``reading_status``,
-    ``is_favorite``, ``audio_status``, and ``tag``.  Results are ordered by
-    ``created_at DESC`` and paginated via ``limit`` and ``offset``.
+    ``is_favorite``, ``audio_status``, and ``tag``.  Results are ordered
+    according to ``sort`` (default ``newest`` / ``created_at DESC``) and
+    paginated via ``limit`` and ``offset``.
+
+    Valid ``sort`` values: ``newest``, ``oldest``, ``shortest``,
+    ``longest``, ``title_asc``.
     """
     env = request.scope["env"]
     db = env.DB
@@ -254,6 +299,11 @@ async def list_articles(
         raise HTTPException(
             status_code=422,
             detail=f"audio_status must be one of: {', '.join(sorted(_VALID_AUDIO_STATUSES))}",
+        )
+    if sort is not None and sort not in _VALID_SORT_OPTIONS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"sort must be one of: {', '.join(sorted(_VALID_SORT_OPTIONS))}",
         )
 
     where_clauses = ["user_id = ?"]
@@ -280,9 +330,10 @@ async def list_articles(
         params.append(tag)
 
     where = " AND ".join(where_clauses)
+    order_by = _VALID_SORT_OPTIONS.get(sort, _VALID_SORT_OPTIONS["newest"])
     sql = (
         f"SELECT {_LIST_COLUMNS} FROM articles WHERE {where} "
-        "ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        f"ORDER BY {order_by} LIMIT ? OFFSET ?"
     )
     params.extend([limit, offset])
 
@@ -353,6 +404,126 @@ async def batch_check_originals(
     return {"checked": len(checked), "results": checked}
 
 
+@router.post("/batch-update")
+async def batch_update_articles(
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Apply updates to multiple articles at once.
+
+    Accepts a JSON body with ``article_ids`` (list of article ID strings)
+    and ``updates`` (dict of fields to update).  Only fields in the
+    standard updatable set are allowed: ``reading_status``, ``is_favorite``.
+
+    Returns the count of updated articles.
+    """
+    body = await request.json()
+    article_ids = body.get("article_ids", [])
+    updates = body.get("updates", {})
+
+    if not isinstance(article_ids, list) or not article_ids:
+        raise HTTPException(status_code=422, detail="article_ids must be a non-empty list")
+    if len(article_ids) > 100:
+        raise HTTPException(status_code=422, detail="Cannot update more than 100 articles at once")
+    if not isinstance(updates, dict) or not updates:
+        raise HTTPException(status_code=422, detail="updates must be a non-empty object")
+
+    allowed_fields = {"reading_status", "is_favorite"}
+    invalid_fields = set(updates.keys()) - allowed_fields
+    if invalid_fields:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid update fields: {', '.join(sorted(invalid_fields))}",
+        )
+
+    if "reading_status" in updates and updates["reading_status"] not in _VALID_READING_STATUSES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"reading_status must be one of: {', '.join(sorted(_VALID_READING_STATUSES))}",
+        )
+    if "is_favorite" in updates and updates["is_favorite"] not in (0, 1, True, False):
+        raise HTTPException(status_code=422, detail="is_favorite must be 0 or 1")
+
+    env = request.scope["env"]
+    db = env.DB
+    user_id = user["user_id"]
+
+    now = datetime.now(UTC).isoformat()
+    set_clauses: list[str] = []
+    params: list[Any] = []
+
+    for field_name in allowed_fields:
+        if field_name in updates:
+            value = updates[field_name]
+            if field_name == "is_favorite":
+                value = 1 if value else 0
+            set_clauses.append(f"{field_name} = ?")
+            params.append(value)
+
+    set_clauses.append("updated_at = ?")
+    params.append(now)
+
+    updated_count = 0
+    for article_id in article_ids:
+        if not isinstance(article_id, str):
+            continue
+        bind_params = params + [article_id, user_id]
+        sql = f"UPDATE articles SET {', '.join(set_clauses)} WHERE id = ? AND user_id = ?"
+        await db.prepare(sql).bind(*bind_params).run()
+        updated_count += 1
+
+    return {"updated": updated_count}
+
+
+@router.post("/batch-delete")
+async def batch_delete_articles(
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Delete multiple articles at once.
+
+    Accepts a JSON body with ``article_ids`` (list of article ID strings).
+    Deletes each article's R2 content and D1 row.
+
+    Returns the count of deleted articles.
+    """
+    body = await request.json()
+    article_ids = body.get("article_ids", [])
+
+    if not isinstance(article_ids, list) or not article_ids:
+        raise HTTPException(status_code=422, detail="article_ids must be a non-empty list")
+    if len(article_ids) > 100:
+        raise HTTPException(status_code=422, detail="Cannot delete more than 100 articles at once")
+
+    env = request.scope["env"]
+    db = env.DB
+    user_id = user["user_id"]
+
+    deleted_count = 0
+    for article_id in article_ids:
+        if not isinstance(article_id, str):
+            continue
+        # Verify ownership before deleting
+        article = await (
+            db.prepare("SELECT id FROM articles WHERE id = ? AND user_id = ?")
+            .bind(article_id, user_id)
+            .first()
+        )
+        if article is None:
+            continue
+        # Delete R2 content first
+        await delete_article_content(env.CONTENT, article_id)
+        # Delete from D1
+        await (
+            db.prepare("DELETE FROM articles WHERE id = ? AND user_id = ?")
+            .bind(article_id, user_id)
+            .run()
+        )
+        deleted_count += 1
+
+    return {"deleted": deleted_count}
+
+
 @router.get("/{article_id}")
 async def get_article(
     request: Request,
@@ -408,6 +579,37 @@ async def get_article_content(
         "default-src 'none'; img-src * data:; style-src 'unsafe-inline'"
     )
     return response
+
+
+@router.get("/{article_id}/markdown")
+async def get_article_markdown(
+    request: Request,
+    article_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> Response:
+    """Serve the article's raw Markdown content.
+
+    Returns the Markdown stored in D1's ``markdown_content`` column as
+    ``text/markdown; charset=utf-8``.  Falls back to 404 if no Markdown
+    content is available.
+    """
+    env = request.scope["env"]
+    db = env.DB
+    user_id = user["user_id"]
+
+    article = await _get_user_article(
+        db, article_id, user_id, fields="id, markdown_content"
+    )
+
+    markdown_content = article.get("markdown_content")
+    if not markdown_content:
+        raise HTTPException(status_code=404, detail="No markdown content available")
+
+    return Response(
+        content=markdown_content,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Cache-Control": "private, max-age=300"},
+    )
 
 
 @router.get("/{article_id}/metadata")
@@ -813,3 +1015,47 @@ async def check_original(
         "original_status": new_status,
         "last_checked_at": now,
     }
+
+
+@router.get("/{article_id}/epub")
+async def get_article_epub(
+    request: Request,
+    article_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> Response:
+    """Export an article as an EPUB file for e-readers.
+
+    Fetches the article metadata from D1 and HTML content from R2, then
+    generates a spec-compliant EPUB 2.0.1 file.  Returns the file as a
+    download with ``Content-Type: application/epub+zip``.
+    """
+    env = request.scope["env"]
+    db = env.DB
+    r2 = env.CONTENT
+    user_id = user["user_id"]
+
+    article = await _get_user_article(
+        db, article_id, user_id, fields="id, title, author, html_key"
+    )
+
+    html_key = article.get("html_key")
+    if not html_key:
+        raise HTTPException(status_code=404, detail="No content available for EPUB export")
+
+    html_content = await get_content(r2, html_key)
+    if html_content is None:
+        raise HTTPException(status_code=404, detail="Content not found in storage")
+
+    title = article.get("title") or "Untitled"
+    author = article.get("author") or ""
+
+    epub_bytes = generate_epub(title, author, html_content)
+    filename = epub_filename(title)
+
+    return Response(
+        content=epub_bytes,
+        media_type="application/epub+zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )

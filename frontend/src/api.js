@@ -66,6 +66,7 @@ export function listArticles(params) {
   if (params.is_favorite !== undefined) qs.set('is_favorite', params.is_favorite);
   if (params.audio_status) qs.set('audio_status', params.audio_status);
   if (params.tag) qs.set('tag', params.tag);
+  if (params.sort) qs.set('sort', params.sort);
   if (params.limit) qs.set('limit', params.limit);
   if (params.offset) qs.set('offset', params.offset);
   return request('GET', '/api/articles?' + qs.toString());
@@ -90,9 +91,40 @@ export function deleteArticle(id) {
   return request('DELETE', '/api/articles/' + id);
 }
 
+// Batch operations
+export function batchUpdateArticles(articleIds, updates) {
+  return request('POST', '/api/articles/batch-update', {
+    article_ids: articleIds,
+    updates: updates,
+  });
+}
+
+export function batchDeleteArticles(articleIds) {
+  return request('POST', '/api/articles/batch-delete', {
+    article_ids: articleIds,
+  });
+}
+
 // Article content from R2
 export function getArticleContent(articleId) {
   return fetch('/api/articles/' + articleId + '/content', { credentials: 'include' })
+    .then(function (resp) {
+      if (resp.status === 401) {
+        user.value = null;
+        navigateToLogin();
+        return null;
+      }
+      if (!resp.ok) return null;
+      return resp.text();
+    })
+    .catch(function () {
+      return null;
+    });
+}
+
+// Article markdown from D1
+export function getArticleMarkdown(articleId) {
+  return fetch('/api/articles/' + articleId + '/markdown', { credentials: 'include' })
     .then(function (resp) {
       if (resp.status === 401) {
         user.value = null;
@@ -128,6 +160,23 @@ export function deleteTag(id) {
   return request('DELETE', '/api/tags/' + id);
 }
 
+export function renameTag(id, newName) {
+  return request('PATCH', '/api/tags/' + id, { name: newName });
+}
+
+// Tag Rules (auto-tagging)
+export function getTagRules() {
+  return request('GET', '/api/tag-rules');
+}
+
+export function createTagRule(data) {
+  return request('POST', '/api/tag-rules', data);
+}
+
+export function deleteTagRule(ruleId) {
+  return request('DELETE', '/api/tag-rules/' + ruleId);
+}
+
 export function getArticleTags(articleId) {
   return request('GET', '/api/articles/' + articleId + '/tags');
 }
@@ -150,9 +199,104 @@ export function checkOriginal(articleId) {
   return request('POST', '/api/articles/' + articleId + '/check-original');
 }
 
+// Highlights
+export function getHighlights(articleId) {
+  return request('GET', '/api/articles/' + articleId + '/highlights');
+}
+
+export function createHighlight(articleId, data) {
+  return request('POST', '/api/articles/' + articleId + '/highlights', data);
+}
+
+export function updateHighlight(id, data) {
+  return request('PATCH', '/api/highlights/' + id, data);
+}
+
+export function deleteHighlight(id) {
+  return request('DELETE', '/api/highlights/' + id);
+}
+
+export function getRandomHighlight() {
+  return request('GET', '/api/highlights/random');
+}
+
+export function getAllHighlights(limit, offset) {
+  var qs = new URLSearchParams();
+  if (limit) qs.set('limit', limit);
+  if (offset) qs.set('offset', offset);
+  return request('GET', '/api/highlights?' + qs.toString());
+}
+
 // TTS / Audio
 export function listenLater(articleId) {
   return request('POST', '/api/articles/' + articleId + '/listen-later');
+}
+
+export function getAudioTiming(articleId) {
+  return request('GET', '/api/articles/' + articleId + '/audio-timing');
+}
+
+// Stats
+export function getStats() {
+  return request('GET', '/api/stats');
+}
+
+// EPUB export
+export function downloadArticleEpub(articleId) {
+  var path = '/api/articles/' + articleId + '/epub';
+  return fetch(path, { credentials: 'include' })
+    .then(function (resp) {
+      if (resp.status === 401) {
+        user.value = null;
+        navigateToLogin();
+        throw new Error('Unauthorized');
+      }
+      if (!resp.ok) {
+        throw new Error('EPUB export failed');
+      }
+      var disposition = resp.headers.get('content-disposition') || '';
+      var match = disposition.match(/filename="([^"]+)"/);
+      var filename = match ? match[1] : 'article.epub';
+      return resp.blob().then(function (blob) {
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      });
+    });
+}
+
+// Export
+export function exportData(format) {
+  var path = '/api/export/' + format;
+  return fetch(path, { credentials: 'include' })
+    .then(function (resp) {
+      if (resp.status === 401) {
+        user.value = null;
+        navigateToLogin();
+        throw new Error('Unauthorized');
+      }
+      if (!resp.ok) {
+        throw new Error('Export failed');
+      }
+      var disposition = resp.headers.get('content-disposition') || '';
+      var match = disposition.match(/filename="([^"]+)"/);
+      var filename = match ? match[1] : 'tasche-export.' + (format === 'json' ? 'json' : 'html');
+      return resp.blob().then(function (blob) {
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      });
+    });
 }
 
 // Offline mutation queue
@@ -247,6 +391,73 @@ export function isOfflineCached(articleId) {
       articleId: articleId,
     });
   });
+}
+
+// Trigger auto-precaching of recent unread articles
+export function triggerAutoPrecache(limit) {
+  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+    navigator.serviceWorker.controller.postMessage({
+      type: 'AUTO_PRECACHE',
+      limit: limit || 20,
+    });
+  }
+}
+
+// Request cache stats from the service worker
+// Returns a Promise that resolves with { articleCount, totalSize }
+export function getCacheStats() {
+  return new Promise(function (resolve) {
+    if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) {
+      resolve({ articleCount: 0, totalSize: 0 });
+      return;
+    }
+
+    var timeout = setTimeout(function () {
+      navigator.serviceWorker.removeEventListener('message', handler);
+      resolve({ articleCount: 0, totalSize: 0 });
+    }, 5000);
+
+    function handler(event) {
+      if (event.data && event.data.type === 'CACHE_STATS') {
+        clearTimeout(timeout);
+        navigator.serviceWorker.removeEventListener('message', handler);
+        resolve({
+          articleCount: event.data.articleCount,
+          totalSize: event.data.totalSize,
+        });
+      }
+    }
+
+    navigator.serviceWorker.addEventListener('message', handler);
+    navigator.serviceWorker.controller.postMessage({
+      type: 'GET_CACHE_STATS',
+    });
+  });
+}
+
+// Feeds
+export function getFeeds() {
+  return request('GET', '/api/feeds');
+}
+
+export function addFeed(url) {
+  return request('POST', '/api/feeds', { url });
+}
+
+export function deleteFeed(id) {
+  return request('DELETE', '/api/feeds/' + id);
+}
+
+export function refreshFeed(id) {
+  return request('POST', '/api/feeds/' + id + '/refresh');
+}
+
+export function refreshAllFeeds() {
+  return request('POST', '/api/feeds/refresh-all');
+}
+
+export function importOPML(opml) {
+  return request('POST', '/api/feeds/import-opml', { opml });
 }
 
 // Trigger sync queue replay

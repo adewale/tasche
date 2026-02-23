@@ -5,12 +5,17 @@ import { Toast } from './components/Toast.jsx';
 import { AudioPlayer } from './components/AudioPlayer.jsx';
 import { Library } from './views/Library.jsx';
 import { Reader } from './views/Reader.jsx';
+import { MarkdownView } from './views/MarkdownView.jsx';
 import { Search } from './views/Search.jsx';
 import { Tags } from './views/Tags.jsx';
 import { Settings } from './views/Settings.jsx';
+import { Highlights } from './views/Highlights.jsx';
+import { Review } from './views/Review.jsx';
+import { Stats } from './views/Stats.jsx';
+import { Feeds } from './views/Feeds.jsx';
 import { Login } from './views/Login.jsx';
 import { user, isOffline, syncStatus, addToast } from './state.js';
-import { getSession, createArticle, triggerSync } from './api.js';
+import { getSession, createArticle, triggerSync, triggerAutoPrecache } from './api.js';
 
 import './app.css';
 
@@ -102,6 +107,20 @@ export function App() {
       const u = await getSession();
       user.value = u;
 
+      // Schedule auto-precache after a short delay to avoid competing with
+      // initial page load. Only runs when online and the preference is enabled.
+      if (navigator.onLine) {
+        var autoCacheEnabled = localStorage.getItem('tasche-auto-cache');
+        // Default is enabled (null means not yet set, treat as enabled)
+        if (autoCacheEnabled === null || autoCacheEnabled === 'true') {
+          setTimeout(function () {
+            if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+              triggerAutoPrecache(20);
+            }
+          }, 5000);
+        }
+      }
+
       // Handle Web Share Target (URL passed as query param)
       const urlParams = new URLSearchParams(window.location.search);
       const sharedUrl = urlParams.get('url');
@@ -176,6 +195,11 @@ function AppRouter() {
     return <Library />;
   }
 
+  const markdownMatch = currentPath.match(/^\/article\/(.+)\/markdown$/);
+  if (markdownMatch) {
+    return <MarkdownView id={markdownMatch[1]} />;
+  }
+
   const articleMatch = currentPath.match(/^\/article\/(.+)$/);
   if (articleMatch) {
     return <Reader id={articleMatch[1]} />;
@@ -187,6 +211,22 @@ function AppRouter() {
 
   if (currentPath === '/tags') {
     return <Tags />;
+  }
+
+  if (currentPath === '/highlights') {
+    return <Highlights />;
+  }
+
+  if (currentPath === '/review') {
+    return <Review />;
+  }
+
+  if (currentPath === '/stats') {
+    return <Stats />;
+  }
+
+  if (currentPath === '/feeds') {
+    return <Feeds />;
   }
 
   if (currentPath === '/settings') {

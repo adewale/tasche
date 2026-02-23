@@ -4,7 +4,7 @@ import { addToast } from '../state.js';
 import { formatTime } from '../utils.js';
 import { IconPlay, IconPause, IconSkipBack, IconSkipForward, IconX } from './Icons.jsx';
 
-const audioState = signal({
+export const audioState = signal({
   articleId: null,
   articleTitle: '',
   isPlaying: false,
@@ -14,7 +14,7 @@ const audioState = signal({
 const SPEEDS = [0.75, 1, 1.25, 1.5, 1.75, 2];
 
 let audioEl = null;
-function getAudio() {
+export function getAudio() {
   if (!audioEl) {
     audioEl = new Audio();
   }

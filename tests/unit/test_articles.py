@@ -498,6 +498,190 @@ class TestCreateArticle:
 
 
 # ---------------------------------------------------------------------------
+# POST /api/articles with content — Bookmarklet content capture
+# ---------------------------------------------------------------------------
+
+
+class TestCreateArticleWithContent:
+    async def test_stores_raw_html_in_r2_when_content_provided(self) -> None:
+        """POST /api/articles with content stores raw HTML in R2."""
+        calls: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            calls.append({"sql": sql, "params": params})
+            return []
+
+        queue = MockQueue()
+        db = MockD1(execute=execute)
+        r2 = MockR2()
+        env = MockEnv(db=db, article_queue=queue, content=r2)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles",
+            json={
+                "url": "https://example.com/paywalled",
+                "title": "Paywalled Article",
+                "content": "<html><body><p>Secret content</p></body></html>",
+            },
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 201
+        data = resp.json()
+        article_id = data["id"]
+
+        # Verify raw HTML was stored in R2
+        raw_key = f"articles/{article_id}/raw.html"
+        assert raw_key in r2._store
+        stored = r2._store[raw_key].decode("utf-8")
+        assert "<p>Secret content</p>" in stored
+
+    async def test_creates_article_without_content(self) -> None:
+        """POST /api/articles without content does not store raw HTML in R2."""
+        calls: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            calls.append({"sql": sql, "params": params})
+            return []
+
+        queue = MockQueue()
+        db = MockD1(execute=execute)
+        r2 = MockR2()
+        env = MockEnv(db=db, article_queue=queue, content=r2)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles",
+            json={"url": "https://example.com/no-content"},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 201
+        # No raw.html should be in R2
+        raw_keys = [k for k in r2._store if k.endswith("raw.html")]
+        assert len(raw_keys) == 0
+
+    async def test_rejects_content_exceeding_5mb(self) -> None:
+        """POST /api/articles returns 400 when content exceeds 5 MB."""
+        env = MockEnv()
+        client, session_id = await _authenticated_client(env)
+
+        huge_content = "x" * (5_242_880 + 1)
+        resp = client.post(
+            "/api/articles",
+            json={"url": "https://example.com/huge", "content": huge_content},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 400
+        assert "5 MB" in resp.json()["detail"]
+
+    async def test_rejects_non_string_content(self) -> None:
+        """POST /api/articles returns 400 when content is not a string."""
+        env = MockEnv()
+        client, session_id = await _authenticated_client(env)
+
+        resp = client.post(
+            "/api/articles",
+            json={"url": "https://example.com/bad", "content": 12345},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 400
+        assert "string" in resp.json()["detail"].lower()
+
+    async def test_content_with_duplicate_url_stores_raw_html(self) -> None:
+        """POST /api/articles with content on duplicate URL still stores raw HTML."""
+        existing = ArticleFactory.create(
+            user_id="user_001",
+            original_url="https://example.com/dup-content",
+        )
+
+        def execute(sql: str, params: list) -> list:
+            if "original_url = ?" in sql:
+                return [existing]
+            return []
+
+        db = MockD1(execute=execute)
+        r2 = MockR2()
+        env = MockEnv(db=db, content=r2)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles",
+            json={
+                "url": "https://example.com/dup-content",
+                "content": "<html><body><p>Updated content</p></body></html>",
+            },
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 201
+        data = resp.json()
+        article_id = data["id"]
+
+        raw_key = f"articles/{article_id}/raw.html"
+        assert raw_key in r2._store
+
+    async def test_empty_content_string_does_not_store(self) -> None:
+        """POST /api/articles with empty content string skips R2 storage."""
+        calls: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            calls.append({"sql": sql, "params": params})
+            return []
+
+        queue = MockQueue()
+        db = MockD1(execute=execute)
+        r2 = MockR2()
+        env = MockEnv(db=db, article_queue=queue, content=r2)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles",
+            json={"url": "https://example.com/empty-content", "content": ""},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 201
+        # Empty string is falsy, so no raw.html should be stored
+        raw_keys = [k for k in r2._store if k.endswith("raw.html")]
+        assert len(raw_keys) == 0
+
+    async def test_enqueues_processing_when_content_provided(self) -> None:
+        """POST /api/articles with content still enqueues the processing job."""
+        calls: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            calls.append({"sql": sql, "params": params})
+            return []
+
+        queue = MockQueue()
+        db = MockD1(execute=execute)
+        r2 = MockR2()
+        env = MockEnv(db=db, article_queue=queue, content=r2)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles",
+            json={
+                "url": "https://example.com/with-content",
+                "content": "<html><body><p>Content</p></body></html>",
+            },
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 201
+
+        # Queue message should still be sent
+        assert len(queue.messages) == 1
+        msg = queue.messages[0]
+        assert msg["type"] == "article_processing"
+        assert msg["url"] == "https://example.com/with-content"
+
+
+# ---------------------------------------------------------------------------
 # GET /api/articles — List articles
 # ---------------------------------------------------------------------------
 
@@ -605,6 +789,154 @@ class TestListArticles:
         select_calls = [c for c in captured if "SELECT" in c["sql"]]
         assert len(select_calls) >= 1
         assert "reading_status = ?" in select_calls[0]["sql"]
+
+    async def test_default_sort_is_newest(self) -> None:
+        """GET /api/articles without sort param orders by created_at DESC."""
+        captured: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            captured.append({"sql": sql, "params": params})
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get(
+            "/api/articles",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 200
+        select_calls = [c for c in captured if "SELECT" in c["sql"]]
+        assert len(select_calls) >= 1
+        assert "ORDER BY created_at DESC" in select_calls[0]["sql"]
+
+    async def test_sort_oldest(self) -> None:
+        """GET /api/articles?sort=oldest orders by created_at ASC."""
+        captured: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            captured.append({"sql": sql, "params": params})
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get(
+            "/api/articles?sort=oldest",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 200
+        select_calls = [c for c in captured if "SELECT" in c["sql"]]
+        assert len(select_calls) >= 1
+        assert "ORDER BY created_at ASC" in select_calls[0]["sql"]
+
+    async def test_sort_shortest(self) -> None:
+        """GET /api/articles?sort=shortest orders by reading_time_minutes ASC NULLS LAST."""
+        captured: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            captured.append({"sql": sql, "params": params})
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get(
+            "/api/articles?sort=shortest",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 200
+        select_calls = [c for c in captured if "SELECT" in c["sql"]]
+        assert len(select_calls) >= 1
+        assert "ORDER BY reading_time_minutes ASC NULLS LAST" in select_calls[0]["sql"]
+
+    async def test_sort_longest(self) -> None:
+        """GET /api/articles?sort=longest orders by reading_time_minutes DESC NULLS LAST."""
+        captured: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            captured.append({"sql": sql, "params": params})
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get(
+            "/api/articles?sort=longest",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 200
+        select_calls = [c for c in captured if "SELECT" in c["sql"]]
+        assert len(select_calls) >= 1
+        assert "ORDER BY reading_time_minutes DESC NULLS LAST" in select_calls[0]["sql"]
+
+    async def test_sort_title_asc(self) -> None:
+        """GET /api/articles?sort=title_asc orders by title ASC."""
+        captured: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            captured.append({"sql": sql, "params": params})
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get(
+            "/api/articles?sort=title_asc",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 200
+        select_calls = [c for c in captured if "SELECT" in c["sql"]]
+        assert len(select_calls) >= 1
+        assert "ORDER BY title ASC" in select_calls[0]["sql"]
+
+    async def test_sort_invalid_value_returns_422(self) -> None:
+        """GET /api/articles?sort=invalid returns 422."""
+        db = MockD1(execute=lambda sql, params: [])
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get(
+            "/api/articles?sort=invalid",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 422
+        assert "sort must be one of" in resp.json()["detail"]
+
+    async def test_sort_combined_with_filter(self) -> None:
+        """GET /api/articles?reading_status=unread&sort=shortest combines filter and sort."""
+        captured: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            captured.append({"sql": sql, "params": params})
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get(
+            "/api/articles?reading_status=unread&sort=shortest",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 200
+        select_calls = [c for c in captured if "SELECT" in c["sql"]]
+        assert len(select_calls) >= 1
+        sql = select_calls[0]["sql"]
+        assert "reading_status = ?" in sql
+        assert "ORDER BY reading_time_minutes ASC NULLS LAST" in sql
 
 
 # ---------------------------------------------------------------------------
@@ -1799,3 +2131,201 @@ class TestRetryArticle:
         # Should have 2 updates: first to 'pending', then to 'failed'
         assert len(updates) >= 2
         assert "failed" in updates[-1]["params"]
+
+
+# ---------------------------------------------------------------------------
+# POST /api/articles/batch-update — Batch update articles
+# ---------------------------------------------------------------------------
+
+
+class TestBatchUpdateArticles:
+    async def test_batch_update_reading_status(self) -> None:
+        """POST /api/articles/batch-update updates reading_status for all given articles."""
+        updates: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            if "UPDATE articles SET" in sql:
+                updates.append({"sql": sql, "params": params})
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles/batch-update",
+            json={
+                "article_ids": ["art_bu1", "art_bu2"],
+                "updates": {"reading_status": "archived"},
+            },
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["updated"] == 2
+        assert len(updates) == 2
+
+    async def test_batch_update_empty_ids_returns_422(self) -> None:
+        """POST /api/articles/batch-update rejects empty article_ids."""
+        env = MockEnv()
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles/batch-update",
+            json={"article_ids": [], "updates": {"reading_status": "archived"}},
+            cookies={COOKIE_NAME: session_id},
+        )
+        assert resp.status_code == 422
+
+    async def test_batch_update_empty_updates_returns_422(self) -> None:
+        """POST /api/articles/batch-update rejects empty updates."""
+        env = MockEnv()
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles/batch-update",
+            json={"article_ids": ["art_1"], "updates": {}},
+            cookies={COOKIE_NAME: session_id},
+        )
+        assert resp.status_code == 422
+
+    async def test_batch_update_invalid_field_returns_422(self) -> None:
+        """POST /api/articles/batch-update rejects invalid update fields."""
+        env = MockEnv()
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles/batch-update",
+            json={"article_ids": ["art_1"], "updates": {"title": "Hacked"}},
+            cookies={COOKIE_NAME: session_id},
+        )
+        assert resp.status_code == 422
+        assert "Invalid update fields" in resp.json()["detail"]
+
+    async def test_batch_update_invalid_reading_status_returns_422(self) -> None:
+        """POST /api/articles/batch-update rejects invalid reading_status value."""
+        env = MockEnv()
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles/batch-update",
+            json={"article_ids": ["art_1"], "updates": {"reading_status": "bad"}},
+            cookies={COOKIE_NAME: session_id},
+        )
+        assert resp.status_code == 422
+
+    async def test_batch_update_too_many_ids_returns_422(self) -> None:
+        """POST /api/articles/batch-update rejects more than 100 IDs."""
+        env = MockEnv()
+        client, session_id = await _authenticated_client(env)
+        ids = ["art_" + str(i) for i in range(101)]
+        resp = client.post(
+            "/api/articles/batch-update",
+            json={"article_ids": ids, "updates": {"reading_status": "archived"}},
+            cookies={COOKIE_NAME: session_id},
+        )
+        assert resp.status_code == 422
+        assert "100" in resp.json()["detail"]
+
+    async def test_batch_update_requires_auth(self) -> None:
+        """POST /api/articles/batch-update returns 401 without auth."""
+        env = MockEnv()
+        app = _make_app(env)
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.post(
+            "/api/articles/batch-update",
+            json={"article_ids": ["art_1"], "updates": {"reading_status": "archived"}},
+        )
+        assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# POST /api/articles/batch-delete — Batch delete articles
+# ---------------------------------------------------------------------------
+
+
+class TestBatchDeleteArticles:
+    async def test_batch_delete_articles(self) -> None:
+        """POST /api/articles/batch-delete deletes all specified articles."""
+        deletes: list[str] = []
+
+        def execute(sql: str, params: list) -> list:
+            if "SELECT id FROM articles" in sql:
+                # Simulate found articles
+                article_id = params[0]
+                if article_id in ("art_bd1", "art_bd2"):
+                    return [{"id": article_id}]
+                return []
+            if "DELETE FROM articles" in sql:
+                deletes.append(params[0])
+            return []
+
+        db = MockD1(execute=execute)
+        r2 = MockR2()
+        env = MockEnv(db=db, content=r2)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles/batch-delete",
+            json={"article_ids": ["art_bd1", "art_bd2"]},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["deleted"] == 2
+        assert "art_bd1" in deletes
+        assert "art_bd2" in deletes
+
+    async def test_batch_delete_skips_nonexistent(self) -> None:
+        """POST /api/articles/batch-delete skips articles that don't exist for user."""
+
+        def execute(sql: str, params: list) -> list:
+            if "SELECT id FROM articles" in sql:
+                return []  # No articles found
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles/batch-delete",
+            json={"article_ids": ["nonexistent_1", "nonexistent_2"]},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["deleted"] == 0
+
+    async def test_batch_delete_empty_ids_returns_422(self) -> None:
+        """POST /api/articles/batch-delete rejects empty article_ids."""
+        env = MockEnv()
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles/batch-delete",
+            json={"article_ids": []},
+            cookies={COOKIE_NAME: session_id},
+        )
+        assert resp.status_code == 422
+
+    async def test_batch_delete_too_many_ids_returns_422(self) -> None:
+        """POST /api/articles/batch-delete rejects more than 100 IDs."""
+        env = MockEnv()
+        client, session_id = await _authenticated_client(env)
+        ids = ["art_" + str(i) for i in range(101)]
+        resp = client.post(
+            "/api/articles/batch-delete",
+            json={"article_ids": ids},
+            cookies={COOKIE_NAME: session_id},
+        )
+        assert resp.status_code == 422
+        assert "100" in resp.json()["detail"]
+
+    async def test_batch_delete_requires_auth(self) -> None:
+        """POST /api/articles/batch-delete returns 401 without auth."""
+        env = MockEnv()
+        app = _make_app(env)
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.post(
+            "/api/articles/batch-delete",
+            json={"article_ids": ["art_1"]},
+        )
+        assert resp.status_code == 401

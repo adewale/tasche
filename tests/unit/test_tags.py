@@ -266,6 +266,147 @@ class TestListTags:
 
 
 # ---------------------------------------------------------------------------
+# PATCH /api/tags/{tag_id} — Rename tag
+# ---------------------------------------------------------------------------
+
+
+class TestRenameTag:
+    async def test_renames_tag_successfully(self) -> None:
+        """PATCH /api/tags/{tag_id} updates the tag name."""
+        tag = {
+            "id": "tag_001",
+            "user_id": "user_001",
+            "name": "python",
+            "created_at": "2025-01-01",
+        }
+        calls: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            calls.append({"sql": sql, "params": params})
+            # _get_user_tag lookup (does NOT have "name = ?")
+            if "FROM tags" in sql and "id = ?" in sql and "name = ?" not in sql:
+                return [tag]
+            # Duplicate name check — no duplicate found
+            if "FROM tags" in sql and "name = ?" in sql and "id != ?" in sql:
+                return []
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.patch(
+            "/api/tags/tag_001",
+            json={"name": "python3"},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["id"] == "tag_001"
+        assert data["name"] == "python3"
+        assert data["user_id"] == "user_001"
+
+        update_calls = [c for c in calls if "UPDATE tags" in c["sql"]]
+        assert len(update_calls) == 1
+
+    async def test_returns_404_for_missing_tag(self) -> None:
+        """PATCH /api/tags/{tag_id} returns 404 when tag doesn't exist."""
+        db = MockD1(execute=lambda sql, params: [])
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.patch(
+            "/api/tags/nonexistent",
+            json={"name": "new-name"},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 404
+
+    async def test_returns_409_for_duplicate_name(self) -> None:
+        """PATCH /api/tags/{tag_id} returns 409 when another tag has the name."""
+        tag = {
+            "id": "tag_001",
+            "user_id": "user_001",
+            "name": "python",
+            "created_at": "2025-01-01",
+        }
+        other_tag = {
+            "id": "tag_002",
+            "user_id": "user_001",
+            "name": "javascript",
+        }
+
+        def execute(sql: str, params: list) -> list:
+            # _get_user_tag lookup
+            if "FROM tags" in sql and "id = ?" in sql and "name = ?" not in sql:
+                return [tag]
+            # Duplicate name check
+            if "FROM tags" in sql and "name = ?" in sql and "id != ?" in sql:
+                return [other_tag]
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.patch(
+            "/api/tags/tag_001",
+            json={"name": "javascript"},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 409
+        assert "already exists" in resp.json()["detail"]
+
+    async def test_rejects_empty_name(self) -> None:
+        """PATCH /api/tags/{tag_id} returns 422 when name is empty."""
+        env = MockEnv()
+        client, session_id = await _authenticated_client(env)
+
+        resp = client.patch(
+            "/api/tags/tag_001",
+            json={"name": ""},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 422
+        assert "required" in resp.json()["detail"].lower()
+
+    async def test_trims_whitespace(self) -> None:
+        """PATCH /api/tags/{tag_id} trims whitespace from the new name."""
+        tag = {
+            "id": "tag_001",
+            "user_id": "user_001",
+            "name": "python",
+            "created_at": "2025-01-01",
+        }
+        calls: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            calls.append({"sql": sql, "params": params})
+            if "FROM tags" in sql and "id = ?" in sql and "name = ?" not in sql:
+                return [tag]
+            if "FROM tags" in sql and "name = ?" in sql and "id != ?" in sql:
+                return []
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.patch(
+            "/api/tags/tag_001",
+            json={"name": "  python3  "},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["name"] == "python3"
+
+
+# ---------------------------------------------------------------------------
 # DELETE /api/tags/{tag_id} — Delete tag
 # ---------------------------------------------------------------------------
 
@@ -595,6 +736,14 @@ class TestTagsAuthRequired:
         app = _make_app(env)
         client = TestClient(app, raise_server_exceptions=False)
         resp = client.get("/api/tags")
+        assert resp.status_code == 401
+
+    def test_patch_tag_returns_401_without_auth(self) -> None:
+        """PATCH /api/tags/{id} returns 401 without a session cookie."""
+        env = MockEnv()
+        app = _make_app(env)
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.patch("/api/tags/tag_001", json={"name": "new"})
         assert resp.status_code == 401
 
     def test_delete_tag_returns_401_without_auth(self) -> None:

@@ -1125,3 +1125,160 @@ class TestProcessArticleAutoTTS:
         # No TTS messages should be in the queue
         tts_messages = [m for m in queue.messages if m.get("type") == "tts_generation"]
         assert len(tts_messages) == 0
+
+
+# =========================================================================
+# test_process_article — pre-supplied content (bookmarklet capture)
+# =========================================================================
+
+
+class TestProcessArticlePreSuppliedContent:
+    async def test_uses_pre_supplied_html_from_r2(self) -> None:
+        """When raw.html exists in R2, processing skips the HTTP fetch."""
+        db = _TrackingD1()
+        r2 = MockR2()
+        env = _browser_env(MockEnv(db=db, content=r2))
+
+        # Pre-store raw HTML in R2 (as the bookmarklet would)
+        pre_supplied_html = """
+        <html>
+        <head><title>Paywalled Article</title></head>
+        <body>
+            <article>
+                <h1>Paywalled Article</h1>
+                <p>This is the secret content behind the paywall. It was
+                captured by the bookmarklet from the user's browser where they
+                were already authenticated. The processing pipeline should use
+                this pre-supplied HTML instead of fetching the page.</p>
+                <p>Second paragraph with more detail about the paywalled topic.
+                This paragraph provides additional context and analysis that
+                is only available to subscribers.</p>
+                <p>Third paragraph to ensure enough content for readability
+                extraction to identify the main article body.</p>
+            </article>
+        </body>
+        </html>
+        """
+        await r2.put("articles/art_presupplied/raw.html", pre_supplied_html)
+
+        # Create a mock client that should NOT be called for the page fetch
+        # (but needs to exist for the context manager and image downloads)
+        from unittest.mock import AsyncMock
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        # Track whether get() is called for page fetch
+        fetch_calls = []
+
+        async def _get(url, **kwargs):
+            fetch_calls.append(url)
+            return _make_mock_response(
+                content=b"fake-image-bytes",
+                headers={"content-type": "image/jpeg"},
+            )
+
+        mock_client.get = AsyncMock(side_effect=_get)
+
+        with (
+            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+        ):
+            from articles.processing import process_article
+
+            await process_article(
+                "art_presupplied", "https://example.com/paywalled", env,
+            )
+
+        # The page URL should NOT have been fetched (only image URLs, if any)
+        page_fetches = [u for u in fetch_calls if u == "https://example.com/paywalled"]
+        assert len(page_fetches) == 0, (
+            "Processing should skip HTTP fetch when raw.html is pre-supplied"
+        )
+
+        # Article should still be marked as 'ready'
+        ready_updates = [
+            (sql, params)
+            for sql, params in db.executed
+            if "title" in sql and "ready" in str(params)
+        ]
+        assert len(ready_updates) >= 1
+
+    async def test_pre_supplied_content_still_extracts_article(self) -> None:
+        """Pre-supplied HTML is processed through the extraction pipeline."""
+        db = _TrackingD1()
+        r2 = MockR2()
+        env = _browser_env(MockEnv(db=db, content=r2))
+
+        pre_supplied_html = """
+        <html>
+        <head>
+            <title>Premium Article</title>
+            <link rel="canonical" href="https://example.com/premium-canonical">
+        </head>
+        <body>
+            <article>
+                <h1>Premium Article</h1>
+                <p>Premium exclusive content that was captured by the bookmarklet.
+                This content is behind a paywall and cannot be fetched by the
+                server directly. The extraction pipeline should still process
+                it normally and extract the title, excerpt, and other metadata.</p>
+                <p>Second paragraph with analysis and supporting details for the
+                premium article content. More text to pad the content.</p>
+                <p>Final paragraph wrapping up the exclusive premium content
+                that subscribers get access to.</p>
+            </article>
+        </body>
+        </html>
+        """
+        await r2.put("articles/art_premium/raw.html", pre_supplied_html)
+
+        mock_client = _make_mock_client()
+
+        with (
+            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+        ):
+            from articles.processing import process_article
+
+            await process_article(
+                "art_premium", "https://example.com/premium", env,
+            )
+
+        # Verify content.html was stored in R2
+        assert "articles/art_premium/content.html" in r2._store
+
+        # Verify metadata was stored
+        metadata_key = "articles/art_premium/metadata.json"
+        assert metadata_key in r2._store
+        metadata = json.loads(r2._store[metadata_key].decode("utf-8"))
+        assert metadata["article_id"] == "art_premium"
+        assert metadata["word_count"] > 0
+
+    async def test_falls_back_to_fetch_when_no_raw_html(self) -> None:
+        """When no raw.html exists in R2, the normal HTTP fetch path is used."""
+        db = _TrackingD1()
+        r2 = MockR2()
+        env = _browser_env(MockEnv(db=db, content=r2))
+
+        # No raw.html pre-stored in R2
+        mock_client = _make_mock_client()
+
+        with (
+            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+        ):
+            from articles.processing import process_article
+
+            await process_article("art_nopre", "https://example.com/article", env)
+
+        # Should have used the normal fetch path and stored content
+        assert "articles/art_nopre/content.html" in r2._store
+
+        # Article should be ready
+        ready_updates = [
+            (sql, params)
+            for sql, params in db.executed
+            if "title" in sql and "ready" in str(params)
+        ]
+        assert len(ready_updates) >= 1

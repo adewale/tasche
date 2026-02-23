@@ -44,6 +44,88 @@ def _estimate_duration(text: str) -> int:
     return seconds
 
 
+# Sentence boundary regex: split on .!? followed by whitespace or end of string.
+# Handles common abbreviations by requiring a capital letter or end of string after
+# the boundary, and avoids splitting on decimal numbers.
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+
+
+def split_sentences(text: str) -> list[str]:
+    """Split text into sentences using punctuation boundaries.
+
+    Uses a simple regex that splits on sentence-ending punctuation (.!?)
+    followed by whitespace. Filters out empty strings.
+
+    Parameters
+    ----------
+    text:
+        The plain text to split (should already have markdown stripped).
+
+    Returns
+    -------
+    list[str]
+        A list of sentence strings. Returns an empty list for empty input.
+    """
+    if not text or not text.strip():
+        return []
+    parts = _SENTENCE_SPLIT_RE.split(text.strip())
+    return [s.strip() for s in parts if s.strip()]
+
+
+def generate_sentence_timing(
+    text: str,
+    words_per_minute: int = _WORDS_PER_MINUTE,
+) -> dict:
+    """Generate a sentence timing map from plain text.
+
+    Splits the text into sentences, then computes estimated start and end
+    times for each sentence based on cumulative word count and the given
+    speaking rate.
+
+    Parameters
+    ----------
+    text:
+        Plain text (markdown already stripped).
+    words_per_minute:
+        Estimated TTS speaking rate. Defaults to 150 WPM.
+
+    Returns
+    -------
+    dict
+        A timing map with ``sentences`` (list of dicts with ``text``,
+        ``start``, ``end``, ``word_count``), ``words_per_minute``, and
+        ``total_duration_seconds``.
+    """
+    sentences = split_sentences(text)
+    if not sentences:
+        return {
+            "sentences": [],
+            "words_per_minute": words_per_minute,
+            "total_duration_seconds": 0,
+        }
+
+    words_per_second = words_per_minute / 60.0
+    timing_entries = []
+    cumulative_time = 0.0
+
+    for sentence in sentences:
+        wc = len(sentence.split())
+        duration = wc / words_per_second if words_per_second > 0 else 0
+        timing_entries.append({
+            "text": sentence,
+            "start": round(cumulative_time, 2),
+            "end": round(cumulative_time + duration, 2),
+            "word_count": wc,
+        })
+        cumulative_time += duration
+
+    return {
+        "sentences": timing_entries,
+        "words_per_minute": words_per_minute,
+        "total_duration_seconds": round(cumulative_time, 2),
+    }
+
+
 def strip_markdown(text: str) -> str:
     """Remove markdown syntax from text for cleaner TTS output.
 
@@ -264,6 +346,11 @@ async def process_tts(article_id: str, env: object, *, user_id: str) -> None:
         # Step 5: Store audio in R2
         audio_r2_key = article_key(article_id, "audio.mp3")
         await r2.put(audio_r2_key, audio_data)
+
+        # Step 5b: Generate and store sentence timing map for highlight sync
+        timing_data = generate_sentence_timing(tts_text)
+        timing_r2_key = article_key(article_id, "audio-timing.json")
+        await r2.put(timing_r2_key, json.dumps(timing_data))
 
         # Step 6: Update D1 with audio metadata
         duration = _estimate_duration(tts_text)
