@@ -419,3 +419,11 @@ The most damning statistic: the primary user journey ("save a URL, read it later
 **What was inherent:** The Pyodide FFI type matrix is genuinely non-obvious (no docs say None→undefined). JsNull being distinct from None and not a JsProxy is a platform gotcha. Content extraction fallback (BS4 replacing readability due to eval()) is an inherent Workers constraint.
 
 **Lesson:** For novel runtimes, deploy to the real platform on day 1 with one smoke test. Every subsequent fix commit in this project was downstream of not doing this. Tests measure correctness of logic in the wrong runtime; smoke tests measure reachability of function in the right one.
+
+### 35. Pyodide Cold Start Cancels First Queue Invocation
+
+Python Workers using Pyodide/WASM have a heavy cold start (~1100ms CPU). When a queue message hits a cold isolate, the Workers runtime cancels the first invocation (`outcome: "canceled"`, zero logs, zero exceptions). The automatic retry then succeeds (~600ms CPU) because the isolate is warm. This means every article's first queue attempt silently fails and processes on the second try, adding up to `max_batch_timeout` seconds of perceived delay.
+
+**Why it looks broken:** The article stays in `pending` for 30-60+ seconds. `process-now` (which reuses a warm HTTP isolate) works instantly, making the queue look broken by comparison. `curl` testing sees the same delay.
+
+**Lesson:** Pyodide queue consumers pay a cold-start tax that Cloudflare's retry mechanism absorbs silently. Don't chase this as a bug — it's an inherent platform cost. If latency matters, consider: (1) keeping isolates warm with scheduled pings, (2) moving time-critical work to the HTTP handler path, (3) accepting the delay as a background processing tradeoff.

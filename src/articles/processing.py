@@ -177,7 +177,7 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
             # Step 6: Extract article content
             # Prefer the Readability Service Binding (100% Mozilla fidelity)
             # with BS4 heuristic fallback when the binding is unavailable.
-            readability = getattr(env, "READABILITY", None)
+            readability = safe_env.READABILITY
             extraction_method = "bs4"
             if readability is not None:
                 try:
@@ -186,7 +186,12 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
                         extraction_method = "readability"
                     else:
                         article = extract_article(html)
-                except Exception:
+                except Exception as exc:
+                    print(json.dumps({
+                        "event": "readability_fallback",
+                        "article_id": article_id,
+                        "error": str(exc)[:200],
+                    }))
                     article = extract_article(html)
             else:
                 article = extract_article(html)
