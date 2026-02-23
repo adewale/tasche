@@ -161,29 +161,6 @@ export function Settings() {
         </div>
 
         <div style={{ marginTop: '32px' }}>
-          <h3 class="section-title">Newsletter Ingestion</h3>
-          <p class="settings-detail">
-            Tasche can receive newsletter emails directly and save them as articles.
-            Incoming newsletters appear in your library automatically with their
-            content already extracted and ready to read.
-          </p>
-          <p class="settings-detail" style={{ marginTop: '8px' }}>
-            <strong>Setup instructions:</strong>
-          </p>
-          <ol class="settings-detail" style={{ marginTop: '4px', paddingLeft: '20px', lineHeight: '1.6' }}>
-            <li>Go to your Cloudflare dashboard and open <strong>Email Routing</strong> for your domain.</li>
-            <li>Create a custom address (e.g. <code>save@yourdomain.com</code>) and route it to your Tasche Worker.</li>
-            <li>In the routing rule, select <strong>"Send to a Worker"</strong> and choose your Tasche Worker.</li>
-            <li>Subscribe to newsletters using the email address you configured above.</li>
-          </ol>
-          <p class="settings-detail" style={{ marginTop: '8px' }}>
-            Newsletters sent to that address will be automatically cleaned
-            (tracking pixels and footer boilerplate removed) and saved to your
-            library. The email subject becomes the article title.
-          </p>
-        </div>
-
-        <div style={{ marginTop: '32px' }}>
           {u && (
             <p class="settings-detail">
               Logged in as: <strong>{u.email || u.username || 'Unknown'}</strong>
