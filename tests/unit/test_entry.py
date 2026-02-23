@@ -78,7 +78,7 @@ class TestQueueUnknownType:
         assert msg.retried is False
 
         output = capsys.readouterr().out
-        assert "queue_unknown_type" in output
+        assert "unknown_type" in output
         assert "totally_unknown" in output
 
     async def test_missing_type_defaults_to_unknown(self, capsys: Any) -> None:
@@ -95,7 +95,7 @@ class TestQueueUnknownType:
 
         assert msg.acked is True
         output = capsys.readouterr().out
-        assert "queue_unknown_type" in output
+        assert "unknown_type" in output
 
 
 # ---------------------------------------------------------------------------
@@ -220,7 +220,7 @@ class TestQueueHandlerException:
         assert msg.retried is True
         assert msg.acked is False
         output = capsys.readouterr().out
-        assert "queue_error" in output
+        assert '"outcome": "error"' in output
 
 
 # ---------------------------------------------------------------------------
@@ -322,9 +322,9 @@ class TestScheduled:
             assert "available" in params
 
         output = capsys.readouterr().out
-        assert "scheduled_health_check" in output
+        assert "articles_checked" in output
         log_line = json.loads(output.strip())
-        assert log_line["checked"] == 2
+        assert log_line["articles_checked"] == 2
 
     async def test_check_original_url_error_defaults_to_unknown(self, capsys: Any) -> None:
         """When check_original_url raises, original_status is set to 'unknown'."""
@@ -372,7 +372,7 @@ class TestScheduled:
         await worker.scheduled(None)
 
         output = capsys.readouterr().out
-        assert "scheduled_error" in output
+        assert '"outcome": "error"' in output
 
     async def test_scheduled_no_articles_to_check(self, capsys: Any) -> None:
         """When no articles match the query, scheduled() still logs checked=0."""
@@ -386,9 +386,9 @@ class TestScheduled:
         await worker.scheduled(None)
 
         output = capsys.readouterr().out
-        assert "scheduled_health_check" in output
+        assert "articles_checked" in output
         log_line = json.loads(output.strip())
-        assert log_line["checked"] == 0
+        assert log_line["articles_checked"] == 0
 
 
 # ---------------------------------------------------------------------------

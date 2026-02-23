@@ -23,7 +23,7 @@ Steps:
 from __future__ import annotations
 
 import hashlib
-import json
+import json  # noqa: F401 — kept for other callers / queue handler
 import traceback
 from datetime import UTC, datetime
 
@@ -39,6 +39,7 @@ from articles.extraction import (
 from articles.images import download_images, store_images
 from articles.storage import article_key, store_content, store_metadata
 from articles.urls import _is_private_hostname, extract_domain
+from wide_event import current_event
 from wrappers import HttpClient, HttpError, SafeEnv
 
 # Minimum content length (characters) to consider HTML as "real" content.
@@ -131,15 +132,9 @@ async def apply_auto_tags(
             pass
 
     if applied > 0:
-        print(
-            json.dumps(
-                {
-                    "event": "auto_tags_applied",
-                    "article_id": article_id,
-                    "tags_applied": applied,
-                }
-            )
-        )
+        evt = current_event()
+        if evt:
+            evt.set("auto_tags_applied", applied)
 
     return applied
 
@@ -217,15 +212,10 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
             if pre_supplied_html is not None:
                 html = pre_supplied_html
                 final_url = original_url
-                print(
-                    json.dumps(
-                        {
-                            "event": "using_pre_supplied_content",
-                            "article_id": article_id,
-                            "content_length": len(html),
-                        }
-                    )
-                )
+                evt = current_event()
+                if evt:
+                    evt.set("content_source", "pre_supplied")
+                    evt.set("content_length", len(html))
             else:
                 html, final_url = await _fetch_page(client, original_url)
 
@@ -242,13 +232,14 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
             safe_env = SafeEnv(env)
             account_id = safe_env.get("CF_ACCOUNT_ID")
             api_token = safe_env.get("CF_API_TOKEN")
-            if not account_id or not api_token:
-                raise ValueError(
-                    "CF_ACCOUNT_ID and CF_API_TOKEN must be configured. "
-                    "Set them via `wrangler secret put`."
-                )
+            has_browser_rendering = bool(account_id and api_token)
 
-            if pre_supplied_html is None and _is_js_heavy(html):
+            if not has_browser_rendering:
+                evt = current_event()
+                if evt:
+                    evt.set("browser_rendering", "not_configured")
+
+            if has_browser_rendering and pre_supplied_html is None and _is_js_heavy(html):
                 try:
                     html = await scrape(client, final_url, account_id, api_token)
                 except BrowserRenderingError:
@@ -263,35 +254,37 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
             original_key = None
 
             # 5a: Thumbnail (above-the-fold crop)
-            try:
-                thumb_data = await screenshot(
-                    client,
-                    final_url,
-                    account_id,
-                    api_token,
-                    viewport_width=1200,
-                    viewport_height=630,
-                )
-                thumbnail_key = article_key(article_id, "thumbnail.webp")
-                await r2.put(thumbnail_key, thumb_data)
-            except BrowserRenderingError:
-                pass  # Per-URL failures are non-fatal
+            if has_browser_rendering:
+                try:
+                    thumb_data = await screenshot(
+                        client,
+                        final_url,
+                        account_id,
+                        api_token,
+                        viewport_width=1200,
+                        viewport_height=630,
+                    )
+                    thumbnail_key = article_key(article_id, "thumbnail.webp")
+                    await r2.put(thumbnail_key, thumb_data)
+                except BrowserRenderingError:
+                    pass  # Per-URL failures are non-fatal
 
             # 5b: Full-page archival screenshot
-            try:
-                full_data = await screenshot(
-                    client,
-                    final_url,
-                    account_id,
-                    api_token,
-                    viewport_width=1200,
-                    viewport_height=800,
-                    full_page=True,
-                )
-                original_key = article_key(article_id, "original.webp")
-                await r2.put(original_key, full_data)
-            except BrowserRenderingError:
-                pass  # Per-URL failures are non-fatal
+            if has_browser_rendering:
+                try:
+                    full_data = await screenshot(
+                        client,
+                        final_url,
+                        account_id,
+                        api_token,
+                        viewport_width=1200,
+                        viewport_height=800,
+                        full_page=True,
+                    )
+                    original_key = article_key(article_id, "original.webp")
+                    await r2.put(original_key, full_data)
+                except BrowserRenderingError:
+                    pass  # Per-URL failures are non-fatal
 
             # Step 6: Extract article content
             # Prefer the Readability Service Binding (100% Mozilla fidelity)
@@ -306,15 +299,10 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
                     else:
                         article = extract_article(html)
                 except Exception as exc:
-                    print(
-                        json.dumps(
-                            {
-                                "event": "readability_fallback",
-                                "article_id": article_id,
-                                "error": str(exc)[:200],
-                            }
-                        )
-                    )
+                    evt = current_event()
+                    if evt:
+                        evt.set("extraction_fallback", True)
+                        evt.set("extraction_fallback_error", str(exc)[:200])
                     article = extract_article(html)
             else:
                 article = extract_article(html)
@@ -419,27 +407,18 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
             await apply_auto_tags(env, article_id, domain, title, final_url)
         except Exception:
             # Non-fatal: auto-tagging failure should not block processing
-            print(
-                json.dumps(
-                    {
-                        "event": "auto_tag_failed",
-                        "article_id": article_id,
-                        "error": traceback.format_exc()[-500:],
-                    }
-                )
-            )
+            evt = current_event()
+            if evt:
+                evt.set("auto_tag_error", traceback.format_exc()[-500:])
 
-        print(
-            json.dumps(
-                {
-                    "event": "article_processed",
-                    "article_id": article_id,
-                    "status": "ready",
-                    "word_count": word_count,
-                    "image_count": len(image_map),
-                }
-            )
-        )
+        evt = current_event()
+        if evt:
+            evt.set_many({
+                "outcome": "success",
+                "extraction_method": extraction_method,
+                "word_count": word_count,
+                "image_count": len(image_map),
+            })
 
         # Auto-enqueue TTS if listen_later was requested at save time
         try:
@@ -456,63 +435,43 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
                         "user_id": art_row.get("user_id", ""),
                     }
                 )
-                print(
-                    json.dumps(
-                        {
-                            "event": "tts_auto_enqueued",
-                            "article_id": article_id,
-                        }
-                    )
-                )
+                evt = current_event()
+                if evt:
+                    evt.set("tts_auto_enqueued", True)
         except Exception:
             # Non-fatal: TTS can be requested manually later
-            print(
-                json.dumps(
-                    {
-                        "event": "tts_auto_enqueue_failed",
-                        "article_id": article_id,
-                        "error": traceback.format_exc(),
-                    }
-                )
-            )
+            evt = current_event()
+            if evt:
+                evt.set("tts_auto_enqueue_error", traceback.format_exc()[-500:])
 
     except (ConnectionError, TimeoutError):
         # Transient network errors — let propagate for queue retry
-        print(
-            json.dumps(
-                {
-                    "event": "article_processing_failed",
-                    "article_id": article_id,
-                    "error": traceback.format_exc(),
-                    "retryable": True,
-                }
-            )
-        )
+        evt = current_event()
+        if evt:
+            evt.set_many({
+                "outcome": "error",
+                "error.message": traceback.format_exc()[-500:],
+                "retryable": True,
+            })
         raise
     except HttpError as exc:
         if exc.status_code >= 500:
             # Server errors are transient — let propagate for queue retry
-            print(
-                json.dumps(
-                    {
-                        "event": "article_processing_failed",
-                        "article_id": article_id,
-                        "error": traceback.format_exc(),
-                        "retryable": True,
-                    }
-                )
-            )
+            evt = current_event()
+            if evt:
+                evt.set_many({
+                    "outcome": "error",
+                    "error.message": traceback.format_exc()[-500:],
+                    "retryable": True,
+                })
             raise
         # Client errors (4xx) are permanent — mark as failed
-        print(
-            json.dumps(
-                {
-                    "event": "article_processing_failed",
-                    "article_id": article_id,
-                    "error": traceback.format_exc(),
-                }
-            )
-        )
+        evt = current_event()
+        if evt:
+            evt.set_many({
+                "outcome": "error",
+                "error.message": traceback.format_exc()[-500:],
+            })
         try:
             await (
                 db.prepare("UPDATE articles SET status = ?, updated_at = ? WHERE id = ?")
@@ -520,26 +479,17 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
                 .run()
             )
         except Exception:
-            print(
-                json.dumps(
-                    {
-                        "event": "article_status_update_failed",
-                        "article_id": article_id,
-                        "error": traceback.format_exc(),
-                    }
-                )
-            )
+            evt = current_event()
+            if evt:
+                evt.set("status_update_error", traceback.format_exc()[-500:])
     except Exception:
         # Other permanent errors (invalid content, etc.) — mark as failed
-        print(
-            json.dumps(
-                {
-                    "event": "article_processing_failed",
-                    "article_id": article_id,
-                    "error": traceback.format_exc(),
-                }
-            )
-        )
+        evt = current_event()
+        if evt:
+            evt.set_many({
+                "outcome": "error",
+                "error.message": traceback.format_exc()[-500:],
+            })
         try:
             await (
                 db.prepare("UPDATE articles SET status = ?, updated_at = ? WHERE id = ?")
@@ -547,15 +497,9 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
                 .run()
             )
         except Exception:
-            print(
-                json.dumps(
-                    {
-                        "event": "article_status_update_failed",
-                        "article_id": article_id,
-                        "error": traceback.format_exc(),
-                    }
-                )
-            )
+            evt = current_event()
+            if evt:
+                evt.set("status_update_error", traceback.format_exc()[-500:])
 
 
 async def _fetch_page(

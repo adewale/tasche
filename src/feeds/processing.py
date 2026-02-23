@@ -6,7 +6,7 @@ and enqueues new entries for article processing.
 
 from __future__ import annotations
 
-import json
+import json  # noqa: F401 — kept for potential future use
 import secrets
 import traceback
 from datetime import UTC, datetime
@@ -14,6 +14,7 @@ from typing import Any
 
 from articles.urls import check_duplicate, extract_domain, validate_url
 from feeds.parser import parse_feed
+from wide_event import current_event
 from wrappers import HttpClient, HttpError
 
 
@@ -171,17 +172,14 @@ async def refresh_feed(env: Any, feed: dict[str, Any], user_id: str) -> dict[str
             .run()
         )
 
-    print(
-        json.dumps(
-            {
-                "event": "feed_refreshed",
-                "feed_id": feed_id,
-                "feed_url": feed_url,
-                "new_articles": new_count,
-                "errors": len(errors),
-            }
-        )
-    )
+    evt = current_event()
+    if evt:
+        evt.set_many({
+            "feed_id": feed_id,
+            "feed_url": feed_url,
+            "new_articles": new_count,
+            "feed_errors": len(errors),
+        })
 
     return {"new_articles": new_count, "errors": errors}
 
@@ -221,25 +219,12 @@ async def refresh_all_feeds(env: Any, user_id: str) -> dict[str, Any]:
             total_new += result["new_articles"]
             feeds_checked += 1
         except Exception:
-            print(
-                json.dumps(
-                    {
-                        "event": "feed_refresh_error",
-                        "feed_id": feed.get("id"),
-                        "error": traceback.format_exc()[-500:],
-                    }
-                )
-            )
+            evt = current_event()
+            if evt:
+                evt.set("feed_refresh_error", traceback.format_exc()[-500:])
 
-    print(
-        json.dumps(
-            {
-                "event": "all_feeds_refreshed",
-                "user_id": user_id,
-                "feeds_checked": feeds_checked,
-                "total_new_articles": total_new,
-            }
-        )
-    )
+    evt = current_event()
+    if evt:
+        evt.set_many({"feeds_checked": feeds_checked, "total_new_articles": total_new})
 
     return {"feeds_checked": feeds_checked, "total_new_articles": total_new}

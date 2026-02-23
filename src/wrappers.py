@@ -21,6 +21,7 @@ Key design decisions
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -334,6 +335,27 @@ def _to_js_value(value: Any) -> Any:
 
 
 # ---------------------------------------------------------------------------
+# Wide event timing helper — records elapsed time to the current WideEvent
+# ---------------------------------------------------------------------------
+
+
+def _record(method_name: str, t0: float) -> None:
+    """Record elapsed time to the current WideEvent, if one exists.
+
+    Called by Safe* wrappers after each binding operation.  When no
+    WideEvent is active (e.g. in tests), this is a no-op.
+    """
+    try:
+        from wide_event import current_event
+
+        evt = current_event()
+        if evt:
+            getattr(evt, method_name)((time.monotonic() - t0) * 1000)
+    except ImportError:
+        pass
+
+
+# ---------------------------------------------------------------------------
 # Safe* binding wrappers — construction-time wrapping for all Cloudflare
 # bindings.  Application code receives these wrappers (via SafeEnv) and
 # never touches raw JS bindings directly.
@@ -360,15 +382,27 @@ class SafeD1Statement:
 
     async def first(self) -> dict[str, Any] | None:
         """Execute and return the first row as a Python dict, or ``None``."""
-        return d1_first(await self._stmt.first())
+        t0 = time.monotonic()
+        try:
+            return d1_first(await self._stmt.first())
+        finally:
+            _record("record_d1", t0)
 
     async def all(self) -> list[dict[str, Any]]:
         """Execute and return all rows as a list of Python dicts."""
-        return d1_rows(await self._stmt.all())
+        t0 = time.monotonic()
+        try:
+            return d1_rows(await self._stmt.all())
+        finally:
+            _record("record_d1", t0)
 
     async def run(self) -> Any:
         """Execute a write statement (INSERT/UPDATE/DELETE)."""
-        return await self._stmt.run()
+        t0 = time.monotonic()
+        try:
+            return await self._stmt.run()
+        finally:
+            _record("record_d1", t0)
 
 
 class SafeD1:
@@ -395,24 +429,43 @@ class SafeR2:
 
     async def put(self, key: str, data: Any, **kwargs: Any) -> None:
         """Write a value to R2 with automatic bytes→Uint8Array conversion."""
-        if isinstance(data, (bytes, bytearray, memoryview)):
-            data = to_js_bytes(data)
-        await self._r2.put(key, data, **kwargs)
+        t0 = time.monotonic()
+        try:
+            if isinstance(data, (bytes, bytearray, memoryview)):
+                data = to_js_bytes(data)
+            await self._r2.put(key, data, **kwargs)
+        finally:
+            _record("record_r2_put", t0)
 
     async def get(self, key: str) -> Any:
-        """Retrieve an object from R2.  Returns the raw R2Object."""
-        return await self._r2.get(key)
+        """Retrieve an object from R2.  Returns ``None`` for missing keys."""
+        t0 = time.monotonic()
+        try:
+            result = await self._r2.get(key)
+            if result is None or _is_js_null_or_undefined(result):
+                return None
+            return result
+        finally:
+            _record("record_r2_get", t0)
 
     async def delete(self, key: str) -> None:
         """Delete an object from R2."""
-        return await self._r2.delete(key)
+        t0 = time.monotonic()
+        try:
+            return await self._r2.delete(key)
+        finally:
+            _record("record_r2_delete", t0)
 
     async def list(self, **kwargs: Any) -> Any:
         """List objects with automatic JsProxy→dict conversion."""
-        result = await self._r2.list(**kwargs)
-        if not isinstance(result, dict):
-            return _to_py_safe(result)
-        return result
+        t0 = time.monotonic()
+        try:
+            result = await self._r2.list(**kwargs)
+            if not isinstance(result, dict):
+                return _to_py_safe(result)
+            return result
+        finally:
+            _record("record_r2_get", t0)
 
 
 class SafeKV:
@@ -422,16 +475,31 @@ class SafeKV:
         self._kv = kv
 
     async def get(self, key: str, **kwargs: Any) -> str | None:
-        """Retrieve a value by key."""
-        return await self._kv.get(key, **kwargs)
+        """Retrieve a value by key.  Returns ``None`` for missing keys."""
+        t0 = time.monotonic()
+        try:
+            result = await self._kv.get(key, **kwargs)
+            if result is None or _is_js_null_or_undefined(result):
+                return None
+            return result
+        finally:
+            _record("record_kv", t0)
 
     async def put(self, key: str, value: str, **kwargs: Any) -> None:
         """Store a value with optional ``expirationTtl``."""
-        await self._kv.put(key, value, **kwargs)
+        t0 = time.monotonic()
+        try:
+            await self._kv.put(key, value, **kwargs)
+        finally:
+            _record("record_kv", t0)
 
     async def delete(self, key: str) -> None:
         """Delete a key."""
-        await self._kv.delete(key)
+        t0 = time.monotonic()
+        try:
+            await self._kv.delete(key)
+        finally:
+            _record("record_kv", t0)
 
 
 class SafeQueue:
@@ -442,9 +510,13 @@ class SafeQueue:
 
     async def send(self, message: Any, **kwargs: Any) -> None:
         """Send a message with automatic dict→JS Object conversion."""
-        if isinstance(message, dict):
-            message = _to_js_value(message)
-        await self._queue.send(message, **kwargs)
+        t0 = time.monotonic()
+        try:
+            if isinstance(message, dict):
+                message = _to_js_value(message)
+            await self._queue.send(message, **kwargs)
+        finally:
+            _record("record_queue", t0)
 
 
 class SafeAI:
@@ -455,9 +527,16 @@ class SafeAI:
 
     async def run(self, model: str, inputs: Any = None, **kwargs: Any) -> Any:
         """Run an AI model with automatic dict→JS Object input conversion."""
-        if isinstance(inputs, dict):
-            inputs = _to_js_value(inputs)
-        return await self._ai.run(model, inputs, **kwargs)
+        t0 = time.monotonic()
+        try:
+            if isinstance(inputs, dict):
+                inputs = _to_js_value(inputs)
+            result = await self._ai.run(model, inputs, **kwargs)
+            if result is None or _is_js_null_or_undefined(result):
+                return None
+            return result
+        finally:
+            _record("record_ai", t0)
 
 
 class SafeReadability:
@@ -482,8 +561,12 @@ class SafeReadability:
             Keys: ``title``, ``html``, ``excerpt``, ``byline`` — matching
             the contract of ``extraction.extract_article()``.
         """
-        result = await self._binding.parse(html, url)
-        return _to_py_safe(result)
+        t0 = time.monotonic()
+        try:
+            result = await self._binding.parse(html, url)
+            return _to_py_safe(result)
+        finally:
+            _record("record_service_binding", t0)
 
 
 # ---------------------------------------------------------------------------
@@ -719,73 +802,77 @@ async def http_fetch(
 
     In CPython (tests), falls back to httpx.
     """
-    all_headers = dict(headers or {})
+    t0 = time.monotonic()
+    try:
+        all_headers = dict(headers or {})
 
-    if json_data is not None:
-        import json as _json
+        if json_data is not None:
+            import json as _json
 
-        body = _json.dumps(json_data)
-        all_headers.setdefault("Content-Type", "application/json")
+            body = _json.dumps(json_data)
+            all_headers.setdefault("Content-Type", "application/json")
 
-    if form_data:
-        from urllib.parse import urlencode
+        if form_data:
+            from urllib.parse import urlencode
 
-        body = urlencode(form_data)
-        all_headers.setdefault("Content-Type", "application/x-www-form-urlencoded")
+            body = urlencode(form_data)
+            all_headers.setdefault("Content-Type", "application/x-www-form-urlencoded")
 
-    if HAS_PYODIDE:
-        opts: dict[str, Any] = {"method": method, "headers": all_headers}
-        if body is not None:
-            opts["body"] = body
-        if not follow_redirects:
-            opts["redirect"] = "manual"
-        js_opts = _to_js_value(opts)
+        if HAS_PYODIDE:
+            opts: dict[str, Any] = {"method": method, "headers": all_headers}
+            if body is not None:
+                opts["body"] = body
+            if not follow_redirects:
+                opts["redirect"] = "manual"
+            js_opts = _to_js_value(opts)
 
-        try:
-            response = await js.fetch(url, js_opts)
-        except Exception as exc:
-            msg = str(exc)
-            if "timeout" in msg.lower():
-                raise TimeoutError(msg) from exc
-            raise ConnectionError(msg) from exc
+            try:
+                response = await js.fetch(url, js_opts)
+            except Exception as exc:
+                msg = str(exc)
+                if "timeout" in msg.lower():
+                    raise TimeoutError(msg) from exc
+                raise ConnectionError(msg) from exc
 
-        array_buffer = await response.arrayBuffer()
-        body_bytes = to_py_bytes(array_buffer)
+            array_buffer = await response.arrayBuffer()
+            body_bytes = to_py_bytes(array_buffer)
 
-        # Convert JS Headers to a Python dict
-        try:
-            headers_obj = js.Object.fromEntries(response.headers.entries())
-            resp_headers = _to_py_safe(headers_obj) or {}
-        except Exception:
-            resp_headers = {}
+            # Convert JS Headers to a Python dict
+            try:
+                headers_obj = js.Object.fromEntries(response.headers.entries())
+                resp_headers = _to_py_safe(headers_obj) or {}
+            except Exception:
+                resp_headers = {}
 
-        return HttpResponse(
-            status_code=int(response.status),
-            _body=body_bytes,
-            url=str(response.url) if response.url else url,
-            _headers=resp_headers,
-        )
-    else:
-        import httpx
+            return HttpResponse(
+                status_code=int(response.status),
+                _body=body_bytes,
+                url=str(response.url) if response.url else url,
+                _headers=resp_headers,
+            )
+        else:
+            import httpx
 
-        try:
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(timeout),
-                follow_redirects=follow_redirects,
-            ) as client:
-                resp = await client.request(
-                    method, url, headers=all_headers, content=body
-                )
-                return HttpResponse(
-                    status_code=resp.status_code,
-                    _body=resp.content,
-                    url=str(resp.url),
-                    _headers=dict(resp.headers),
-                )
-        except httpx.TimeoutException as exc:
-            raise TimeoutError(str(exc)) from exc
-        except httpx.ConnectError as exc:
-            raise ConnectionError(str(exc)) from exc
+            try:
+                async with httpx.AsyncClient(
+                    timeout=httpx.Timeout(timeout),
+                    follow_redirects=follow_redirects,
+                ) as client:
+                    resp = await client.request(
+                        method, url, headers=all_headers, content=body
+                    )
+                    return HttpResponse(
+                        status_code=resp.status_code,
+                        _body=resp.content,
+                        url=str(resp.url),
+                        _headers=dict(resp.headers),
+                    )
+            except httpx.TimeoutException as exc:
+                raise TimeoutError(str(exc)) from exc
+            except httpx.ConnectError as exc:
+                raise ConnectionError(str(exc)) from exc
+    finally:
+        _record("record_http", t0)
 
 
 class HttpClient:

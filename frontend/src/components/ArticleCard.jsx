@@ -252,9 +252,11 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
               <IconHeadphones />
             </button>
           )}
-          <button title="View Markdown" onClick={handleMarkdown}>
-            <IconMarkdown />
-          </button>
+          {a.status === 'ready' && (
+            <button title="View Markdown" onClick={handleMarkdown}>
+              <IconMarkdown />
+            </button>
+          )}
           <button
             class={isArchived ? 'archived' : ''}
             title={isArchived ? 'Move to unread' : 'Archive'}

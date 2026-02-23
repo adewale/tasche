@@ -427,3 +427,11 @@ Python Workers using Pyodide/WASM have a heavy cold start (~1100ms CPU). When a 
 **Why it looks broken:** The article stays in `pending` for 30-60+ seconds. `process-now` (which reuses a warm HTTP isolate) works instantly, making the queue look broken by comparison. `curl` testing sees the same delay.
 
 **Lesson:** Pyodide queue consumers pay a cold-start tax that Cloudflare's retry mechanism absorbs silently. Don't chase this as a bug — it's an inherent platform cost. If latency matters, consider: (1) keeping isolates warm with scheduled pings, (2) moving time-critical work to the HTTP handler path, (3) accepting the delay as a background processing tradeoff.
+
+### 36. Safe* Wrappers Must Guard Reads, Not Just Writes
+
+`SafeR2.get()` returned raw JsNull when an R2 key didn't exist, because the wrapper only protected writes (`bytes→Uint8Array`, `None→null`) and passed reads through unchanged. Code checking `if raw_obj is not None` missed JsNull, crashing `process_article()` with `AttributeError: 'JsNull' object has no attribute 'text'`.
+
+The `_is_js_null_or_undefined()` helper existed in `wrappers.py` but was never called in `SafeR2.get()`, `SafeKV.get()`, or `SafeAI.run()`. The inline fix in `processing.py` (`type(raw_obj).__name__ != "JsNull"`) was correct but in the wrong place — it should be in the wrapper so every caller is protected.
+
+**Lesson:** Every Safe* wrapper method that returns a value from JS must convert JsNull/undefined→None on the way out. The FFI boundary layer must be bidirectional: convert on writes (Python→JS) AND on reads (JS→Python). If you only guard one direction, the other will eventually crash in production.

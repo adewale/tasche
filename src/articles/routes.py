@@ -962,7 +962,11 @@ async def process_now(
         await process_article(article_id, article["original_url"], env)
         fields = "id, status, title, word_count"
         updated = await _get_user_article(db, article_id, user_id, fields=fields)
-        return {"id": article_id, "result": "success", "article": updated}
+        # process_article catches exceptions internally and sets status to
+        # 'failed' without re-raising — check the actual status.
+        actual_status = updated.get("status", "unknown")
+        result = "success" if actual_status == "ready" else "error"
+        return {"id": article_id, "result": result, "article": updated}
     except Exception as exc:
         return {
             "id": article_id,

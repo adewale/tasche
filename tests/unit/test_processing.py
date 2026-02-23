@@ -200,8 +200,9 @@ class TestProcessArticleScreenshot:
         assert "original_key" in sql
         assert "articles/art_okf/original.webp" in params
 
-    async def test_fails_without_browser_rendering_config(self) -> None:
-        """Without CF_ACCOUNT_ID/CF_API_TOKEN, processing fails."""
+    async def test_succeeds_without_browser_rendering_config(self) -> None:
+        """Without CF_ACCOUNT_ID/CF_API_TOKEN, processing still succeeds
+        (Browser Rendering is optional — screenshots are skipped)."""
         db = _TrackingD1()
         r2 = MockR2()
         env = MockEnv(db=db, content=r2)
@@ -214,13 +215,13 @@ class TestProcessArticleScreenshot:
 
             await process_article("art_noss", "https://example.com/article", env)
 
-        # Article should be marked as 'failed'
-        failed_updates = [
+        # Article should be marked as 'ready' (not failed)
+        ready_updates = [
             (sql, params)
             for sql, params in db.executed
-            if "status" in sql and "failed" in str(params)
+            if "status" in sql and "ready" in str(params)
         ]
-        assert len(failed_updates) >= 1
+        assert len(ready_updates) >= 1
 
     async def test_full_page_screenshot_failure_non_fatal(self) -> None:
         """If full-page screenshot fails, processing still succeeds."""

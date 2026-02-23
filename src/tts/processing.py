@@ -21,6 +21,7 @@ import traceback
 from datetime import UTC, datetime
 
 from articles.storage import article_key
+from wide_event import current_event
 from wrappers import consume_readable_stream
 
 # TTS model identifier
@@ -295,11 +296,10 @@ async def process_tts(article_id: str, env: object, *, user_id: str) -> None:
             ).bind(article_id, user_id).first()
         )
         if existing and existing.get("audio_status") == "ready":
-            print(json.dumps({
-                "event": "tts_skipped",
-                "article_id": article_id,
-                "reason": "audio_already_ready",
-            }))
+            evt = current_event()
+            if evt:
+                evt.set("outcome", "skipped")
+                evt.set("skip_reason", "audio_already_ready")
             return
 
         # Step 1: Update audio_status to 'generating'
@@ -326,14 +326,10 @@ async def process_tts(article_id: str, env: object, *, user_id: str) -> None:
         # Truncate to maximum length if needed
         if len(tts_text) > _MAX_TTS_TEXT_LENGTH:
             tts_text = tts_text[:_MAX_TTS_TEXT_LENGTH] + "\n\n... Content has been truncated."
-            print(
-                json.dumps({
-                    "event": "tts_text_truncated",
-                    "article_id": article_id,
-                    "original_length": len(markdown_text),
-                    "truncated_to": _MAX_TTS_TEXT_LENGTH,
-                })
-            )
+            evt = current_event()
+            if evt:
+                evt.set("tts_text_truncated", True)
+                evt.set("tts_original_length", len(markdown_text))
 
         # Step 4: Call Workers AI for TTS
         audio_data = await ai.run(_TTS_MODEL, {"text": tts_text})
@@ -360,46 +356,35 @@ async def process_tts(article_id: str, env: object, *, user_id: str) -> None:
             "audio_status = ?, updated_at = ? WHERE id = ? AND user_id = ?"
         ).bind(audio_r2_key, duration, "ready", _now(), article_id, user_id).run()
 
-        print(
-            json.dumps({
-                "event": "tts_processed",
-                "article_id": article_id,
-                "status": "ready",
+        evt = current_event()
+        if evt:
+            evt.set_many({
+                "outcome": "success",
                 "audio_key": audio_r2_key,
                 "audio_duration_seconds": duration,
             })
-        )
 
     except ValueError:
         # Permanent errors (missing content, invalid data) — mark as failed
-        print(
-            json.dumps({
-                "event": "tts_processing_failed",
-                "article_id": article_id,
-                "error": traceback.format_exc(),
-            })
-        )
+        evt = current_event()
+        if evt:
+            evt.set_many({"outcome": "error", "error.message": traceback.format_exc()[-500:]})
         try:
             await db.prepare(
                 "UPDATE articles SET audio_status = ?, updated_at = ?"
                 " WHERE id = ? AND user_id = ?"
             ).bind("failed", _now(), article_id, user_id).run()
         except Exception:
-            print(
-                json.dumps({
-                    "event": "tts_status_update_failed",
-                    "article_id": article_id,
-                    "error": traceback.format_exc(),
-                })
-            )
+            evt = current_event()
+            if evt:
+                evt.set("status_update_error", traceback.format_exc()[-500:])
     except Exception:
         # All other errors (network, JS, AI model) — let propagate for queue retry
-        print(
-            json.dumps({
-                "event": "tts_processing_failed",
-                "article_id": article_id,
-                "error": traceback.format_exc(),
+        evt = current_event()
+        if evt:
+            evt.set_many({
+                "outcome": "error",
+                "error.message": traceback.format_exc()[-500:],
                 "retryable": True,
             })
-        )
         raise

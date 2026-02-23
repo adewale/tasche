@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import email
 import email.policy
-import json
+import json  # noqa: F401
 import secrets
 import traceback
 from datetime import UTC, datetime
@@ -29,6 +29,7 @@ from articles.extraction import (
     html_to_markdown,
 )
 from articles.storage import store_content
+from wide_event import current_event
 from wrappers import SafeEnv, consume_readable_stream
 
 
@@ -179,6 +180,10 @@ async def process_email(message: object, env: object) -> None:
     # Note: message.from is a reserved word in Python, accessed via getattr
     sender = str(getattr(message, "from", "") or "")
 
+    evt = current_event()
+    if evt:
+        evt.set("sender", sender)
+
     # Get subject from JS headers
     headers = getattr(message, "headers", None)
     headers_get = getattr(headers, "get", None) if headers is not None else None
@@ -187,28 +192,18 @@ async def process_email(message: object, env: object) -> None:
         # Read the raw email stream
         raw_stream = getattr(message, "raw", None)
         if raw_stream is None:
-            print(
-                json.dumps(
-                    {
-                        "event": "email_ingest_error",
-                        "error": "No raw stream available on email message",
-                        "sender": sender,
-                    }
-                )
-            )
+            evt = current_event()
+            if evt:
+                evt.set("outcome", "error")
+                evt.set("error.message", "No raw stream available")
             return
 
         raw_bytes = await consume_readable_stream(raw_stream)
         if not raw_bytes:
-            print(
-                json.dumps(
-                    {
-                        "event": "email_ingest_error",
-                        "error": "Empty email body",
-                        "sender": sender,
-                    }
-                )
-            )
+            evt = current_event()
+            if evt:
+                evt.set("outcome", "error")
+                evt.set("error.message", "Empty email body")
             return
 
         # Parse the raw email
@@ -220,31 +215,19 @@ async def process_email(message: object, env: object) -> None:
         # Extract HTML body
         html_body = _extract_html_body(raw_bytes)
         if not html_body:
-            print(
-                json.dumps(
-                    {
-                        "event": "email_ingest_error",
-                        "error": "No HTML or text body found in email",
-                        "sender": sender,
-                        "subject": subject,
-                    }
-                )
-            )
+            evt = current_event()
+            if evt:
+                evt.set("outcome", "error")
+                evt.set("error.message", "No HTML or text body found")
             return
 
         # Clean the HTML
         clean_html = clean_email_html(html_body)
         if not clean_html:
-            print(
-                json.dumps(
-                    {
-                        "event": "email_ingest_error",
-                        "error": "Email body was empty after cleanup",
-                        "sender": sender,
-                        "subject": subject,
-                    }
-                )
-            )
+            evt = current_event()
+            if evt:
+                evt.set("outcome", "error")
+                evt.set("error.message", "Email body empty after cleanup")
             return
 
         # Determine the URL to associate with this article
@@ -263,16 +246,10 @@ async def process_email(message: object, env: object) -> None:
         user_row = await db.prepare("SELECT id FROM users ORDER BY created_at ASC LIMIT 1").first()
 
         if user_row is None:
-            print(
-                json.dumps(
-                    {
-                        "event": "email_ingest_error",
-                        "error": "No users found in database",
-                        "sender": sender,
-                        "subject": subject,
-                    }
-                )
-            )
+            evt = current_event()
+            if evt:
+                evt.set("outcome", "error")
+                evt.set("error.message", "No users found in database")
             return
 
         user_id = user_row["id"]
@@ -320,37 +297,22 @@ async def process_email(message: object, env: object) -> None:
             await apply_auto_tags(safe_env, article_id, sender_domain, subject, original_url)
         except Exception:
             # Non-fatal: auto-tagging failure should not block ingestion
-            print(
-                json.dumps(
-                    {
-                        "event": "email_auto_tag_failed",
-                        "article_id": article_id,
-                        "error": traceback.format_exc()[-500:],
-                    }
-                )
-            )
+            evt = current_event()
+            if evt:
+                evt.set("auto_tag_error", traceback.format_exc()[-500:])
 
-        print(
-            json.dumps(
-                {
-                    "event": "email_ingested",
-                    "article_id": article_id,
-                    "sender": sender,
-                    "subject": subject,
-                    "domain": sender_domain,
-                    "word_count": word_count,
-                    "original_url": original_url,
-                }
-            )
-        )
+        evt = current_event()
+        if evt:
+            evt.set_many({
+                "outcome": "success",
+                "article_id": article_id,
+                "sender": sender,
+                "subject": subject,
+                "domain": sender_domain,
+                "word_count": word_count,
+            })
 
     except Exception:
-        print(
-            json.dumps(
-                {
-                    "event": "email_ingest_error",
-                    "sender": sender,
-                    "error": traceback.format_exc()[-1000:],
-                }
-            )
-        )
+        evt = current_event()
+        if evt:
+            evt.set_many({"outcome": "error", "error.message": traceback.format_exc()[-500:]})

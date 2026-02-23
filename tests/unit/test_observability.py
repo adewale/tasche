@@ -20,11 +20,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
 
 from src.auth.session import COOKIE_NAME, create_session
-from src.observability import (
-    _SUCCESS_SAMPLE_RATE,
-    ObservabilityMiddleware,
-    _should_sample,
-)
+from src.observability import ObservabilityMiddleware
+from src.wide_event import _SUCCESS_SAMPLE_RATE, _should_sample
 from tests.conftest import MockEnv
 
 # ---------------------------------------------------------------------------
@@ -75,7 +72,7 @@ def _make_app(env: Any | None = None) -> FastAPI:
 def _capture_events(capsys, client: TestClient, method: str, path: str, **kwargs) -> list[dict]:
     """Make a request and return all JSON events printed to stdout."""
     # Always sample so we capture the event
-    with patch("src.observability._should_sample", return_value=True):
+    with patch("wide_event._should_sample", return_value=True):
         getattr(client, method)(path, **kwargs)
     captured = capsys.readouterr()
     events = []
@@ -372,7 +369,7 @@ class TestMiddlewareEmission:
         app = _make_app()
         client = TestClient(app, raise_server_exceptions=False)
 
-        with patch("src.observability._should_sample", return_value=False):
+        with patch("wide_event._should_sample", return_value=False):
             client.get("/ok")
 
         captured = capsys.readouterr()
@@ -389,7 +386,7 @@ class TestMiddlewareEmission:
         app = _make_app()
         client = TestClient(app, raise_server_exceptions=False)
 
-        with patch("src.observability._should_sample", return_value=True):
+        with patch("wide_event._should_sample", return_value=True):
             client.get("/ok")
 
         captured = capsys.readouterr()

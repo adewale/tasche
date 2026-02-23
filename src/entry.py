@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import traceback
 
+from wide_event import begin_event, current_event, emit_event
 from wrappers import SafeEnv, _to_py_safe
 
 # ---------------------------------------------------------------------------
@@ -224,15 +225,14 @@ async def _handle_article_processing(message_body: dict, env: object) -> None:
     article_id = message_body.get("article_id")
     original_url = message_body.get("url", "")
 
+    evt = current_event()
+    if evt:
+        evt.set("article_id", article_id)
+
     if not article_id or not original_url:
-        print(
-            json.dumps({
-                "event": "article_processing",
-                "article_id": article_id,
-                "status": "skipped",
-                "reason": "missing article_id or url",
-            })
-        )
+        if evt:
+            evt.set("outcome", "skipped")
+            evt.set("skip_reason", "missing article_id or url")
         return
 
     await process_article(article_id, original_url, env)
@@ -248,15 +248,14 @@ async def _handle_tts_generation(message_body: dict, env: object) -> None:
     article_id = message_body.get("article_id")
     user_id = message_body.get("user_id")
 
+    evt = current_event()
+    if evt:
+        evt.set("article_id", article_id)
+
     if not article_id or not user_id:
-        print(
-            json.dumps({
-                "event": "tts_generation",
-                "article_id": article_id,
-                "status": "skipped",
-                "reason": "missing article_id or user_id",
-            })
-        )
+        if evt:
+            evt.set("outcome", "skipped")
+            evt.set("skip_reason", "missing article_id or user_id")
         return
 
     await process_tts(article_id, env, user_id=user_id)
@@ -317,6 +316,7 @@ class Default(WorkerEntrypoint):
         """
         from datetime import UTC, datetime
 
+        evt = begin_event("scheduled")
         try:
             from articles.health import check_original_url
 
@@ -350,13 +350,10 @@ class Default(WorkerEntrypoint):
                 )
                 checked += 1
 
-            print(
-                json.dumps(
-                    {"event": "scheduled_health_check", "checked": checked}
-                )
-            )
+            evt.set("articles_checked", checked)
 
             # Refresh all active feeds for all users with feeds
+            feeds_checked = 0
             try:
                 from feeds.processing import refresh_all_feeds
 
@@ -367,26 +364,20 @@ class Default(WorkerEntrypoint):
                 for user_row in user_rows:
                     uid = user_row.get("user_id")
                     if uid:
-                        await refresh_all_feeds(env, uid)
+                        result = await refresh_all_feeds(env, uid)
+                        feeds_checked += result.get("feeds_checked", 0)
             except Exception:
-                print(
-                    json.dumps(
-                        {
-                            "event": "scheduled_feed_refresh_error",
-                            "error": traceback.format_exc()[-1000:],
-                        }
-                    )
-                )
+                evt.set("feed_refresh_error", traceback.format_exc()[-500:])
 
-        except Exception:
-            print(
-                json.dumps(
-                    {
-                        "event": "scheduled_error",
-                        "error": traceback.format_exc()[-1000:],
-                    }
-                )
-            )
+            evt.set("feeds_checked", feeds_checked)
+            evt.set("outcome", "success")
+
+        except Exception as exc:
+            evt.set("outcome", "error")
+            evt.set("error.type", type(exc).__name__)
+            evt.set("error.message", str(exc)[:500])
+        finally:
+            emit_event(evt, force=True)
 
     async def email(self, message: object, env: object = None, ctx: object = None) -> None:
         """Handle an incoming email via Cloudflare Email Routing.
@@ -409,17 +400,17 @@ class Default(WorkerEntrypoint):
 
         worker_env = SafeEnv(env if env is not None else self.env)
 
+        evt = begin_event("email")
         try:
             await process_email(message, worker_env)
-        except Exception:
-            print(
-                json.dumps(
-                    {
-                        "event": "email_handler_error",
-                        "error": traceback.format_exc()[-1000:],
-                    }
-                )
-            )
+            if "outcome" not in evt._fields:
+                evt.set("outcome", "success")
+        except Exception as exc:
+            evt.set("outcome", "error")
+            evt.set("error.type", type(exc).__name__)
+            evt.set("error.message", str(exc)[:500])
+        finally:
+            emit_event(evt, force=True)
 
     async def queue(self, batch: object, env: object = None, ctx: object = None) -> None:  # type: ignore[override]
         """Handle a batch of queue messages.
@@ -443,6 +434,7 @@ class Default(WorkerEntrypoint):
         worker_env = SafeEnv(env if env is not None else self.env)
 
         for message in batch.messages:  # type: ignore[attr-defined]
+            evt = None
             try:
                 raw_body = message.body
                 body = _to_py_safe(raw_body)
@@ -450,30 +442,27 @@ class Default(WorkerEntrypoint):
                     body = json.loads(body)
                 msg_type = body.get("type", "unknown")
 
+                evt = begin_event("queue", queue_message_type=msg_type)
+
                 handler = QUEUE_HANDLERS.get(msg_type)
                 if handler is None:
-                    print(
-                        json.dumps(
-                            {
-                                "event": "queue_unknown_type",
-                                "type": msg_type,
-                                "status": "skipped",
-                            }
-                        )
-                    )
+                    evt.set("outcome", "skipped")
+                    evt.set("skip_reason", "unknown_type")
                     message.ack()
                     continue
 
                 await handler(body, worker_env)
+                # Pipeline sets outcome; default to success if not set
+                if "outcome" not in evt._fields:
+                    evt.set("outcome", "success")
                 message.ack()
 
-            except Exception:
-                print(
-                    json.dumps(
-                        {
-                            "event": "queue_error",
-                            "error": traceback.format_exc()[-1000:],
-                        }
-                    )
-                )
+            except Exception as exc:
+                if evt:
+                    evt.set("outcome", "error")
+                    evt.set("error.type", type(exc).__name__)
+                    evt.set("error.message", str(exc)[:500])
                 message.retry()
+            finally:
+                if evt:
+                    emit_event(evt, force=True)
