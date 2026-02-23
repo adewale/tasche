@@ -423,11 +423,9 @@ export function Reader({ id }) {
                 <IconCamera size={14} /> Screenshot
               </a>
             )}
-            {(article.status === 'failed' || article.status === 'pending') && (
-              <button class="btn btn-sm btn-secondary" onClick={handleRetry} disabled={retrying}>
-                <IconRefresh size={14} /> {retrying ? 'Retrying...' : 'Retry'}
-              </button>
-            )}
+            <button class="btn btn-sm btn-secondary" onClick={handleRetry} disabled={retrying}>
+              <IconRefresh size={14} /> {retrying ? 'Retrying...' : 'Retry'}
+            </button>
             <button class="btn btn-sm btn-danger" onClick={handleDelete}>
               Delete
             </button>

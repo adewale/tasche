@@ -1629,8 +1629,8 @@ class TestRetryArticle:
         assert resp.json()["status"] == "pending"
         assert len(queue.messages) == 1
 
-    async def test_rejects_ready_article(self) -> None:
-        """POST /api/articles/{id}/retry returns 409 for a ready article."""
+    async def test_retries_ready_article(self) -> None:
+        """POST /api/articles/{id}/retry re-queues a ready article."""
         article = ArticleFactory.create(
             id="art_ready", user_id="user_001", status="ready"
         )
@@ -1641,7 +1641,8 @@ class TestRetryArticle:
             return []
 
         db = MockD1(execute=execute)
-        env = MockEnv(db=db)
+        queue = MockQueue()
+        env = MockEnv(db=db, article_queue=queue)
 
         client, session_id = await _authenticated_client(env)
         resp = client.post(
@@ -1649,8 +1650,9 @@ class TestRetryArticle:
             cookies={COOKIE_NAME: session_id},
         )
 
-        assert resp.status_code == 409
-        assert "retryable" in resp.json()["detail"].lower()
+        assert resp.status_code == 202
+        assert resp.json()["status"] == "pending"
+        assert len(queue.messages) == 1
 
     async def test_returns_404_for_unknown_article(self) -> None:
         """POST /api/articles/{id}/retry returns 404 for nonexistent article."""

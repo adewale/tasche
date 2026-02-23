@@ -654,10 +654,11 @@ async def retry_article(
     article_id: str,
     user: dict[str, Any] = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """Re-queue a failed or stuck article for processing.
+    """Re-queue an article for processing.
 
-    Only articles with ``status`` of ``failed`` or ``pending`` can be retried.
     Resets the status to ``pending`` and enqueues a new processing job.
+    Works for any article status — useful for re-extracting content with
+    an updated pipeline.
     """
     env = request.scope["env"]
     db = env.DB
@@ -666,11 +667,6 @@ async def retry_article(
     article = await _get_user_article(
         db, article_id, user_id, fields="id, original_url, status"
     )
-
-    if article["status"] not in ("failed", "pending"):
-        raise HTTPException(
-            status_code=409, detail="Article is not in a retryable state"
-        )
 
     now = datetime.now(UTC).isoformat()
     await (
@@ -718,8 +714,6 @@ async def process_now(
 
     Runs the full processing pipeline in the request handler so errors
     are returned directly instead of being lost in queue handler logs.
-    Only articles with ``status`` of ``failed`` or ``pending`` can be
-    processed.
     """
     import traceback
 
@@ -732,11 +726,6 @@ async def process_now(
     article = await _get_user_article(
         db, article_id, user_id, fields="id, original_url, status"
     )
-
-    if article["status"] not in ("failed", "pending"):
-        raise HTTPException(
-            status_code=409, detail="Article is not in a retryable state"
-        )
 
     try:
         await process_article(article_id, article["original_url"], env)
