@@ -5,12 +5,11 @@ Covers refresh_feed and refresh_all_feeds with mocked HTTP and D1.
 
 from __future__ import annotations
 
-from typing import Any
 from unittest.mock import AsyncMock, patch
 
 from src.feeds.processing import refresh_all_feeds, refresh_feed
 from src.wrappers import SafeEnv
-from tests.conftest import MockD1, MockEnv, MockQueue
+from tests.conftest import MockD1, MockEnv, MockQueue, make_feed
 
 # ---------------------------------------------------------------------------
 # Sample feed data
@@ -35,24 +34,6 @@ _SAMPLE_RSS = """\
   </channel>
 </rss>
 """
-
-
-def _make_feed(**overrides: Any) -> dict[str, Any]:
-    defaults = {
-        "id": "feed_001",
-        "user_id": "user_001",
-        "url": "https://example.com/feed.xml",
-        "title": "Test Blog",
-        "site_url": "https://example.com",
-        "last_fetched_at": None,
-        "last_entry_published": None,
-        "fetch_interval_minutes": 60,
-        "is_active": 1,
-        "created_at": "2025-01-01T00:00:00",
-        "updated_at": "2025-01-01T00:00:00",
-    }
-    defaults.update(overrides)
-    return defaults
 
 
 def _mock_http_response(text: str = _SAMPLE_RSS, status_code: int = 200):
@@ -102,7 +83,7 @@ class TestRefreshFeed:
 
         db = MockD1(execute=execute)
         env = SafeEnv(MockEnv(db=db, article_queue=queue))
-        feed = _make_feed()
+        feed = make_feed()
 
         with patch("src.feeds.processing.HttpClient") as MockClient:
             MockClient.return_value = _mock_client(_mock_http_response())
@@ -134,7 +115,7 @@ class TestRefreshFeed:
         db = MockD1(execute=execute)
         env = SafeEnv(MockEnv(db=db, article_queue=queue))
         # Set last_entry_published after the "Old Post" date
-        feed = _make_feed(last_entry_published="Mon, 01 Jan 2024 12:00:00 GMT")
+        feed = make_feed(last_entry_published="Mon, 01 Jan 2024 12:00:00 GMT")
 
         with patch("src.feeds.processing.HttpClient") as MockClient:
             MockClient.return_value = _mock_client(_mock_http_response())
@@ -161,7 +142,7 @@ class TestRefreshFeed:
 
         db = MockD1(execute=execute)
         env = SafeEnv(MockEnv(db=db, article_queue=queue))
-        feed = _make_feed()
+        feed = make_feed()
 
         with patch("src.feeds.processing.HttpClient") as MockClient:
             MockClient.return_value = _mock_client(_mock_http_response())
@@ -181,7 +162,7 @@ class TestRefreshFeed:
 
         db = MockD1(execute=execute)
         env = SafeEnv(MockEnv(db=db, article_queue=queue))
-        feed = _make_feed()
+        feed = make_feed()
 
         with patch("src.feeds.processing.HttpClient") as MockClient:
             resp = _mock_http_response(status_code=404)
@@ -202,7 +183,7 @@ class TestRefreshFeed:
 
         db = MockD1(execute=execute)
         env = SafeEnv(MockEnv(db=db, article_queue=queue))
-        feed = _make_feed()
+        feed = make_feed()
 
         with patch("src.feeds.processing.HttpClient") as MockClient:
             MockClient.return_value = _mock_client(
@@ -221,8 +202,8 @@ class TestRefreshFeed:
 
 class TestRefreshAllFeeds:
     async def test_refreshes_all_active_feeds(self) -> None:
-        feed1 = _make_feed(id="feed_001", url="https://a.example.com/feed.xml")
-        feed2 = _make_feed(id="feed_002", url="https://b.example.com/feed.xml")
+        feed1 = make_feed(id="feed_001", url="https://a.example.com/feed.xml")
+        feed2 = make_feed(id="feed_002", url="https://b.example.com/feed.xml")
         queue = MockQueue()
 
         def execute(sql: str, params: list) -> list:

@@ -7,13 +7,12 @@ All endpoints require authentication via the ``get_current_user`` dependency.
 
 from __future__ import annotations
 
-import secrets
-from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from auth.dependencies import get_current_user
+from utils import generate_id, now_iso
 
 router = APIRouter()
 
@@ -114,8 +113,8 @@ async def create_highlight(
             detail=f"color must be one of: {', '.join(sorted(_VALID_COLORS))}",
         )
 
-    highlight_id = secrets.token_urlsafe(16)
-    now = datetime.now(UTC).isoformat()
+    highlight_id = generate_id()
+    now = now_iso()
 
     await (
         db.prepare(
@@ -247,7 +246,7 @@ async def update_highlight(
     if not set_clauses:
         raise HTTPException(status_code=422, detail="No updatable fields provided")
 
-    now = datetime.now(UTC).isoformat()
+    now = now_iso()
     set_clauses.append("updated_at = ?")
     params.append(now)
 

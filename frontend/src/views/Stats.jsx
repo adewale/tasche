@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'preact/hooks';
 import { Header } from '../components/Header.jsx';
+import { EmptyState, LoadingSpinner } from '../components/EmptyState.jsx';
 import { getStats } from '../api.js';
 
 export function Stats() {
@@ -34,9 +35,7 @@ export function Stats() {
       <>
         <Header />
         <main class="main-content">
-          <div class="loading">
-            <div class="spinner"></div>
-          </div>
+          <LoadingSpinner />
         </main>
       </>
     );
@@ -47,13 +46,13 @@ export function Stats() {
       <>
         <Header />
         <main class="main-content">
-          <div class="empty-state">
-            <div class="empty-state-title">Failed to load stats</div>
-            <p class="empty-state-text">{error}</p>
+          <EmptyState title="Failed to load stats">
+            {error}
+            <br />
             <button class="btn btn-primary" onClick={loadStats} style="margin-top: 16px">
               Retry
             </button>
-          </div>
+          </EmptyState>
         </main>
       </>
     );

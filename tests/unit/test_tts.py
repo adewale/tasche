@@ -20,10 +20,8 @@ from tests.conftest import (
     MockEnv,
     MockQueue,
     MockR2,
+    TrackingD1,
     _make_test_app,
-)
-from tests.conftest import (
-    TrackingD1 as _TrackingD1,
 )
 from tests.conftest import (
     _authenticated_client as _authenticated_client_base,
@@ -59,7 +57,7 @@ class TestListenLater:
                 return [article]
             return []
 
-        db = _TrackingD1(result_fn=execute)
+        db = TrackingD1(result_fn=execute)
         queue = MockQueue()
         env = MockEnv(db=db, article_queue=queue)
 
@@ -116,7 +114,7 @@ class TestListenLater:
                 return [article]
             return []
 
-        db = _TrackingD1(result_fn=execute)
+        db = TrackingD1(result_fn=execute)
         env = MockEnv(db=db)
 
         client, session_id = await _authenticated_client(env)
@@ -141,7 +139,7 @@ class TestListenLater:
                 return [article]
             return []
 
-        db = _TrackingD1(result_fn=execute)
+        db = TrackingD1(result_fn=execute)
         env = MockEnv(db=db)
 
         client, session_id = await _authenticated_client(env)
@@ -166,7 +164,7 @@ class TestListenLater:
                 return [article]
             return []
 
-        db = _TrackingD1(result_fn=execute)
+        db = TrackingD1(result_fn=execute)
         env = MockEnv(db=db)
 
         client, session_id = await _authenticated_client(env)
@@ -193,7 +191,7 @@ class TestListenLater:
                 return [article]
             return []
 
-        db = _TrackingD1(result_fn=execute)
+        db = TrackingD1(result_fn=execute)
         queue = MockQueue()
         env = MockEnv(db=db, article_queue=queue)
 
@@ -345,7 +343,7 @@ class TestTTSProcessing:
             markdown_content="# Hello World\n\nThis is test content.",
         )
 
-        db = _TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
+        db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
         r2 = MockR2()
         fake_audio = b"\xff\xfb\x90\x00" + b"\x00" * 200
         ai = MockAI(response=fake_audio)
@@ -384,7 +382,7 @@ class TestTTSProcessing:
             markdown_content="# Fallback Content\n\nThis came from D1.",
         )
 
-        db = _TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
+        db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
         r2 = MockR2()
         fake_audio = b"\xff\xfb\x90\x00" + b"\x00" * 100
         ai = MockAI(response=fake_audio)
@@ -409,7 +407,7 @@ class TestTTSProcessing:
             markdown_content="Some markdown content here.",
         )
 
-        db = _TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
+        db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
         r2 = MockR2()
         ai = MockAI(response=b"fake-audio")
         env = MockEnv(db=db, content=r2, ai=ai)
@@ -441,7 +439,7 @@ class TestTTSProcessingFailure:
             markdown_content=None,
         )
 
-        db = _TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
+        db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
         r2 = MockR2()
         ai = MockAI(response=b"fake-audio")
         env = MockEnv(db=db, content=r2, ai=ai)
@@ -469,7 +467,7 @@ class TestTTSProcessingFailure:
             markdown_content="Some content for TTS.",
         )
 
-        db = _TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
+        db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
         r2 = MockR2()
 
         # Create an AI mock that raises an error
@@ -495,7 +493,7 @@ class TestTTSProcessingFailure:
             markdown_content="",  # Empty content triggers ValueError
         )
 
-        db = _TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
+        db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
         r2 = MockR2()
         ai = MockAI(response=b"fake-audio")
         env = MockEnv(db=db, content=r2, ai=ai)
@@ -529,7 +527,7 @@ class TestTTSTransientErrorRetry:
             markdown_content="Some content for TTS.",
         )
 
-        db = _TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
+        db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
         r2 = MockR2()
 
         # Create an AI mock that raises ConnectionError (transient)
@@ -580,7 +578,7 @@ class TestTTSEmptyAudioResponse:
             markdown_content="Some content for TTS.",
         )
 
-        db = _TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
+        db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
         r2 = MockR2()
         # MockAI with empty bytes response
         ai = MockAI(response=b"")
@@ -725,7 +723,7 @@ class TestTTSTextTruncation:
             markdown_content=long_markdown,
         )
 
-        db = _TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
+        db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
         r2 = MockR2()
         fake_audio = b"\xff\xfb\x90\x00" + b"\x00" * 100
         ai = MockAI(response=fake_audio)
@@ -905,7 +903,7 @@ class TestTTSProcessingStoresTimingData:
             markdown_content="# Hello World\n\nFirst sentence. Second sentence.",
         )
 
-        db = _TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
+        db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
         r2 = MockR2()
         fake_audio = b"\xff\xfb\x90\x00" + b"\x00" * 200
         ai = MockAI(response=fake_audio)
@@ -1045,7 +1043,7 @@ class TestEnqueueFailureRollback:
             async def send(self, message: Any, **kwargs: Any) -> None:
                 raise RuntimeError("Queue unavailable")
 
-        db = _TrackingD1(result_fn=execute)
+        db = TrackingD1(result_fn=execute)
         queue = FailingQueue()
         env = MockEnv(db=db, article_queue=queue)
 

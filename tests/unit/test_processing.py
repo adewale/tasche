@@ -14,24 +14,12 @@ from tests.conftest import (
     MockQueue,
     MockR2,
     MockReadability,
+    TrackingD1,
     _browser_env,
     _make_mock_client,
     _make_mock_response,
     _noop_screenshot,
 )
-from tests.conftest import (
-    TrackingD1 as _TrackingD1,
-)
-
-# Re-export helpers so test_health.py's existing cross-file imports still work
-__all__ = [
-    "_TrackingD1",
-    "_browser_env",
-    "_make_mock_client",
-    "_make_mock_response",
-    "_noop_screenshot",
-]
-
 
 # =========================================================================
 # test_process_article — happy path
@@ -41,7 +29,7 @@ __all__ = [
 class TestProcessArticleHappyPath:
     async def test_sets_status_to_ready(self) -> None:
         """On successful processing, article status is updated to 'ready'."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
@@ -67,7 +55,7 @@ class TestProcessArticleHappyPath:
 
     async def test_stores_content_html_in_r2(self) -> None:
         """content.html is stored in R2 under the correct key."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
@@ -85,7 +73,7 @@ class TestProcessArticleHappyPath:
 
     async def test_does_not_store_content_md_in_r2(self) -> None:
         """Markdown is stored only in D1, not in R2."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
@@ -103,7 +91,7 @@ class TestProcessArticleHappyPath:
 
     async def test_stores_metadata_json_in_r2(self) -> None:
         """metadata.json is stored in R2 with correct article metadata."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
@@ -136,7 +124,7 @@ class TestProcessArticleScreenshot:
         self,
     ) -> None:
         """When CF_ACCOUNT_ID and CF_API_TOKEN are set, a full-page screenshot is stored."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         env = MockEnv(db=db, content=r2)
         env.CF_ACCOUNT_ID = "test-account"
@@ -170,7 +158,7 @@ class TestProcessArticleScreenshot:
 
     async def test_original_key_in_d1_update(self) -> None:
         """The final D1 UPDATE includes original_key field."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         env = MockEnv(db=db, content=r2)
         env.CF_ACCOUNT_ID = "test-account"
@@ -203,7 +191,7 @@ class TestProcessArticleScreenshot:
     async def test_succeeds_without_browser_rendering_config(self) -> None:
         """Without CF_ACCOUNT_ID/CF_API_TOKEN, processing still succeeds
         (Browser Rendering is optional — screenshots are skipped)."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         env = MockEnv(db=db, content=r2)
         # No CF_ACCOUNT_ID or CF_API_TOKEN set
@@ -225,7 +213,7 @@ class TestProcessArticleScreenshot:
 
     async def test_full_page_screenshot_failure_non_fatal(self) -> None:
         """If full-page screenshot fails, processing still succeeds."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         env = MockEnv(db=db, content=r2)
         env.CF_ACCOUNT_ID = "test-account"
@@ -269,7 +257,7 @@ class TestProcessArticleScreenshot:
 class TestProcessArticleFailure:
     async def test_sets_status_to_failed_on_fetch_error(self) -> None:
         """When the page fetch fails, article status is set to 'failed'."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         env = MockEnv(db=db, content=r2)
 
@@ -291,7 +279,7 @@ class TestProcessArticleFailure:
 
     async def test_sets_status_to_failed_on_exception(self) -> None:
         """Any unhandled exception results in 'failed' status."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         env = MockEnv(db=db, content=r2)
 
@@ -321,7 +309,7 @@ class TestProcessArticleFailure:
 class TestProcessArticleD1Updates:
     async def test_updates_all_required_fields(self) -> None:
         """The final D1 UPDATE includes all required metadata fields."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
@@ -366,7 +354,7 @@ class TestProcessArticleD1Updates:
 
     async def test_first_update_sets_processing_status(self) -> None:
         """The first D1 operation sets status to 'processing'."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
@@ -395,7 +383,7 @@ class TestProcessArticleD1Updates:
 class TestProcessArticleContentValidation:
     async def test_content_type_validation_rejects_non_html(self) -> None:
         """Non-HTML response (e.g. application/json) results in 'failed' status."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
@@ -424,7 +412,7 @@ class TestProcessArticleContentValidation:
 
     async def test_content_length_limit_rejects_oversized(self) -> None:
         """Oversized response (Content-Length > 10MB) results in 'failed' status."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
@@ -468,7 +456,7 @@ class TestProcessArticleContentValidation:
 class TestProcessArticleImageRewriting:
     async def test_image_paths_rewritten_to_api_urls(self) -> None:
         """Image paths in stored HTML should be /api/articles/{id}/images/... not bare R2 keys."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
@@ -502,7 +490,7 @@ class TestProcessArticleImageRewriting:
 
     async def test_canonical_url_stored_in_d1(self) -> None:
         """After processing, canonical_url from HTML is stored in the D1 UPDATE."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
@@ -570,7 +558,7 @@ class TestProcessArticleImageRewriting:
         """Image src attributes should match GET /api/articles/{id}/images/{filename}."""
         import re
 
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
@@ -608,7 +596,7 @@ class TestProcessArticleImageRewriting:
 
     async def test_process_article_with_empty_readability_output(self) -> None:
         """Processing should handle pages where readability extracts minimal content."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
@@ -662,7 +650,7 @@ class TestProcessArticleUserTitle:
                 return [{"title": user_title}]
             return []
 
-        db = _TrackingD1(result_fn=result_fn)
+        db = TrackingD1(result_fn=result_fn)
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
@@ -693,7 +681,7 @@ class TestProcessArticleUserTitle:
 class TestProcessArticleWithNoCanonical:
     async def test_falls_back_to_final_url_when_no_canonical(self) -> None:
         """When the HTML has no canonical URL, canonical_url should equal final_url."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
@@ -753,7 +741,7 @@ class TestProcessArticleWithNoCanonical:
 class TestProcessArticleRelativeImages:
     async def test_relative_image_urls_are_silently_skipped(self) -> None:
         """Images with relative URLs should not crash processing."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
@@ -827,7 +815,7 @@ class TestProcessArticleSQLParamCounts:
         """Every SQL statement executed during processing has matching placeholder/param counts."""
         import re
 
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
@@ -855,7 +843,7 @@ class TestProcessArticleSQLParamCounts:
 class TestProcessArticleSSRF:
     async def test_redirect_to_private_ip_is_blocked(self) -> None:
         """Processing should fail if the page redirects to a private IP."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
@@ -887,7 +875,7 @@ class TestProcessArticleSSRF:
 class TestProcessArticleExactAssertions:
     async def test_ready_status_at_exact_index(self) -> None:
         """Verify the final UPDATE sets status='ready' at the correct param index."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
@@ -919,7 +907,7 @@ class TestProcessArticleExactAssertions:
 
     async def test_failed_status_at_exact_index(self) -> None:
         """Verify the failure UPDATE sets status='failed' at param index 0."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         env = MockEnv(db=db, content=r2)
 
@@ -950,7 +938,7 @@ class TestProcessArticleExactAssertions:
 class TestProcessArticleReadability:
     async def test_uses_readability_when_available(self) -> None:
         """When env.READABILITY is present, it is used instead of BS4."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         readability = MockReadability(response={
             "title": "Readability Title",
@@ -982,7 +970,7 @@ class TestProcessArticleReadability:
 
     async def test_falls_back_to_bs4_when_no_binding(self) -> None:
         """When env.READABILITY is None, BS4 extractor is used."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))  # No readability
 
@@ -1004,7 +992,7 @@ class TestProcessArticleReadability:
 
     async def test_falls_back_to_bs4_on_readability_error(self) -> None:
         """When Readability raises, fall back to BS4 instead of failing."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         readability = MockReadability()
         readability.parse = AsyncMock(side_effect=RuntimeError("Service unavailable"))
@@ -1036,7 +1024,7 @@ class TestProcessArticleReadability:
 
     async def test_falls_back_to_bs4_on_empty_readability_result(self) -> None:
         """When Readability returns empty html, fall back to BS4."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         readability = MockReadability(response={
             "title": "",
@@ -1079,7 +1067,7 @@ class TestProcessArticleAutoTTS:
                 return [{"audio_status": "pending", "user_id": "user_001"}]
             return []
 
-        db = _TrackingD1(result_fn=result_fn)
+        db = TrackingD1(result_fn=result_fn)
         r2 = MockR2()
         queue = MockQueue()
         env = _browser_env(MockEnv(db=db, content=r2, article_queue=queue))
@@ -1108,7 +1096,7 @@ class TestProcessArticleAutoTTS:
                 return [{"audio_status": None, "user_id": "user_001"}]
             return []
 
-        db = _TrackingD1(result_fn=result_fn)
+        db = TrackingD1(result_fn=result_fn)
         r2 = MockR2()
         queue = MockQueue()
         env = _browser_env(MockEnv(db=db, content=r2, article_queue=queue))
@@ -1136,7 +1124,7 @@ class TestProcessArticleAutoTTS:
 class TestProcessArticlePreSuppliedContent:
     async def test_uses_pre_supplied_html_from_r2(self) -> None:
         """When raw.html exists in R2, processing skips the HTTP fetch."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
@@ -1207,7 +1195,7 @@ class TestProcessArticlePreSuppliedContent:
 
     async def test_pre_supplied_content_still_extracts_article(self) -> None:
         """Pre-supplied HTML is processed through the extraction pipeline."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
@@ -1258,7 +1246,7 @@ class TestProcessArticlePreSuppliedContent:
 
     async def test_falls_back_to_fetch_when_no_raw_html(self) -> None:
         """When no raw.html exists in R2, the normal HTTP fetch path is used."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 

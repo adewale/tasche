@@ -1,7 +1,8 @@
 import { useSignal } from '@preact/signals';
-import { useEffect } from 'preact/hooks';
+import { useEffect, useCallback } from 'preact/hooks';
 import { Header } from '../components/Header.jsx';
 import { user } from '../state.js';
+import { useSWMessage } from '../hooks/useSWMessage.js';
 import { performLogout, exportData, getCacheStats, triggerAutoPrecache } from '../api.js';
 import { getBookmarkletCode } from '../utils.js';
 import { IconBookmark } from '../components/Icons.jsx';
@@ -26,27 +27,17 @@ export function Settings() {
 
   useEffect(function () {
     loadCacheStats();
-
-    function handleSWMessage(event) {
-      if (!event.data) return;
-      if (event.data.type === 'AUTO_PRECACHE_COMPLETE') {
-        precaching.value = false;
-        loadCacheStats();
-      } else if (event.data.type === 'AUTO_PRECACHE_ERROR') {
-        precaching.value = false;
-      }
-    }
-
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.addEventListener('message', handleSWMessage);
-    }
-
-    return function () {
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.removeEventListener('message', handleSWMessage);
-      }
-    };
   }, []);
+
+  useSWMessage(useCallback(function (event) {
+    if (!event.data) return;
+    if (event.data.type === 'AUTO_PRECACHE_COMPLETE') {
+      precaching.value = false;
+      loadCacheStats();
+    } else if (event.data.type === 'AUTO_PRECACHE_ERROR') {
+      precaching.value = false;
+    }
+  }, []));
 
   function loadCacheStats() {
     getCacheStats().then(function (stats) {

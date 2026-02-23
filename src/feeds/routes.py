@@ -6,8 +6,6 @@ refreshing them, and importing from OPML files.
 
 from __future__ import annotations
 
-import secrets
-from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -15,14 +13,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from auth.dependencies import get_current_user
 from feeds.parser import parse_feed, parse_opml
 from feeds.processing import refresh_all_feeds, refresh_feed
+from utils import generate_id, now_iso
 from wrappers import HttpClient
 
 router = APIRouter()
-
-
-def _now() -> str:
-    """Return the current UTC timestamp as an ISO 8601 string."""
-    return datetime.now(UTC).isoformat()
 
 
 @router.get("")
@@ -94,8 +88,8 @@ async def add_feed(
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Failed to fetch feed: {exc}") from exc
 
-    feed_id = secrets.token_urlsafe(16)
-    now = _now()
+    feed_id = generate_id()
+    now = now_iso()
 
     feed = {
         "id": feed_id,
@@ -241,8 +235,8 @@ async def import_opml(
             skipped += 1
             continue
 
-        feed_id = secrets.token_urlsafe(16)
-        now = _now()
+        feed_id = generate_id()
+        now = now_iso()
 
         try:
             await (

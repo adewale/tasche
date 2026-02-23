@@ -7,8 +7,6 @@ saved articles.  All endpoints require authentication via the
 
 from __future__ import annotations
 
-import secrets
-from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -24,6 +22,7 @@ from articles.storage import (
 )
 from articles.urls import check_duplicate, extract_domain, validate_url
 from auth.dependencies import get_current_user
+from utils import generate_id, now_iso
 from wrappers import stream_r2_body
 
 router = APIRouter()
@@ -148,7 +147,7 @@ async def create_article(
     existing = await check_duplicate(db, user_id, url)
     is_update = existing is not None
 
-    now = datetime.now(UTC).isoformat()
+    now = now_iso()
 
     if is_update:
         article_id = existing["id"]
@@ -171,7 +170,7 @@ async def create_article(
                 .run()
             )
     else:
-        article_id = secrets.token_urlsafe(16)
+        article_id = generate_id()
         domain = extract_domain(url)
 
         try:
@@ -234,7 +233,7 @@ async def create_article(
         })
     except Exception as exc:
         # Mark article as failed if we cannot enqueue the processing job
-        fail_now = datetime.now(UTC).isoformat()
+        fail_now = now_iso()
         try:
             await (
                 db.prepare(
@@ -373,7 +372,7 @@ async def batch_check_originals(
     )
 
     checked: list[dict[str, str]] = []
-    now = datetime.now(UTC).isoformat()
+    now = now_iso()
 
     for row in results_list:
         article_id = row["id"]
@@ -448,7 +447,7 @@ async def batch_update_articles(
     db = env.DB
     user_id = user["user_id"]
 
-    now = datetime.now(UTC).isoformat()
+    now = now_iso()
     set_clauses: list[str] = []
     params: list[Any] = []
 
@@ -837,7 +836,7 @@ async def update_article(
     if not set_clauses:
         raise HTTPException(status_code=422, detail="No updatable fields provided")
 
-    now = datetime.now(UTC).isoformat()
+    now = now_iso()
     set_clauses.append("updated_at = ?")
     params.append(now)
 
@@ -899,7 +898,7 @@ async def retry_article(
         db, article_id, user_id, fields="id, original_url, status"
     )
 
-    now = datetime.now(UTC).isoformat()
+    now = now_iso()
     await (
         db.prepare(
             "UPDATE articles SET status = 'pending', updated_at = ? WHERE id = ?"
@@ -916,7 +915,7 @@ async def retry_article(
             "user_id": user_id,
         })
     except Exception as exc:
-        fail_now = datetime.now(UTC).isoformat()
+        fail_now = now_iso()
         try:
             await (
                 db.prepare(
@@ -1003,7 +1002,7 @@ async def check_original(
 
     original_url = article.get("original_url", "")
     new_status = await check_original_url(original_url)
-    now = datetime.now(UTC).isoformat()
+    now = now_iso()
 
     await (
         db.prepare(

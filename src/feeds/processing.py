@@ -6,21 +6,14 @@ and enqueues new entries for article processing.
 
 from __future__ import annotations
 
-import json  # noqa: F401 — kept for potential future use
-import secrets
 import traceback
-from datetime import UTC, datetime
 from typing import Any
 
 from articles.urls import check_duplicate, extract_domain, validate_url
 from feeds.parser import parse_feed
+from utils import generate_id, now_iso
 from wide_event import current_event
 from wrappers import HttpClient, HttpError
-
-
-def _now() -> str:
-    """Return the current UTC timestamp as an ISO 8601 string."""
-    return datetime.now(UTC).isoformat()
 
 
 async def refresh_feed(env: Any, feed: dict[str, Any], user_id: str) -> dict[str, Any]:
@@ -66,14 +59,14 @@ async def refresh_feed(env: Any, feed: dict[str, Any], user_id: str) -> dict[str
         if parsed.title and parsed.title != feed.get("title", ""):
             await (
                 db.prepare("UPDATE feeds SET title = ?, updated_at = ? WHERE id = ?")
-                .bind(parsed.title, _now(), feed_id)
+                .bind(parsed.title, now_iso(), feed_id)
                 .run()
             )
 
         if parsed.site_url and parsed.site_url != feed.get("site_url", ""):
             await (
                 db.prepare("UPDATE feeds SET site_url = ?, updated_at = ? WHERE id = ?")
-                .bind(parsed.site_url, _now(), feed_id)
+                .bind(parsed.site_url, now_iso(), feed_id)
                 .run()
             )
 
@@ -102,10 +95,10 @@ async def refresh_feed(env: Any, feed: dict[str, Any], user_id: str) -> dict[str
                 continue
 
             # Create new article
-            article_id = secrets.token_urlsafe(16)
+            article_id = generate_id()
             domain = extract_domain(url)
             title = entry.title or None
-            now = _now()
+            now = now_iso()
 
             try:
                 await (
@@ -143,7 +136,7 @@ async def refresh_feed(env: Any, feed: dict[str, Any], user_id: str) -> dict[str
                         db.prepare(
                             "UPDATE articles SET status = 'failed', updated_at = ? WHERE id = ?"
                         )
-                        .bind(_now(), article_id)
+                        .bind(now_iso(), article_id)
                         .run()
                     )
                 except Exception:
@@ -155,7 +148,7 @@ async def refresh_feed(env: Any, feed: dict[str, Any], user_id: str) -> dict[str
         errors.append(f"Unexpected error: {traceback.format_exc()[-500:]}")
 
     # Update feed timestamps
-    now = _now()
+    now = now_iso()
     if latest_published and latest_published != last_published:
         await (
             db.prepare(

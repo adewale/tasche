@@ -1,29 +1,16 @@
 import { useState, useEffect } from 'preact/hooks';
 import { Header } from '../components/Header.jsx';
+import { EmptyState, LoadingSpinner } from '../components/EmptyState.jsx';
 import { addToast } from '../state.js';
 import { IconEye, IconShuffle, IconBookOpen } from '../components/Icons.jsx';
 import { getRandomHighlight } from '../api.js';
-
-var HIGHLIGHT_COLORS = {
-  yellow: 'var(--highlight-yellow)',
-  green: 'var(--highlight-green)',
-  blue: 'var(--highlight-blue)',
-  pink: 'var(--highlight-pink)',
-};
+import { HIGHLIGHT_CSS } from '../constants.js';
 
 export function Review() {
-  var _highlight = useState(null);
-  var highlight = _highlight[0];
-  var setHighlight = _highlight[1];
-  var _loading = useState(true);
-  var loading = _loading[0];
-  var setLoading = _loading[1];
-  var _revealed = useState(false);
-  var revealed = _revealed[0];
-  var setRevealed = _revealed[1];
-  var _empty = useState(false);
-  var empty = _empty[0];
-  var setEmpty = _empty[1];
+  var [highlight, setHighlight] = useState(null);
+  var [loading, setLoading] = useState(true);
+  var [revealed, setRevealed] = useState(false);
+  var [empty, setEmpty] = useState(false);
 
   useEffect(function () {
     loadRandom();
@@ -62,9 +49,7 @@ export function Review() {
       <>
         <Header />
         <main class="main-content">
-          <div class="loading">
-            <div class="spinner"></div>
-          </div>
+          <LoadingSpinner />
         </main>
       </>
     );
@@ -75,15 +60,9 @@ export function Review() {
       <>
         <Header />
         <main class="main-content">
-          <div class="empty-state">
-            <div class="empty-state-icon">
-              <IconBookOpen />
-            </div>
-            <div class="empty-state-title">No highlights to review</div>
-            <div class="empty-state-text">
-              Create highlights in the Reader view to start reviewing them.
-            </div>
-          </div>
+          <EmptyState icon={IconBookOpen} title="No highlights to review">
+            Create highlights in the Reader view to start reviewing them.
+          </EmptyState>
         </main>
       </>
     );
@@ -94,18 +73,17 @@ export function Review() {
       <>
         <Header />
         <main class="main-content">
-          <div class="empty-state">
-            <div class="empty-state-title">Could not load highlight</div>
+          <EmptyState title="Could not load highlight">
             <button class="btn btn-primary" onClick={handleNext} style={{ marginTop: '16px' }}>
               Try again
             </button>
-          </div>
+          </EmptyState>
         </main>
       </>
     );
   }
 
-  var colorBg = HIGHLIGHT_COLORS[highlight.color] || HIGHLIGHT_COLORS.yellow;
+  var colorBg = HIGHLIGHT_CSS[highlight.color] || HIGHLIGHT_CSS.yellow;
 
   return (
     <>

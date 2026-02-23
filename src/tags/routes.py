@@ -12,13 +12,12 @@ Two routers are exported:
 
 from __future__ import annotations
 
-import secrets
-from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from auth.dependencies import get_current_user
+from utils import generate_id, now_iso
 
 router = APIRouter()
 article_tags_router = APIRouter()
@@ -103,8 +102,8 @@ async def create_tag(
             status_code=409, detail="Tag with this name already exists",
         )
 
-    tag_id = secrets.token_urlsafe(16)
-    now = datetime.now(UTC).isoformat()
+    tag_id = generate_id()
+    now = now_iso()
 
     await (
         db.prepare(

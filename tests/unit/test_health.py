@@ -24,13 +24,11 @@ from tests.conftest import (
     MockEnv,
     MockQueue,
     MockR2,
+    TrackingD1,
     _browser_env,
     _make_mock_client,
     _make_test_app,
     _noop_screenshot,
-)
-from tests.conftest import (
-    TrackingD1 as _TrackingD1,
 )
 from tests.conftest import (
     _authenticated_client as _authenticated_client_base,
@@ -434,7 +432,7 @@ class TestMetadataJsonEnhanced:
 
     async def test_metadata_includes_content_hash(self) -> None:
         """metadata.json includes a sha256 content_hash field."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
@@ -457,7 +455,7 @@ class TestMetadataJsonEnhanced:
 
     async def test_metadata_includes_extraction_method(self) -> None:
         """metadata.json includes extraction_method field set to 'bs4'."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
@@ -478,7 +476,7 @@ class TestMetadataJsonEnhanced:
 
     async def test_metadata_includes_archived_at(self) -> None:
         """metadata.json includes an archived_at timestamp."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
@@ -501,7 +499,7 @@ class TestMetadataJsonEnhanced:
 
     async def test_metadata_has_all_expected_fields(self) -> None:
         """metadata.json contains all required provenance fields."""
-        db = _TrackingD1()
+        db = TrackingD1()
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 

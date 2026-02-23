@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { Header } from '../components/Header.jsx';
+import { EmptyState, LoadingSpinner } from '../components/EmptyState.jsx';
 import { tags as tagsSignal, addToast } from '../state.js';
 import {
   listTags,
@@ -208,18 +209,13 @@ export function Tags() {
           </button>
         </div>
 
-        {isLoading && (
-          <div class="loading">
-            <div class="spinner"></div>
-          </div>
-        )}
+        {isLoading && <LoadingSpinner />}
 
         <div class="tags-list">
           {!isLoading && tagList.length === 0 && (
-            <div class="empty-state">
-              <div class="empty-state-title">No tags yet</div>
-              <div class="empty-state-text">Create a tag to organize your articles.</div>
-            </div>
+            <EmptyState title="No tags yet">
+              Create a tag to organize your articles.
+            </EmptyState>
           )}
           {tagList.map(function (t) {
             var isEditing = editingTagId === t.id;
@@ -328,20 +324,13 @@ export function Tags() {
           </div>
         )}
 
-        {rulesLoading && (
-          <div class="loading">
-            <div class="spinner"></div>
-          </div>
-        )}
+        {rulesLoading && <LoadingSpinner />}
 
         <div class="tags-list" style={{ marginTop: '12px' }}>
           {!rulesLoading && rules.length === 0 && (
-            <div class="empty-state">
-              <div class="empty-state-title">No rules yet</div>
-              <div class="empty-state-text">
-                Add a rule to automatically tag articles when they are saved.
-              </div>
-            </div>
+            <EmptyState title="No rules yet">
+              Add a rule to automatically tag articles when they are saved.
+            </EmptyState>
           )}
           {rules.map(function (r) {
             return (

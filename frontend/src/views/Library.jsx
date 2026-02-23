@@ -1,9 +1,13 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { Header } from '../components/Header.jsx';
+import { EmptyState, LoadingSpinner } from '../components/EmptyState.jsx';
 import { ArticleCard } from '../components/ArticleCard.jsx';
 import { Pagination } from '../components/Pagination.jsx';
 import { KeyboardShortcutsHelp } from '../components/KeyboardShortcutsHelp.jsx';
 import { IconBookOpen, IconHeadphones, IconSelectMode, IconArchive, IconTrash, IconX } from '../components/Icons.jsx';
+import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts.js';
+import { toggleArchive, toggleFavorite, removeArticle } from '../articleActions.js';
+import { nav } from '../nav.js';
 import {
   articles,
   filter as filterSignal,
@@ -17,8 +21,6 @@ import {
 import {
   listArticles,
   createArticle as apiCreateArticle,
-  updateArticle,
-  deleteArticle as apiDeleteArticle,
   batchUpdateArticles,
   batchDeleteArticles,
   cacheArticlesForOffline,
@@ -85,77 +87,56 @@ export function Library({ tag }) {
   }, [articleList.length]);
 
   // Keyboard shortcuts
-  useEffect(() => {
-    function handleKeyDown(e) {
-      // Skip if an input, textarea, or select is focused
-      var tagName = document.activeElement ? document.activeElement.tagName : '';
-      if (tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT') {
-        return;
-      }
-
-      // Skip if help overlay is open (except ? and Escape to close it)
-      if (showHelp) {
-        if (e.key === '?' || e.key === 'Escape') {
-          e.preventDefault();
-          setShowHelp(false);
-        }
-        return;
-      }
-
+  useKeyboardShortcuts(showHelp ? {
+    '?': function () { setShowHelp(false); },
+    Escape: function () { setShowHelp(false); },
+  } : {
+    j: function () {
       var list = articles.value;
-
-      if (e.key === 'j') {
-        e.preventDefault();
-        setSelectedIndex(function (prev) {
-          var next = prev + 1;
-          if (next >= list.length) return list.length - 1;
-          return next;
-        });
-      } else if (e.key === 'k') {
-        e.preventDefault();
-        setSelectedIndex(function (prev) {
-          var next = prev - 1;
-          if (next < 0) return 0;
-          return next;
-        });
-      } else if (e.key === 'o' || e.key === 'Enter') {
-        e.preventDefault();
-        if (selectedIndex >= 0 && selectedIndex < list.length) {
-          window.location.hash = '#/article/' + list[selectedIndex].id;
-        }
-      } else if (e.key === 'a') {
-        e.preventDefault();
-        if (selectedIndex >= 0 && selectedIndex < list.length) {
-          handleArchiveSelected(list[selectedIndex]);
-        }
-      } else if (e.key === 's') {
-        e.preventDefault();
-        if (selectedIndex >= 0 && selectedIndex < list.length) {
-          handleFavoriteSelected(list[selectedIndex]);
-        }
-      } else if (e.key === 'd') {
-        e.preventDefault();
-        if (selectedIndex >= 0 && selectedIndex < list.length) {
-          handleDeleteSelected(list[selectedIndex]);
-        }
-      } else if (e.key === '/') {
-        e.preventDefault();
-        window.location.hash = '#/search';
-      } else if (e.key === 'n') {
-        e.preventDefault();
-        if (urlInputRef.current) {
-          urlInputRef.current.focus();
-        }
-      } else if (e.key === '?') {
-        e.preventDefault();
-        setShowHelp(true);
+      setSelectedIndex(function (prev) {
+        var next = prev + 1;
+        return next >= list.length ? list.length - 1 : next;
+      });
+    },
+    k: function () {
+      setSelectedIndex(function (prev) {
+        var next = prev - 1;
+        return next < 0 ? 0 : next;
+      });
+    },
+    o: function () {
+      var list = articles.value;
+      if (selectedIndex >= 0 && selectedIndex < list.length) {
+        nav.article(list[selectedIndex].id);
       }
-    }
-
-    window.addEventListener('keydown', handleKeyDown);
-    return function () {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
+    },
+    Enter: function () {
+      var list = articles.value;
+      if (selectedIndex >= 0 && selectedIndex < list.length) {
+        nav.article(list[selectedIndex].id);
+      }
+    },
+    a: function () {
+      var list = articles.value;
+      if (selectedIndex >= 0 && selectedIndex < list.length) {
+        toggleArchive(list[selectedIndex]);
+      }
+    },
+    s: function () {
+      var list = articles.value;
+      if (selectedIndex >= 0 && selectedIndex < list.length) {
+        toggleFavorite(list[selectedIndex]);
+      }
+    },
+    d: function () {
+      var list = articles.value;
+      if (selectedIndex >= 0 && selectedIndex < list.length) {
+        removeArticle(list[selectedIndex].id);
+      }
+    },
+    '/': function () { nav.search(); },
+    n: function () { if (urlInputRef.current) urlInputRef.current.focus(); },
+    '?': function () { setShowHelp(true); },
   }, [selectedIndex, showHelp]);
 
   // Scroll selected card into view
@@ -166,58 +147,6 @@ export function Library({ tag }) {
       el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
   }, [selectedIndex]);
-
-  async function handleArchiveSelected(article) {
-    var newStatus = article.reading_status === 'archived' ? 'unread' : 'archived';
-    try {
-      await updateArticle(article.id, { reading_status: newStatus });
-      articles.value = articles.value.map(function (art) {
-        return art.id === article.id ? { ...art, reading_status: newStatus } : art;
-      });
-      addToast(newStatus === 'archived' ? 'Archived' : 'Moved to unread', 'success');
-    } catch (err) {
-      if (isOffline.value) {
-        queueOfflineMutation('/api/articles/' + article.id, 'PATCH', { reading_status: newStatus });
-        articles.value = articles.value.map(function (art) {
-          return art.id === article.id ? { ...art, reading_status: newStatus } : art;
-        });
-        addToast('Queued for sync', 'info');
-      } else {
-        addToast(err.message, 'error');
-      }
-    }
-  }
-
-  async function handleFavoriteSelected(article) {
-    var newFav = !article.is_favorite;
-    try {
-      await updateArticle(article.id, { is_favorite: newFav });
-      articles.value = articles.value.map(function (art) {
-        return art.id === article.id ? { ...art, is_favorite: newFav ? 1 : 0 } : art;
-      });
-    } catch (err) {
-      if (isOffline.value) {
-        queueOfflineMutation('/api/articles/' + article.id, 'PATCH', { is_favorite: newFav });
-        articles.value = articles.value.map(function (art) {
-          return art.id === article.id ? { ...art, is_favorite: newFav ? 1 : 0 } : art;
-        });
-        addToast('Queued for sync', 'info');
-      } else {
-        addToast(err.message, 'error');
-      }
-    }
-  }
-
-  async function handleDeleteSelected(article) {
-    if (!confirm('Delete this article?')) return;
-    try {
-      await apiDeleteArticle(article.id);
-      articles.value = articles.value.filter(function (art) { return art.id !== article.id; });
-      addToast('Article deleted', 'success');
-    } catch (err) {
-      addToast(err.message, 'error');
-    }
-  }
 
   async function loadArticles(reset) {
     if (loadingSignal.value || (!hasMoreSignal.value && !reset)) return;
@@ -498,13 +427,9 @@ export function Library({ tag }) {
 
         <div class="article-list">
           {articleList.length === 0 && !isLoading && (
-            <div class="empty-state">
-              <div class="empty-state-icon">
-                <IconBookOpen />
-              </div>
-              <div class="empty-state-title">No articles yet</div>
-              <div class="empty-state-text">Save a URL above to get started.</div>
-            </div>
+            <EmptyState icon={IconBookOpen} title="No articles yet">
+              Save a URL above to get started.
+            </EmptyState>
           )}
           {articleList.map(function (a, index) {
             return (
@@ -524,9 +449,7 @@ export function Library({ tag }) {
         )}
 
         {isLoading && articleList.length > 0 && (
-          <div class="loading">
-            <div class="spinner"></div>
-          </div>
+          <LoadingSpinner />
         )}
 
         <Pagination

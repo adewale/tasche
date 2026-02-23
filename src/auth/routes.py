@@ -8,8 +8,6 @@ falls back to httpx in CPython tests.  D1 queries use parameterised SQL
 
 from __future__ import annotations
 
-import secrets
-from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlencode
 
@@ -24,6 +22,7 @@ from auth.session import (
     delete_session,
     parse_allowed_emails,
 )
+from utils import generate_id, now_iso
 from wrappers import http_fetch
 
 router = APIRouter()
@@ -48,7 +47,7 @@ async def login(request: Request) -> RedirectResponse:
     redirect_uri = f"{site_url}/api/auth/callback"
 
     # Generate CSRF state token and store in KV with 10-minute TTL
-    state = secrets.token_urlsafe(32)
+    state = generate_id(32)
     await env.SESSIONS.put(
         f"{OAUTH_STATE_PREFIX}{state}", "1", expirationTtl=OAUTH_STATE_TTL
     )
@@ -174,7 +173,7 @@ async def callback(request: Request) -> RedirectResponse:
 
     # --- Upsert user in D1 ---
     db = env.DB
-    now = datetime.now(UTC).isoformat()
+    now = now_iso()
 
     existing = await db.prepare(
         "SELECT id FROM users WHERE github_id = ?"
@@ -191,7 +190,7 @@ async def callback(request: Request) -> RedirectResponse:
             .run()
         )
     else:
-        user_id = secrets.token_urlsafe(16)
+        user_id = generate_id()
         await (
             db.prepare(
                 "INSERT INTO users (id, github_id, email, username, avatar_url, "

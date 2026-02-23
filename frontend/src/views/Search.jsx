@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { Header } from '../components/Header.jsx';
+import { EmptyState, LoadingSpinner } from '../components/EmptyState.jsx';
 import { searchResults, searchQuery, addToast } from '../state.js';
 import { searchArticles } from '../api.js';
+import { nav } from '../nav.js';
 import { formatDate, highlightTerms } from '../utils.js';
 
 function HighlightedText({ text, query }) {
@@ -76,7 +78,7 @@ export function Search() {
   }
 
   function navigateToArticle(id) {
-    window.location.hash = '#/article/' + id;
+    nav.article(id);
   }
 
   var currentQuery = searchQuery.value;
@@ -107,10 +109,9 @@ export function Search() {
 
         <div class="article-list">
           {results.length === 0 && !isLoading && info && (
-            <div class="empty-state">
-              <div class="empty-state-title">No results found</div>
-              <div class="empty-state-text">Try a different search query.</div>
-            </div>
+            <EmptyState title="No results found">
+              Try a different search query.
+            </EmptyState>
           )}
           {results.map((a) => (
             <div
@@ -147,11 +148,7 @@ export function Search() {
           ))}
         </div>
 
-        {isLoading && (
-          <div class="loading">
-            <div class="spinner"></div>
-          </div>
-        )}
+        {isLoading && <LoadingSpinner />}
       </main>
     </>
   );

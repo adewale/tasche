@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'preact/hooks';
 import { formatDate } from '../utils.js';
-import { addToast, isOffline, articles } from '../state.js';
-import { updateArticle, deleteArticle as apiDeleteArticle, getArticleTags, listenLater as apiListenLater, queueOfflineMutation, isOfflineCached } from '../api.js';
+import { addToast, articles } from '../state.js';
+import { getArticleTags, listenLater as apiListenLater, isOfflineCached } from '../api.js';
+import { toggleArchive, toggleFavorite, removeArticle } from '../articleActions.js';
+import { nav } from '../nav.js';
 import { playAudio } from './AudioPlayer.jsx';
 import { IconStar, IconTrash, IconCheck, IconCheckSquare, IconHeadphones, IconPlay, IconClock, IconArchive, IconMarkdown } from './Icons.jsx';
 
@@ -49,41 +51,19 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
     }
     if (e.target.closest('.article-card-actions')) return;
     if (e.target.closest('.tag-chip')) return;
-    window.location.hash = '#/article/' + a.id;
+    nav.article(a.id);
   }
 
-  async function handleFavorite(e) {
+  function handleFavorite(e) {
     e.stopPropagation();
-    const newFav = !a.is_favorite;
-    try {
-      await updateArticle(a.id, { is_favorite: newFav });
-      articles.value = articles.value.map(function (art) {
-        return art.id === a.id ? { ...art, is_favorite: newFav ? 1 : 0 } : art;
-      });
-    } catch (err) {
-      if (isOffline.value) {
-        queueOfflineMutation('/api/articles/' + a.id, 'PATCH', { is_favorite: newFav });
-        articles.value = articles.value.map(function (art) {
-          return art.id === a.id ? { ...art, is_favorite: newFav ? 1 : 0 } : art;
-        });
-        addToast('Queued for sync', 'info');
-      } else {
-        addToast(err.message, 'error');
-      }
-    }
+    toggleFavorite(a);
   }
 
-  async function handleDelete(e) {
+  function handleDelete(e) {
     e.stopPropagation();
-    if (!confirm('Delete this article?')) return;
-    try {
-      await apiDeleteArticle(a.id);
-      articles.value = articles.value.filter(function (art) { return art.id !== a.id; });
-      if (onDelete) onDelete(a.id);
-      addToast('Article deleted', 'success');
-    } catch (err) {
-      addToast(err.message, 'error');
-    }
+    removeArticle(a.id).then(function (deleted) {
+      if (deleted && onDelete) onDelete(a.id);
+    });
   }
 
   async function handleListenLater(e) {
@@ -108,37 +88,20 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
     playAudio(a.id, a.title || '');
   }
 
-  async function handleArchiveToggle(e) {
+  function handleArchiveToggle(e) {
     e.stopPropagation();
-    var newStatus = a.reading_status === 'archived' ? 'unread' : 'archived';
-    try {
-      await updateArticle(a.id, { reading_status: newStatus });
-      articles.value = articles.value.map(function (art) {
-        return art.id === a.id ? { ...art, reading_status: newStatus } : art;
-      });
-      addToast(newStatus === 'archived' ? 'Archived' : 'Moved to unread', 'success');
-    } catch (err) {
-      if (isOffline.value) {
-        queueOfflineMutation('/api/articles/' + a.id, 'PATCH', { reading_status: newStatus });
-        articles.value = articles.value.map(function (art) {
-          return art.id === a.id ? { ...art, reading_status: newStatus } : art;
-        });
-        addToast('Queued for sync', 'info');
-      } else {
-        addToast(err.message, 'error');
-      }
-    }
+    toggleArchive(a);
   }
 
   function handleTagClick(e, tagId) {
     e.stopPropagation();
     e.preventDefault();
-    window.location.hash = '#/?tag=' + tagId;
+    nav.tagFilter(tagId);
   }
 
   function handleMarkdown(e) {
     e.stopPropagation();
-    window.location.hash = '#/article/' + a.id + '/markdown';
+    nav.articleMarkdown(a.id);
   }
 
   var audioStatus = a.audio_status;

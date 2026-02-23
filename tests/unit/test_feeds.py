@@ -5,7 +5,6 @@ Covers listing, adding, deleting feeds, refreshing, and OPML import.
 
 from __future__ import annotations
 
-from typing import Any
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
@@ -16,6 +15,7 @@ from tests.conftest import (
     MockD1,
     MockEnv,
     _make_test_app,
+    make_feed,
 )
 from tests.conftest import (
     _authenticated_client as _authenticated_client_base,
@@ -34,25 +34,6 @@ def _make_app(env):
 
 async def _authenticated_client(env: MockEnv) -> tuple[TestClient, str]:
     return await _authenticated_client_base(env, *_ROUTERS)
-
-
-def _make_feed(**overrides: Any) -> dict[str, Any]:
-    """Create a feed dict with defaults."""
-    defaults = {
-        "id": "feed_001",
-        "user_id": "user_001",
-        "url": "https://example.com/feed.xml",
-        "title": "Example Feed",
-        "site_url": "https://example.com",
-        "last_fetched_at": "2025-01-01T00:00:00",
-        "last_entry_published": None,
-        "fetch_interval_minutes": 60,
-        "is_active": 1,
-        "created_at": "2025-01-01T00:00:00",
-        "updated_at": "2025-01-01T00:00:00",
-    }
-    defaults.update(overrides)
-    return defaults
 
 
 # Sample RSS for validation during add
@@ -79,7 +60,7 @@ _SAMPLE_RSS = """\
 
 class TestListFeeds:
     async def test_lists_feeds(self) -> None:
-        feed = _make_feed()
+        feed = make_feed()
 
         def execute(sql: str, params: list) -> list:
             if "SELECT * FROM feeds" in sql:
@@ -208,7 +189,7 @@ class TestAddFeed:
 
 class TestDeleteFeed:
     async def test_deletes_feed(self) -> None:
-        feed = _make_feed()
+        feed = make_feed()
         deleted = []
 
         def execute(sql: str, params: list) -> list:
@@ -249,7 +230,7 @@ class TestDeleteFeed:
 
 class TestRefreshFeed:
     async def test_refresh_returns_result(self) -> None:
-        feed = _make_feed()
+        feed = make_feed()
 
         def execute(sql: str, params: list) -> list:
             if "SELECT * FROM feeds WHERE id" in sql:
@@ -303,7 +284,7 @@ class TestRefreshFeed:
 
 class TestRefreshAllFeeds:
     async def test_refresh_all_returns_summary(self) -> None:
-        feed = _make_feed()
+        feed = make_feed()
 
         def execute(sql: str, params: list) -> list:
             if "SELECT * FROM feeds WHERE is_active = 1" in sql:

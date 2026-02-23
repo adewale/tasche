@@ -1,10 +1,15 @@
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
 import { Header } from '../components/Header.jsx';
+import { EmptyState, LoadingSpinner } from '../components/EmptyState.jsx';
 import { TagPicker } from '../components/TagPicker.jsx';
 import { ReaderToolbar } from '../components/ReaderToolbar.jsx';
 import { playAudio, audioState, getAudio } from '../components/AudioPlayer.jsx';
 import { articles, currentArticle, addToast } from '../state.js';
 import { readerPrefs, getReaderStyle } from '../readerPrefs.js';
+import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts.js';
+import { useSWMessage } from '../hooks/useSWMessage.js';
+import { nav } from '../nav.js';
+import { HIGHLIGHT_COLORS, HIGHLIGHT_CSS } from '../constants.js';
 import {
   IconArrowLeft, IconStar, IconExternalLink, IconPlay,
   IconHeadphones, IconClock, IconDownload, IconCheck, IconCamera,
@@ -122,13 +127,6 @@ function unwrapSentences(containerEl) {
   containerEl.normalize();
 }
 
-var HIGHLIGHT_COLORS = ['yellow', 'green', 'blue', 'pink'];
-var HIGHLIGHT_CSS = {
-  yellow: 'var(--highlight-yellow)',
-  green: 'var(--highlight-green)',
-  blue: 'var(--highlight-blue)',
-  pink: 'var(--highlight-pink)',
-};
 
 function getSelectionContext(range, maxLen) {
   maxLen = maxLen || 80;
@@ -240,34 +238,6 @@ export function Reader({ id }) {
       setOfflineStatus(status);
     });
 
-    function handleSWMessage(event) {
-      if (!event.data) return;
-      if (event.data.type === 'OFFLINE_SAVED' && event.data.articleId === currentId) {
-        if (event.data.what === 'content') {
-          setOfflineStatus(function (prev) { return { ...prev, cached: true, hasContent: true }; });
-          setSavingOffline(false);
-          addToast('Article saved for offline reading', 'success');
-        } else if (event.data.what === 'audio') {
-          setOfflineStatus(function (prev) { return { ...prev, cached: true, hasAudio: true }; });
-          setSavingAudioOffline(false);
-          addToast('Audio downloaded for offline listening', 'success');
-        }
-      }
-      if (event.data.type === 'OFFLINE_SAVE_ERROR' && event.data.articleId === currentId) {
-        if (event.data.what === 'content') {
-          setSavingOffline(false);
-          addToast('Failed to save for offline', 'error');
-        } else if (event.data.what === 'audio') {
-          setSavingAudioOffline(false);
-          addToast('Failed to download audio', 'error');
-        }
-      }
-    }
-
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.addEventListener('message', handleSWMessage);
-    }
-
     window.addEventListener('scroll', handleScroll);
 
     return function () {
@@ -275,12 +245,34 @@ export function Reader({ id }) {
         clearTimeout(scrollTimer);
       }
       window.removeEventListener('scroll', handleScroll);
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.removeEventListener('message', handleSWMessage);
-      }
       currentArticle.value = null;
     };
   }, [id]);
+
+  // Service worker messages for offline save status
+  useSWMessage(useCallback(function (event) {
+    if (!event.data) return;
+    if (event.data.type === 'OFFLINE_SAVED' && event.data.articleId === id) {
+      if (event.data.what === 'content') {
+        setOfflineStatus(function (prev) { return { ...prev, cached: true, hasContent: true }; });
+        setSavingOffline(false);
+        addToast('Article saved for offline reading', 'success');
+      } else if (event.data.what === 'audio') {
+        setOfflineStatus(function (prev) { return { ...prev, cached: true, hasAudio: true }; });
+        setSavingAudioOffline(false);
+        addToast('Audio downloaded for offline listening', 'success');
+      }
+    }
+    if (event.data.type === 'OFFLINE_SAVE_ERROR' && event.data.articleId === id) {
+      if (event.data.what === 'content') {
+        setSavingOffline(false);
+        addToast('Failed to save for offline', 'error');
+      } else if (event.data.what === 'audio') {
+        setSavingAudioOffline(false);
+        addToast('Failed to download audio', 'error');
+      }
+    }
+  }, [id]));
 
   // Load and apply highlights after content renders
   useEffect(function () {
@@ -409,30 +401,11 @@ export function Reader({ id }) {
   }
 
   // Keyboard shortcuts for Reader
-  useEffect(() => {
-    function handleKeyDown(e) {
-      // Skip if an input, textarea, or select is focused
-      var tagName = document.activeElement ? document.activeElement.tagName : '';
-      if (tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT') {
-        return;
-      }
-
-      if (e.key === 'Escape' || e.key === 'h') {
-        e.preventDefault();
-        window.location.hash = '#/';
-      } else if (e.key === 'a') {
-        e.preventDefault();
-        handleArchiveToggle();
-      } else if (e.key === 's') {
-        e.preventDefault();
-        handleFavorite();
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyDown);
-    return function () {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
+  useKeyboardShortcuts({
+    Escape: function () { nav.library(); },
+    h: function () { nav.library(); },
+    a: function () { handleArchiveToggle(); },
+    s: function () { handleFavorite(); },
   }, [article]);
 
   // Sentence highlighting during TTS audio playback
@@ -639,7 +612,7 @@ export function Reader({ id }) {
     try {
       await apiDeleteArticle(id);
       addToast('Article deleted', 'success');
-      window.location.hash = '#/';
+      nav.library();
     } catch (e) {
       addToast(e.message, 'error');
     }
@@ -705,13 +678,13 @@ export function Reader({ id }) {
       <>
         <Header />
         <main class="main-content">
-          <div class="empty-state">
-            <div class="empty-state-title">Could not load article</div>
-            <div class="empty-state-text">{loadError}</div>
+          <EmptyState title="Could not load article">
+            {loadError}
+            <br />
             <a href="#/" class="btn btn-secondary" style={{ marginTop: '16px' }}>
               Back to articles
             </a>
-          </div>
+          </EmptyState>
         </main>
       </>
     );
@@ -722,9 +695,7 @@ export function Reader({ id }) {
       <>
         <Header />
         <main class="main-content">
-          <div class="loading">
-            <div class="spinner"></div>
-          </div>
+          <LoadingSpinner />
         </main>
       </>
     );

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'preact/hooks';
 import { Header } from '../components/Header.jsx';
+import { EmptyState, LoadingSpinner } from '../components/EmptyState.jsx';
 import { addToast } from '../state.js';
 import { getArticle, getArticleMarkdown } from '../api.js';
 import { renderMarkdown } from '../markdown.js';
@@ -53,13 +54,13 @@ export function MarkdownView({ id }) {
       <>
         <Header />
         <main class="main-content">
-          <div class="empty-state">
-            <div class="empty-state-title">Could not load markdown</div>
-            <div class="empty-state-text">{loadError}</div>
+          <EmptyState title="Could not load markdown">
+            {loadError}
+            <br />
             <a href={'#/article/' + id} class="btn btn-secondary" style={{ marginTop: '16px' }}>
               Back to article
             </a>
-          </div>
+          </EmptyState>
         </main>
       </>
     );
@@ -70,9 +71,7 @@ export function MarkdownView({ id }) {
       <>
         <Header />
         <main class="main-content">
-          <div class="loading">
-            <div class="spinner"></div>
-          </div>
+          <LoadingSpinner />
         </main>
       </>
     );

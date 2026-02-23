@@ -1,29 +1,16 @@
 import { useState, useEffect } from 'preact/hooks';
 import { Header } from '../components/Header.jsx';
+import { EmptyState, LoadingSpinner } from '../components/EmptyState.jsx';
 import { addToast } from '../state.js';
 import { IconTrash, IconBookOpen } from '../components/Icons.jsx';
 import { getAllHighlights, deleteHighlight as apiDeleteHighlight } from '../api.js';
-
-var HIGHLIGHT_COLORS = {
-  yellow: 'var(--highlight-yellow)',
-  green: 'var(--highlight-green)',
-  blue: 'var(--highlight-blue)',
-  pink: 'var(--highlight-pink)',
-};
+import { HIGHLIGHT_CSS } from '../constants.js';
 
 export function Highlights() {
-  var _state = useState([]);
-  var highlights = _state[0];
-  var setHighlights = _state[1];
-  var _loading = useState(true);
-  var loading = _loading[0];
-  var setLoading = _loading[1];
-  var _offset = useState(0);
-  var offset = _offset[0];
-  var setOffset = _offset[1];
-  var _hasMore = useState(true);
-  var hasMore = _hasMore[0];
-  var setHasMore = _hasMore[1];
+  var [highlights, setHighlights] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [offset, setOffset] = useState(0);
+  var [hasMore, setHasMore] = useState(true);
 
   useEffect(function () {
     loadHighlights(0, true);
@@ -86,15 +73,9 @@ export function Highlights() {
         <h1 class="section-title">Highlights</h1>
 
         {!loading && highlights.length === 0 && (
-          <div class="empty-state">
-            <div class="empty-state-icon">
-              <IconBookOpen />
-            </div>
-            <div class="empty-state-title">No highlights yet</div>
-            <div class="empty-state-text">
-              Select text in the Reader view to create highlights.
-            </div>
-          </div>
+          <EmptyState icon={IconBookOpen} title="No highlights yet">
+            Select text in the Reader view to create highlights.
+          </EmptyState>
         )}
 
         <div class="highlights-list">
@@ -110,7 +91,7 @@ export function Highlights() {
                     <div key={h.id} class="highlight-card" data-color={h.color}>
                       <div
                         class="highlight-card-bar"
-                        style={{ background: HIGHLIGHT_COLORS[h.color] || HIGHLIGHT_COLORS.yellow }}
+                        style={{ background: HIGHLIGHT_CSS[h.color] || HIGHLIGHT_CSS.yellow }}
                       ></div>
                       <div class="highlight-card-body">
                         <blockquote class="highlight-card-text">{h.text}</blockquote>
@@ -137,11 +118,7 @@ export function Highlights() {
           })}
         </div>
 
-        {loading && (
-          <div class="loading">
-            <div class="spinner"></div>
-          </div>
-        )}
+        {loading && <LoadingSpinner />}
 
         {!loading && hasMore && highlights.length > 0 && (
           <div class="load-more">

@@ -105,9 +105,9 @@ export function batchDeleteArticles(articleIds) {
   });
 }
 
-// Article content from R2
-export function getArticleContent(articleId) {
-  return fetch('/api/articles/' + articleId + '/content', { credentials: 'include' })
+// Fetch text content (returns null on error/404)
+function fetchText(path) {
+  return fetch(path, { credentials: 'include' })
     .then(function (resp) {
       if (resp.status === 401) {
         user.value = null;
@@ -122,21 +122,42 @@ export function getArticleContent(articleId) {
     });
 }
 
-// Article markdown from D1
-export function getArticleMarkdown(articleId) {
-  return fetch('/api/articles/' + articleId + '/markdown', { credentials: 'include' })
+// Download a file as a blob with auto-detected filename
+function downloadFile(path, defaultName) {
+  return fetch(path, { credentials: 'include' })
     .then(function (resp) {
       if (resp.status === 401) {
         user.value = null;
         navigateToLogin();
-        return null;
+        throw new Error('Unauthorized');
       }
-      if (!resp.ok) return null;
-      return resp.text();
-    })
-    .catch(function () {
-      return null;
+      if (!resp.ok) {
+        throw new Error('Download failed');
+      }
+      var disposition = resp.headers.get('content-disposition') || '';
+      var match = disposition.match(/filename="([^"]+)"/);
+      var filename = match ? match[1] : defaultName;
+      return resp.blob().then(function (blob) {
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      });
     });
+}
+
+// Article content from R2
+export function getArticleContent(articleId) {
+  return fetchText('/api/articles/' + articleId + '/content');
+}
+
+// Article markdown from D1
+export function getArticleMarkdown(articleId) {
+  return fetchText('/api/articles/' + articleId + '/markdown');
 }
 
 // Search
@@ -243,60 +264,15 @@ export function getStats() {
 
 // EPUB export
 export function downloadArticleEpub(articleId) {
-  var path = '/api/articles/' + articleId + '/epub';
-  return fetch(path, { credentials: 'include' })
-    .then(function (resp) {
-      if (resp.status === 401) {
-        user.value = null;
-        navigateToLogin();
-        throw new Error('Unauthorized');
-      }
-      if (!resp.ok) {
-        throw new Error('EPUB export failed');
-      }
-      var disposition = resp.headers.get('content-disposition') || '';
-      var match = disposition.match(/filename="([^"]+)"/);
-      var filename = match ? match[1] : 'article.epub';
-      return resp.blob().then(function (blob) {
-        var url = URL.createObjectURL(blob);
-        var a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      });
-    });
+  return downloadFile('/api/articles/' + articleId + '/epub', 'article.epub');
 }
 
 // Export
 export function exportData(format) {
-  var path = '/api/export/' + format;
-  return fetch(path, { credentials: 'include' })
-    .then(function (resp) {
-      if (resp.status === 401) {
-        user.value = null;
-        navigateToLogin();
-        throw new Error('Unauthorized');
-      }
-      if (!resp.ok) {
-        throw new Error('Export failed');
-      }
-      var disposition = resp.headers.get('content-disposition') || '';
-      var match = disposition.match(/filename="([^"]+)"/);
-      var filename = match ? match[1] : 'tasche-export.' + (format === 'json' ? 'json' : 'html');
-      return resp.blob().then(function (blob) {
-        var url = URL.createObjectURL(blob);
-        var a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      });
-    });
+  return downloadFile(
+    '/api/export/' + format,
+    'tasche-export.' + (format === 'json' ? 'json' : 'html')
+  );
 }
 
 // Offline mutation queue

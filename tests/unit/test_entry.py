@@ -11,7 +11,7 @@ import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from tests.conftest import MockD1, MockEnv
+from tests.conftest import MockEnv, TrackingD1
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -38,21 +38,6 @@ class _MockBatch:
 
     def __init__(self, messages: list[_MockMessage]) -> None:
         self.messages = messages
-
-
-class _TrackingD1(MockD1):
-    """MockD1 that records all SQL statements and supports configurable results."""
-
-    def __init__(self, result_fn: Any | None = None) -> None:
-        super().__init__()
-        self.executed: list[tuple[str, list[Any]]] = []
-        self._result_fn = result_fn
-
-    def _execute(self, sql: str, params: list[Any]) -> list[dict[str, Any]]:
-        self.executed.append((sql, params))
-        if self._result_fn is not None:
-            return self._result_fn(sql, params)
-        return []
 
 
 # ---------------------------------------------------------------------------
@@ -298,7 +283,7 @@ class TestScheduled:
                 return rows
             return []
 
-        db = _TrackingD1(result_fn=execute)
+        db = TrackingD1(result_fn=execute)
         env = MockEnv(db=db)
         worker = Default()
         worker.env = env
@@ -337,7 +322,7 @@ class TestScheduled:
                 return rows
             return []
 
-        db = _TrackingD1(result_fn=execute)
+        db = TrackingD1(result_fn=execute)
         env = MockEnv(db=db)
         worker = Default()
         worker.env = env
@@ -378,7 +363,7 @@ class TestScheduled:
         """When no articles match the query, scheduled() still logs checked=0."""
         from entry import Default
 
-        db = _TrackingD1(result_fn=lambda sql, params: [])
+        db = TrackingD1(result_fn=lambda sql, params: [])
         env = MockEnv(db=db)
         worker = Default()
         worker.env = env

@@ -17,6 +17,7 @@ from tests.conftest import (
     MockD1,
     MockEnv,
     _make_test_app,
+    make_highlight,
 )
 from tests.conftest import (
     _authenticated_client as _authenticated_client_base,
@@ -38,23 +39,6 @@ def _make_app(env):
 
 async def _authenticated_client(env: MockEnv) -> tuple[TestClient, str]:
     return await _authenticated_client_base(env, *_ROUTERS)
-
-
-def _make_highlight(**overrides):
-    """Return a complete highlight dict with defaults."""
-    defaults = {
-        "id": "hl_001",
-        "article_id": "art_001",
-        "text": "highlighted text",
-        "note": "",
-        "prefix": "some ",
-        "suffix": " here",
-        "color": "yellow",
-        "created_at": "2025-01-01T00:00:00",
-        "updated_at": "2025-01-01T00:00:00",
-    }
-    defaults.update(overrides)
-    return defaults
 
 
 # ---------------------------------------------------------------------------
@@ -180,8 +164,8 @@ class TestListArticleHighlights:
     async def test_lists_highlights_for_article(self) -> None:
         """GET returns highlights for a specific article."""
         article = ArticleFactory.create(user_id="user_001")
-        hl1 = _make_highlight(id="hl_001", article_id=article["id"], text="first")
-        hl2 = _make_highlight(id="hl_002", article_id=article["id"], text="second")
+        hl1 = make_highlight(id="hl_001", article_id=article["id"], text="first")
+        hl2 = make_highlight(id="hl_002", article_id=article["id"], text="second")
 
         def execute(sql: str, params: list) -> list:
             if "SELECT id, title FROM articles" in sql:
@@ -233,8 +217,8 @@ class TestListArticleHighlights:
 class TestListAllHighlights:
     async def test_lists_all_highlights(self) -> None:
         """GET /api/highlights returns highlights with article titles."""
-        hl1 = {**_make_highlight(id="hl_001"), "article_title": "Article One"}
-        hl2 = {**_make_highlight(id="hl_002", article_id="art_002"), "article_title": "Article Two"}
+        hl1 = {**make_highlight(id="hl_001"), "article_title": "Article One"}
+        hl2 = {**make_highlight(id="hl_002", article_id="art_002"), "article_title": "Article Two"}
 
         def execute(sql: str, params: list) -> list:
             if (
@@ -291,7 +275,7 @@ class TestListAllHighlights:
 class TestRandomHighlight:
     async def test_returns_random_highlight(self) -> None:
         """GET /api/highlights/random returns a highlight with article title."""
-        hl = {**_make_highlight(), "article_title": "Test Article"}
+        hl = {**make_highlight(), "article_title": "Test Article"}
 
         def execute(sql: str, params: list) -> list:
             if "ORDER BY RANDOM()" in sql:
@@ -334,7 +318,7 @@ class TestRandomHighlight:
 class TestUpdateHighlight:
     async def test_updates_note(self) -> None:
         """PATCH updates the note field."""
-        hl = _make_highlight()
+        hl = make_highlight()
         updated_hl = {**hl, "note": "my note", "article_title": "Test"}
 
         def execute(sql: str, params: list) -> list:
@@ -362,7 +346,7 @@ class TestUpdateHighlight:
 
     async def test_updates_color(self) -> None:
         """PATCH updates the color field."""
-        hl = _make_highlight()
+        hl = make_highlight()
         updated_hl = {**hl, "color": "blue", "article_title": "Test"}
 
         def execute(sql: str, params: list) -> list:
@@ -390,7 +374,7 @@ class TestUpdateHighlight:
 
     async def test_rejects_invalid_color(self) -> None:
         """PATCH returns 422 for invalid color."""
-        hl = _make_highlight()
+        hl = make_highlight()
 
         def execute(sql: str, params: list) -> list:
             if "SELECT h.* FROM highlights h" in sql:
@@ -411,7 +395,7 @@ class TestUpdateHighlight:
 
     async def test_no_updatable_fields(self) -> None:
         """PATCH returns 422 when no recognized fields are provided."""
-        hl = _make_highlight()
+        hl = make_highlight()
 
         def execute(sql: str, params: list) -> list:
             if "SELECT h.* FROM highlights h" in sql:
@@ -453,7 +437,7 @@ class TestUpdateHighlight:
 class TestDeleteHighlight:
     async def test_deletes_highlight(self) -> None:
         """DELETE removes a highlight."""
-        hl = _make_highlight()
+        hl = make_highlight()
         calls = []
 
         def execute(sql: str, params: list) -> list:

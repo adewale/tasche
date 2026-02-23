@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { Header } from '../components/Header.jsx';
+import { EmptyState, LoadingSpinner } from '../components/EmptyState.jsx';
 import { addToast } from '../state.js';
 import {
   getFeeds,
@@ -10,9 +11,9 @@ import {
   importOPML as apiImportOPML,
 } from '../api.js';
 import { IconRefresh, IconTrash, IconUpload } from '../components/Icons.jsx';
+import { formatDate } from '../utils.js';
 
 export function Feeds() {
-  var feedsRef = useRef([]);
   var [feeds, setFeeds] = useState([]);
   var [feedUrl, setFeedUrl] = useState('');
   var [isLoading, setIsLoading] = useState(true);
@@ -29,7 +30,6 @@ export function Feeds() {
     setIsLoading(true);
     try {
       var data = await getFeeds();
-      feedsRef.current = data;
       setFeeds(data);
     } catch (e) {
       addToast('Failed to load feeds: ' + e.message, 'error');
@@ -47,9 +47,7 @@ export function Feeds() {
     setIsAdding(true);
     try {
       var feed = await apiAddFeed(url);
-      var newFeeds = [feed].concat(feedsRef.current);
-      feedsRef.current = newFeeds;
-      setFeeds(newFeeds);
+      setFeeds(function (prev) { return [feed].concat(prev); });
       setFeedUrl('');
       addToast('Feed added: ' + (feed.title || feed.url), 'success');
     } catch (e) {
@@ -63,9 +61,7 @@ export function Feeds() {
     if (!confirm('Remove this feed subscription?')) return;
     try {
       await apiDeleteFeed(feedId);
-      var newFeeds = feedsRef.current.filter(function (f) { return f.id !== feedId; });
-      feedsRef.current = newFeeds;
-      setFeeds(newFeeds);
+      setFeeds(function (prev) { return prev.filter(function (f) { return f.id !== feedId; }); });
       addToast('Feed removed', 'success');
     } catch (e) {
       addToast(e.message, 'error');
@@ -142,16 +138,6 @@ export function Feeds() {
     if (e.key === 'Enter') handleAddFeed();
   }
 
-  function formatDate(dateStr) {
-    if (!dateStr) return 'Never';
-    try {
-      var d = new Date(dateStr);
-      return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-    } catch (e) {
-      return dateStr;
-    }
-  }
-
   return (
     <>
       <Header />
@@ -204,20 +190,13 @@ export function Feeds() {
           </button>
         </div>
 
-        {isLoading && (
-          <div class="loading">
-            <div class="spinner"></div>
-          </div>
-        )}
+        {isLoading && <LoadingSpinner />}
 
         <div class="feeds-list">
           {!isLoading && feeds.length === 0 && (
-            <div class="empty-state">
-              <div class="empty-state-title">No feeds yet</div>
-              <div class="empty-state-text">
-                Subscribe to RSS or Atom feeds to automatically save new articles.
-              </div>
-            </div>
+            <EmptyState title="No feeds yet">
+              Subscribe to RSS or Atom feeds to automatically save new articles.
+            </EmptyState>
           )}
           {feeds.map(function (f) {
             var isRefreshing = refreshingIds[f.id];
@@ -240,7 +219,7 @@ export function Feeds() {
                       </a>
                     )}
                     <span class="feed-row-fetched">
-                      {'Last fetched: ' + formatDate(f.last_fetched_at)}
+                      {'Last fetched: ' + (f.last_fetched_at ? formatDate(f.last_fetched_at) : 'Never')}
                     </span>
                   </div>
                 </div>
