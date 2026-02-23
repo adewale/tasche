@@ -379,39 +379,6 @@ class Default(WorkerEntrypoint):
         finally:
             emit_event(evt, force=True)
 
-    async def email(self, message: object, env: object = None, ctx: object = None) -> None:
-        """Handle an incoming email via Cloudflare Email Routing.
-
-        Parses the email, sanitizes the HTML content, and creates a new
-        article in D1 with the newsletter content.
-
-        Parameters
-        ----------
-        message:
-            The ``ForwardableEmailMessage`` JS object from the Workers
-            runtime.  Properties: ``from``, ``to``, ``headers``, ``raw``,
-            ``rawSize``.
-        env:
-            Worker env bindings (also available as ``self.env``).
-        ctx:
-            Execution context (also available as ``self.ctx``).
-        """
-        from articles.email_ingest import process_email
-
-        worker_env = SafeEnv(env if env is not None else self.env)
-
-        evt = begin_event("email")
-        try:
-            await process_email(message, worker_env)
-            if "outcome" not in evt._fields:
-                evt.set("outcome", "success")
-        except Exception as exc:
-            evt.set("outcome", "error")
-            evt.set("error.type", type(exc).__name__)
-            evt.set("error.message", str(exc)[:500])
-        finally:
-            emit_event(evt, force=True)
-
     async def queue(self, batch: object, env: object = None, ctx: object = None) -> None:  # type: ignore[override]
         """Handle a batch of queue messages.
 

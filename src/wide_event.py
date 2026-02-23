@@ -221,6 +221,6 @@ def _should_sample(event: dict) -> bool:
     if event.get("outcome") == "error":
         return True
     # Queue/scheduled/email pipelines: always emit
-    if event.get("pipeline") in ("queue", "scheduled", "email"):
+    if event.get("pipeline") in ("queue", "scheduled"):
         return True
     return random.random() < _SUCCESS_SAMPLE_RATE
