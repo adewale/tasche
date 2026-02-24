@@ -73,7 +73,14 @@ class MockD1Statement:
         returned by ``_execute`` (0 when no match, otherwise the count).
         """
         rows = self._db._execute(self._sql, self._params)
-        changes = len(rows) if rows else 1 if self._is_write_statement() else 0
+        if isinstance(rows, dict) and "changes" in rows:
+            changes = rows["changes"]
+        elif rows:
+            changes = len(rows)
+        elif self._is_write_statement():
+            changes = 1
+        else:
+            changes = 0
         return {"success": True, "meta": {"changes": changes}}
 
     def _is_write_statement(self) -> bool:

@@ -3,6 +3,8 @@ import { useEffect, useState } from 'preact/hooks';
 
 import { Toast } from './components/Toast.jsx';
 import { AudioPlayer } from './components/AudioPlayer.jsx';
+import { KeyboardShortcutsHelp } from './components/KeyboardShortcutsHelp.jsx';
+import { showShortcuts } from './state.js';
 import { Library } from './views/Library.jsx';
 import { Reader } from './views/Reader.jsx';
 import { MarkdownView } from './views/MarkdownView.jsx';
@@ -37,7 +39,7 @@ class ErrorBoundary extends Component {
   render() {
     if (this.state.error) {
       return (
-        <div style={{ padding: '2rem', textAlign: 'center' }}>
+        <div class="error-boundary">
           <h2>Something went wrong</h2>
           <p>{this.state.error.message}</p>
           <button onClick={() => { this.setState({ error: null }); window.location.hash = '#/'; }}>
@@ -52,6 +54,30 @@ class ErrorBoundary extends Component {
 
 export function App() {
   const [ready, setReady] = useState(false);
+
+  // Global "?" keyboard shortcut to toggle the shortcuts help panel.
+  // Registered here so it works on ALL screens (Library, Reader, Search,
+  // Tags, Stats, Settings), not just Library.
+  useEffect(function () {
+    function handleGlobalKeyDown(e) {
+      var tagName = document.activeElement ? document.activeElement.tagName : '';
+      if (tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT') {
+        return;
+      }
+      if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
+        e.preventDefault();
+        showShortcuts.value = !showShortcuts.value;
+      }
+      if (e.key === 'Escape' && showShortcuts.value) {
+        e.preventDefault();
+        showShortcuts.value = false;
+      }
+    }
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return function () {
+      window.removeEventListener('keydown', handleGlobalKeyDown);
+    };
+  }, []);
 
   useEffect(() => {
     initApp();
@@ -141,7 +167,7 @@ export function App() {
 
   if (!ready) {
     return (
-      <div class="loading" style="min-height:100vh">
+      <div class="loading loading--fullscreen">
         <div class="spinner"></div>
       </div>
     );
@@ -154,6 +180,9 @@ export function App() {
       </ErrorBoundary>
       <Toast />
       <AudioPlayer />
+      {showShortcuts.value && (
+        <KeyboardShortcutsHelp onClose={function () { showShortcuts.value = false; }} />
+      )}
     </div>
   );
 }

@@ -17,6 +17,7 @@ var DEFAULTS = {
   contentWidth: 'medium',
   fontFamily: 'serif',
   theme: 'auto',
+  contentMode: 'html',
 };
 
 function loadPrefs() {
@@ -52,9 +53,9 @@ export function updatePref(key, value) {
 // Maps preference values to CSS custom property values
 var PREF_VALUES = {
   fontSize: {
-    small:  { '--reader-font-size': '1rem', '--reader-font-size-desktop': '1.0625rem' },
-    medium: { '--reader-font-size': '1.125rem', '--reader-font-size-desktop': '1.1875rem' },
-    large:  { '--reader-font-size': '1.3125rem', '--reader-font-size-desktop': '1.375rem' },
+    small:  { '--reader-font-size': '1.0625rem', '--reader-font-size-desktop': '1.125rem' },
+    medium: { '--reader-font-size': '1.1875rem', '--reader-font-size-desktop': '1.25rem' },
+    large:  { '--reader-font-size': '1.375rem', '--reader-font-size-desktop': '1.4375rem' },
   },
   lineHeight: {
     compact:     { '--reader-line-height': '1.6' },

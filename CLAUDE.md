@@ -9,7 +9,7 @@ Tasche is a single-user, self-hosted read-it-later service built entirely on the
 ## Development Commands
 
 ```bash
-# Run unit tests (203 tests)
+# Run unit tests (834 tests)
 uv run pytest tests/unit/ -x -q
 
 # Run a single test file
@@ -47,8 +47,11 @@ uv run pywrangler deploy --env production
 | R2            | `CONTENT`        | Archived HTML, Markdown, images, thumbnails, audio |
 | KV            | `SESSIONS`       | Auth sessions with TTL                       |
 | Queues        | `ARTICLE_QUEUE`  | Async article processing and TTS generation  |
+| Workers AI    | `AI`             | Text-to-speech audio generation              |
+| Service       | `READABILITY`    | Readability extraction (Service Binding)     |
+| Assets        | `ASSETS`         | Static frontend asset serving                |
 
-**Key data flow:** Save URL → API creates article (status: pending) → enqueue to `ARTICLE_QUEUE` → queue consumer fetches page (via Browser Rendering REST API if JS-heavy), extracts content with python-readability, converts images to WebP, stores HTML+Markdown in R2, updates D1.
+**Key data flow:** Save URL → API creates article (status: pending) → enqueue to `ARTICLE_QUEUE` → queue consumer fetches page (via Browser Rendering REST API if JS-heavy), extracts content via Readability Service Binding (with BeautifulSoup fallback), converts images to WebP, stores HTML+Markdown in R2, updates D1.
 
 **Auth:** Manual GitHub OAuth → sessions in KV. Endpoints under `/api/auth/`.
 
@@ -62,7 +65,7 @@ uv run pywrangler deploy --env production
 - **No global request state** — isolates are reused across requests; pass state via function args or `request.state`
 - **Avoid C-extension libraries** — must be pure Python or Pyodide-compatible
 - **Avoid:** `lxml`, `readability-lxml`, `requests`, `playwright`, `selenium`, any threading/multiprocessing library
-- **Use instead:** `httpx` (async HTTP), `python-readability` (uses native JS engine), `beautifulsoup4`, `markdownify`
+- **Use instead:** `httpx` (async HTTP), Readability Service Binding (`env.READABILITY`), `beautifulsoup4` (fallback extraction), `markdownify`
 
 ## Configuration
 

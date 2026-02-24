@@ -42,11 +42,13 @@ async def listen_later(
 
     # Idempotency check: don't enqueue if already in progress or ready
     audio_status = article.get("audio_status")
-    if audio_status in ("pending", "generating"):
+    if audio_status == "pending":
         raise HTTPException(
             status_code=409,
             detail="Audio generation is already in progress",
         )
+    # Allow re-queue from 'generating' — this state can become stuck
+    # if the queue consumer fails without resetting the status.
     if audio_status == "ready":
         return JSONResponse(
             content={
@@ -185,3 +187,49 @@ async def get_audio_timing(
         content=_json.loads(content),
         headers={"Cache-Control": "public, max-age=86400, immutable"},
     )
+
+
+@router.post("/{article_id}/tts-now")
+async def tts_now(
+    request: Request,
+    article_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Process TTS inline (bypasses queue) for debugging.
+
+    Runs the full TTS pipeline in the request handler so errors
+    are returned directly instead of being lost in queue handler logs.
+    """
+    import traceback
+
+    from tts.processing import process_tts
+
+    env = request.scope["env"]
+    db = env.DB
+    user_id = user["user_id"]
+
+    await _get_user_article(db, article_id, user_id, fields="id")
+
+    try:
+        diag = await process_tts(
+            article_id, env, user_id=user_id, raise_on_error=True
+        )
+        article = await _get_user_article(
+            db, article_id, user_id,
+            fields="id, audio_status, audio_key, audio_duration_seconds",
+        )
+        actual_status = article.get("audio_status", "unknown")
+        result = "success" if actual_status == "ready" else "error"
+        resp: dict[str, Any] = {
+            "id": article_id, "result": result, "article": article,
+        }
+        if diag:
+            resp["diagnostics"] = diag
+        return resp
+    except Exception as exc:
+        return {
+            "id": article_id,
+            "result": "error",
+            "error": str(exc),
+            "traceback": traceback.format_exc(),
+        }

@@ -94,15 +94,15 @@ export function getBookmarkletCode() {
     "if(h.length<=2097152){b.content=h;}" +
     "var d=document.createElement('div');" +
     "d.style.cssText='position:fixed;top:16px;right:16px;z-index:2147483647;" +
-    "padding:12px 20px;background:#1a1a2e;color:#fff;border-radius:8px;" +
-    "font:14px/1.4 -apple-system,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3)';" +
+    "padding:12px 20px;background:#1d1d1f;color:#fff;border-radius:2px;" +
+    "font:14px/1.4 -apple-system,sans-serif;border:1px solid #333';" +
     "d.textContent='Saving to Tasche...';" +
     "document.body.appendChild(d);" +
     "fetch(o+'/api/articles',{method:'POST'," +
     "headers:{'Content-Type':'application/json'}," +
     "body:JSON.stringify(b),credentials:'include'})" +
     ".then(function(r){" +
-    "if(r.ok){d.textContent='Saved to Tasche!';d.style.background='#16213e'}" +
+    "if(r.ok){d.textContent='Saved to Tasche!';d.style.background='#1d1d1f'}" +
     "else{d.textContent='Error saving ('+r.status+')';d.style.background='#c0392b'}" +
     "}).catch(function(){" +
     "d.textContent='Network error';d.style.background='#c0392b'" +

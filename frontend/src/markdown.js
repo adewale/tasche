@@ -7,40 +7,44 @@ marked.setOptions({
   breaks: false,
 });
 
-const renderer = new marked.Renderer();
+/**
+ * Custom renderer overrides passed to marked.use().
+ *
+ * Uses a plain object (not a Renderer instance) so that marked's internal
+ * renderer keeps its `this.parser` reference intact.  Returning `false`
+ * from any method tells marked to fall back to the built-in renderer.
+ */
+marked.use({
+  renderer: {
+    // Sanitize javascript: URLs and open links in new tab
+    link: function ({ href, title, tokens }) {
+      if (href && /^\s*javascript\s*:/i.test(href)) {
+        return tokens ? this.parser.parseInline(tokens) : '';
+      }
+      // Let the built-in renderer produce the HTML, then add target="_blank"
+      var text = this.parser.parseInline(tokens);
+      var cleanHref = href || '';
+      var out = '<a target="_blank" rel="noopener" href="' + escapeHtml(cleanHref) + '"';
+      if (title) {
+        out += ' title="' + escapeHtml(title) + '"';
+      }
+      out += '>' + text + '</a>';
+      return out;
+    },
 
-// Sanitize javascript: URLs in links
-const originalLink = renderer.link.bind(renderer);
-renderer.link = function ({ href, title, tokens }) {
-  if (href && /^\s*javascript\s*:/i.test(href)) {
-    return tokens ? this.parser.parseInline(tokens) : '';
-  }
-  return originalLink({ href, title, tokens });
-};
-
-// Sanitize javascript: URLs in images, add lazy loading
-renderer.image = function ({ href, title, text }) {
-  if (href && /^\s*javascript\s*:/i.test(href)) {
-    return text || '';
-  }
-  const titleAttr = title ? ' title="' + escapeHtml(title) + '"' : '';
-  return '<img src="' + escapeHtml(href) + '" alt="' + escapeHtml(text || '') + '"' + titleAttr + ' loading="lazy">';
-};
-
-// Open links in new tab
-const origLinkFn = renderer.link;
-renderer.link = function (token) {
-  const html = origLinkFn.call(this, token);
-  if (html.startsWith('<a ') && !html.includes('target=')) {
-    return html.replace('<a ', '<a target="_blank" rel="noopener" ');
-  }
-  return html;
-};
-
-marked.use({ renderer });
+    // Sanitize javascript: URLs in images, add lazy loading
+    image: function ({ href, title, text }) {
+      if (href && /^\s*javascript\s*:/i.test(href)) {
+        return text || '';
+      }
+      var titleAttr = title ? ' title="' + escapeHtml(title) + '"' : '';
+      return '<img src="' + escapeHtml(href) + '" alt="' + escapeHtml(text || '') + '"' + titleAttr + ' loading="lazy">';
+    },
+  },
+});
 
 export function renderMarkdown(md) {
   if (!md) return '';
-  const raw = marked.parse(md);
-  return DOMPurify.sanitize(raw, { FORBID_TAGS: ['style'], FORBID_ATTR: ['style'] });
+  var raw = marked.parse(md);
+  return DOMPurify.sanitize(raw, { FORBID_TAGS: ['style'], FORBID_ATTR: ['style'], ADD_ATTR: ['target'] });
 }

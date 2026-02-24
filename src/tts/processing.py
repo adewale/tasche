@@ -18,7 +18,6 @@ from __future__ import annotations
 import json
 import re
 import traceback
-from datetime import UTC, datetime
 
 from articles.storage import article_key
 from wide_event import current_event
@@ -30,7 +29,9 @@ _TTS_MODEL = "@cf/deepgram/aura-2-en"
 # Approximate speech rate: ~150 words per minute for TTS
 _WORDS_PER_MINUTE = 150
 
-# Maximum text length to send to TTS (characters)
+# Maximum text length to send to TTS (characters).
+# Workers AI @cf/deepgram/aura-2-en allows 2000 chars per call.
+_MAX_CHARS_PER_CHUNK = 1900  # Leave headroom below the 2000 limit
 _MAX_TTS_TEXT_LENGTH = 100_000
 
 
@@ -71,6 +72,38 @@ def split_sentences(text: str) -> list[str]:
         return []
     parts = _SENTENCE_SPLIT_RE.split(text.strip())
     return [s.strip() for s in parts if s.strip()]
+
+
+def chunk_text(text: str, max_chars: int = _MAX_CHARS_PER_CHUNK) -> list[str]:
+    """Split text into chunks that fit within the TTS character limit.
+
+    Splits on sentence boundaries so speech sounds natural. If a single
+    sentence exceeds the limit, it is included as its own chunk (the TTS
+    model will truncate or error, but we avoid infinite loops).
+    """
+    sentences = split_sentences(text)
+    if not sentences:
+        return []
+
+    chunks: list[str] = []
+    current: list[str] = []
+    current_len = 0
+
+    for sentence in sentences:
+        # +1 for the space between sentences
+        added = len(sentence) + (1 if current else 0)
+        if current and current_len + added > max_chars:
+            chunks.append(" ".join(current))
+            current = [sentence]
+            current_len = len(sentence)
+        else:
+            current.append(sentence)
+            current_len += added
+
+    if current:
+        chunks.append(" ".join(current))
+
+    return chunks
 
 
 def generate_sentence_timing(
@@ -266,10 +299,14 @@ def strip_markdown(text: str) -> str:
 
 def _now() -> str:
     """Return the current UTC timestamp as an ISO 8601 string."""
-    return datetime.now(UTC).isoformat()
+    from utils import now_iso
+
+    return now_iso()
 
 
-async def process_tts(article_id: str, env: object, *, user_id: str) -> None:
+async def process_tts(
+    article_id: str, env: object, *, user_id: str, raise_on_error: bool = False
+) -> dict | None:
     """Process a TTS generation job for a single article.
 
     This is the main entry point called by the queue handler in ``entry.py``.
@@ -336,13 +373,66 @@ async def process_tts(article_id: str, env: object, *, user_id: str) -> None:
                 evt.set("tts_text_truncated", True)
                 evt.set("tts_original_length", len(markdown_text))
 
-        # Step 4: Call Workers AI for TTS
-        audio_data = await ai.run(_TTS_MODEL, {"text": tts_text})
+        # Step 4: Call Workers AI for TTS, chunking to stay within 2000-char limit
+        chunks = chunk_text(tts_text)
+        if not chunks:
+            raise ValueError("No text to convert to speech after stripping markdown")
 
-        # Consume ReadableStream if the AI binding returns one
-        audio_data = await consume_readable_stream(audio_data)
-        if not audio_data:
-            raise ValueError("Workers AI returned empty audio data")
+        evt = current_event()
+        if evt:
+            evt.set("tts_chunks", len(chunks))
+
+        audio_parts: list[bytes] = []
+        chunk_diagnostics: list[dict] = []
+        ai_type = "unknown"
+        ai_attrs: list[str] = []
+
+        for i, chunk in enumerate(chunks):
+            chunk_audio = await ai.run(_TTS_MODEL, {"text": chunk})
+
+            # Diagnostic: inspect AI response type on first chunk only
+            if i == 0:
+                ai_type = type(chunk_audio).__name__
+                for attr in (
+                    "getReader", "arrayBuffer", "body", "to_py",
+                    "to_bytes", "byteLength", "buffer",
+                ):
+                    if hasattr(chunk_audio, attr):
+                        ai_attrs.append(attr)
+                evt = current_event()
+                if evt:
+                    evt.set("ai_response_type", ai_type)
+                    evt.set("ai_response_attrs", ",".join(ai_attrs))
+
+            chunk_bytes = await consume_readable_stream(chunk_audio)
+            chunk_len = 0
+            if chunk_bytes:
+                as_bytes = (
+                    chunk_bytes if isinstance(chunk_bytes, bytes)
+                    else bytes(chunk_bytes)
+                )
+                chunk_len = len(as_bytes)
+                audio_parts.append(as_bytes)
+
+            chunk_diagnostics.append({
+                "index": i,
+                "text_len": len(chunk),
+                "audio_bytes": chunk_len,
+            })
+
+        if not audio_parts:
+            diag = f"type={ai_type} attrs={','.join(ai_attrs)}"
+            raise ValueError(
+                f"Workers AI returned empty audio data ({diag})"
+            )
+
+        audio_data = b"".join(audio_parts)
+
+        evt = current_event()
+        if evt:
+            evt.set("tts_chunk_sizes", [len(p) for p in audio_parts])
+            evt.set("tts_total_audio_bytes", len(audio_data))
+            evt.set("tts_chunk_diagnostics", chunk_diagnostics)
 
         # Step 5: Store audio in R2
         audio_r2_key = article_key(article_id, "audio.mp3")
@@ -375,6 +465,13 @@ async def process_tts(article_id: str, env: object, *, user_id: str) -> None:
                 }
             )
 
+        return {
+            "chunks": len(audio_parts),
+            "chunk_sizes": [len(p) for p in audio_parts],
+            "total_bytes": len(audio_data),
+            "chunk_diagnostics": chunk_diagnostics,
+        }
+
     except ValueError:
         # Permanent errors (missing content, invalid data) — mark as failed
         evt = current_event()
@@ -393,6 +490,8 @@ async def process_tts(article_id: str, env: object, *, user_id: str) -> None:
             evt = current_event()
             if evt:
                 evt.set("status_update_error", traceback.format_exc()[-500:])
+        if raise_on_error:
+            raise
     except Exception:
         # All other errors (network, JS, AI model) — let propagate for queue retry
         evt = current_event()

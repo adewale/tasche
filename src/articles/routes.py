@@ -12,7 +12,6 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
 
-from articles.epub import epub_filename, generate_epub
 from articles.health import check_original_url
 from articles.storage import (
     article_key,
@@ -472,8 +471,9 @@ async def batch_update_articles(
             continue
         bind_params = params + [article_id, user_id]
         sql = f"UPDATE articles SET {', '.join(set_clauses)} WHERE id = ? AND user_id = ?"
-        await db.prepare(sql).bind(*bind_params).run()
-        updated_count += 1
+        result = await db.prepare(sql).bind(*bind_params).run()
+        if result.get("meta", {}).get("changes", 0) > 0:
+            updated_count += 1
 
     return {"updated": updated_count}
 
@@ -1016,45 +1016,3 @@ async def check_original(
         "original_status": new_status,
         "last_checked_at": now,
     }
-
-
-@router.get("/{article_id}/epub")
-async def get_article_epub(
-    request: Request,
-    article_id: str,
-    user: dict[str, Any] = Depends(get_current_user),
-) -> Response:
-    """Export an article as an EPUB file for e-readers.
-
-    Fetches the article metadata from D1 and HTML content from R2, then
-    generates a spec-compliant EPUB 2.0.1 file.  Returns the file as a
-    download with ``Content-Type: application/epub+zip``.
-    """
-    env = request.scope["env"]
-    db = env.DB
-    r2 = env.CONTENT
-    user_id = user["user_id"]
-
-    article = await _get_user_article(db, article_id, user_id, fields="id, title, author, html_key")
-
-    html_key = article.get("html_key")
-    if not html_key:
-        raise HTTPException(status_code=404, detail="No content available for EPUB export")
-
-    html_content = await get_content(r2, html_key)
-    if html_content is None:
-        raise HTTPException(status_code=404, detail="Content not found in storage")
-
-    title = article.get("title") or "Untitled"
-    author = article.get("author") or ""
-
-    epub_bytes = generate_epub(title, author, html_content)
-    filename = epub_filename(title)
-
-    return Response(
-        content=epub_bytes,
-        media_type="application/epub+zip",
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
-        },
-    )

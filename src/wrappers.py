@@ -89,13 +89,41 @@ async def consume_readable_stream(value: Any) -> bytes:
     """Consume a JS ReadableStream (or ArrayBuffer) into Python bytes.
 
     Workers AI and R2 may return ReadableStream objects that need to be
-    consumed via ``.arrayBuffer()`` before conversion to Python bytes.
-    This helper handles the detection and consumption so callers don't
-    need to duck-type JS objects directly.
+    consumed via the ``getReader()`` / ``read()`` protocol, or via
+    ``.arrayBuffer()``, before conversion to Python bytes.  This helper
+    handles the detection and consumption so callers don't need to
+    duck-type JS objects directly.
+
+    **Important:** ``getReader()`` is preferred over ``.arrayBuffer()``
+    for ReadableStream objects.  In Pyodide, ``await stream.arrayBuffer()``
+    may only capture the first buffered chunk of a ReadableStream, silently
+    truncating multi-chunk responses (e.g. Workers AI TTS audio).  The
+    reader path reads ALL chunks sequentially and is the reliable way to
+    fully consume a stream across the FFI boundary.
 
     Outside Pyodide, passes the value through ``to_py_bytes()`` directly.
     """
-    if value is not None and hasattr(value, "arrayBuffer"):
+    if value is not None and hasattr(value, "getReader"):
+        # Prefer getReader() — reads ALL chunks sequentially.
+        # arrayBuffer() on a ReadableStream in Pyodide may only return
+        # the first buffered chunk, silently truncating the data.
+        reader = value.getReader()
+        parts: list[bytes] = []
+        try:
+            while True:
+                result = await reader.read()
+                done = getattr(result, "done", True)
+                if done:
+                    break
+                chunk = getattr(result, "value", None)
+                if chunk is not None:
+                    parts.append(to_py_bytes(chunk))
+        finally:
+            reader.releaseLock()
+        return b"".join(parts)
+    elif value is not None and hasattr(value, "arrayBuffer"):
+        # Fallback for Response objects or ArrayBuffer-like values
+        # that don't expose getReader().
         value = await value.arrayBuffer()
     return to_py_bytes(value)
 
@@ -252,7 +280,22 @@ def to_py_bytes(value: Any) -> bytes:
     if value is None:
         return b""
     if HAS_PYODIDE and isinstance(value, JsProxy):
-        return bytes(value.to_py())
+        # Try .to_py() first — works for Uint8Array → memoryview.
+        # Some JS types (e.g. raw ArrayBuffer) produce a JsProxy from
+        # .to_py() that bytes() can't handle directly; fall back to
+        # reading via Uint8Array constructor.
+        converted = value.to_py()
+        if isinstance(converted, (bytes, bytearray, memoryview)):
+            return bytes(converted)
+        # Fallback: wrap in JS Uint8Array, then .to_py()
+        try:
+            import js  # type: ignore[import-not-found]
+
+            uint8 = js.Uint8Array.new(value)
+            return bytes(uint8.to_py())
+        except Exception:
+            pass
+        return bytes(converted)
     if isinstance(value, bytes):
         return value
     return bytes(value)

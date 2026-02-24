@@ -5,14 +5,14 @@ import { TagPicker } from '../components/TagPicker.jsx';
 import { ReaderToolbar } from '../components/ReaderToolbar.jsx';
 import { playAudio, audioState, getAudio } from '../components/AudioPlayer.jsx';
 import { articles, currentArticle, addToast } from '../state.js';
-import { readerPrefs, getReaderStyle } from '../readerPrefs.js';
+import { readerPrefs, getReaderStyle, updatePref } from '../readerPrefs.js';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts.js';
 import { useSWMessage } from '../hooks/useSWMessage.js';
 import { nav } from '../nav.js';
 import {
   IconArrowLeft, IconStar, IconExternalLink, IconPlay,
   IconHeadphones, IconClock, IconDownload, IconCheck, IconCamera,
-  IconRefresh, IconTrash, IconBook,
+  IconRefresh, IconTrash,
 } from '../components/Icons.jsx';
 import {
   getArticle,
@@ -22,11 +22,11 @@ import {
   listenLater as apiListenLater,
   retryArticle as apiRetryArticle,
   checkOriginal as apiCheckOriginal,
-  downloadArticleEpub,
   saveForOffline,
   saveAudioOffline,
   isOfflineCached,
   getAudioTiming,
+  getArticleMarkdown,
 } from '../api.js';
 import DOMPurify from 'dompurify';
 import { renderMarkdown } from '../markdown.js';
@@ -133,6 +133,10 @@ export function Reader({ id }) {
   const [offlineStatus, setOfflineStatus] = useState({ cached: false, hasContent: false, hasAudio: false });
   const [savingOffline, setSavingOffline] = useState(false);
   const [savingAudioOffline, setSavingAudioOffline] = useState(false);
+  const [markdownHtml, setMarkdownHtml] = useState(null);
+  const [markdownRaw, setMarkdownRaw] = useState(null);
+  const [markdownLoading, setMarkdownLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
   const contentRef = useRef(null);
   const timingRef = useRef(null);
   const prevSentenceRef = useRef(-1);
@@ -206,7 +210,40 @@ export function Reader({ id }) {
     h: function () { nav.library(); },
     a: function () { handleArchiveToggle(); },
     s: function () { handleFavorite(); },
+    m: function () {
+      var current = readerPrefs.value.contentMode || 'html';
+      var next = current === 'html' ? 'markdown' : current === 'markdown' ? 'source' : 'html';
+      updatePref('contentMode', next);
+    },
   }, [article]);
+
+  // Lazy-load markdown content when user switches to Rendered or Source mode
+  useEffect(function () {
+    var mode = readerPrefs.value.contentMode;
+    if (mode !== 'markdown' && mode !== 'source') return;
+    if (markdownRaw !== null || markdownLoading) return;
+    if (!article) return;
+
+    setMarkdownLoading(true);
+    getArticleMarkdown(id).then(function (md) {
+      var raw = md || article.markdown_content || '';
+      setMarkdownRaw(raw);
+      if (raw) {
+        setMarkdownHtml(renderMarkdown(raw));
+      } else {
+        setMarkdownHtml(
+          '<p class="reader-status-message">No markdown version available for this article.</p>'
+        );
+      }
+    }).catch(function () {
+      setMarkdownRaw('');
+      setMarkdownHtml(
+        '<p class="reader-status-message">Could not load markdown version.</p>'
+      );
+    }).finally(function () {
+      setMarkdownLoading(false);
+    });
+  }, [readerPrefs.value.contentMode, article, id, markdownRaw, markdownLoading]);
 
   // Sentence highlighting during TTS audio playback
   useEffect(function () {
@@ -246,16 +283,13 @@ export function Reader({ id }) {
       if (!timing || !timing.sentences) return;
 
       var currentTime = audio.currentTime;
-      var speed = audio.playbackRate || 1;
 
-      // Find the current sentence based on adjusted time
+      // Find the current sentence — audio.currentTime is always in the
+      // media timeline regardless of playbackRate, so no speed adjustment.
       var idx = -1;
       for (var i = 0; i < timing.sentences.length; i++) {
         var s = timing.sentences[i];
-        // Adjust timing by playback speed
-        var adjStart = s.start / speed;
-        var adjEnd = s.end / speed;
-        if (currentTime >= adjStart && currentTime < adjEnd) {
+        if (currentTime >= s.start && currentTime < s.end) {
           idx = i;
           break;
         }
@@ -303,7 +337,7 @@ export function Reader({ id }) {
         timingRef.current = null;
       }
     };
-  }, [id, audioState.value.articleId, audioState.value.visible]);
+  }, [id, audioState.value.articleId, audioState.value.visible, readerPrefs.value.contentMode]);
 
   async function handleArchiveToggle() {
     if (!article) return;
@@ -336,12 +370,12 @@ export function Reader({ id }) {
       } else if (art.excerpt) {
         html = '<p>' + escapeHtml(art.excerpt) + '</p>';
       } else if (art.status === 'pending' || art.status === 'processing') {
-        html = '<p style="color:var(--text-muted)">Article is being processed. Refresh in a moment.</p>';
+        html = '<p class="reader-status-message">Article is being processed. Refresh in a moment.</p>';
       } else if (art.status === 'failed') {
-        html = '<p style="color:var(--text-muted)">Processing failed. Use the Retry button above to try again.</p>';
+        html = '<p class="reader-status-message">Processing failed. Use the Retry button above to try again.</p>';
       } else {
         html =
-          '<p style="color:var(--text-muted)">No content available. <a href="' +
+          '<p class="reader-status-message">No content available. <a href="' +
           escapeHtml(art.original_url) +
           '" target="_blank" rel="noopener noreferrer">View original</a></p>';
       }
@@ -436,15 +470,6 @@ export function Reader({ id }) {
     saveAudioOffline(id);
   }
 
-  async function handleDownloadEpub() {
-    try {
-      await downloadArticleEpub(id);
-      addToast('EPUB downloaded', 'success');
-    } catch (e) {
-      addToast(e.message, 'error');
-    }
-  }
-
   async function handleRetry() {
     if (retrying) return;
     setRetrying(true);
@@ -481,7 +506,7 @@ export function Reader({ id }) {
           <EmptyState title="Could not load article">
             {loadError}
             <br />
-            <a href="#/" class="btn btn-secondary" style={{ marginTop: '16px' }}>
+            <a href="#/" class="btn btn-secondary mt-4">
               Back to articles
             </a>
           </EmptyState>
@@ -582,7 +607,7 @@ export function Reader({ id }) {
               class={'btn btn-sm ' + (isFav ? 'btn-primary' : 'btn-secondary')}
               onClick={handleFavorite}
             >
-              <IconStar filled={!!isFav} size={14} /> {isFav ? 'Favorited' : 'Favorite'}
+              <IconStar filled={!!isFav} size={14} /> {isFav ? 'Favourited' : 'Favourite'}
             </button>
             <select
               class="input input-inline-select"
@@ -650,11 +675,6 @@ export function Reader({ id }) {
                 <IconCamera size={14} /> Screenshot
               </a>
             )}
-            {article.html_key && (
-              <button class="btn btn-sm btn-secondary" onClick={handleDownloadEpub}>
-                <IconBook size={14} /> EPUB
-              </button>
-            )}
             <button class="btn btn-sm btn-secondary" onClick={handleRetry} disabled={retrying}>
               <IconRefresh size={14} /> {retrying ? 'Retrying...' : 'Retry'}
             </button>
@@ -668,11 +688,38 @@ export function Reader({ id }) {
           data-reader-theme={readerPrefs.value.theme || 'auto'}
         >
           <ReaderToolbar />
-          <article
-            ref={contentRef}
-            class="reader-content"
-            dangerouslySetInnerHTML={{ __html: contentHtml }}
-          />
+          {(readerPrefs.value.contentMode === 'markdown' || readerPrefs.value.contentMode === 'source') && markdownLoading ? (
+            <div class="reader-content"><LoadingSpinner /></div>
+          ) : readerPrefs.value.contentMode === 'source' ? (
+            <>
+              {markdownRaw && (
+                <div class="reader-source-actions">
+                  <button class="btn btn-sm btn-secondary" onClick={function () {
+                    navigator.clipboard.writeText(markdownRaw).then(function () {
+                      setCopied(true);
+                      addToast('Markdown copied to clipboard', 'success');
+                      setTimeout(function () { setCopied(false); }, 2000);
+                    }).catch(function () {
+                      addToast('Failed to copy to clipboard', 'error');
+                    });
+                  }}>
+                    {copied ? 'Copied' : 'Copy Markdown'}
+                  </button>
+                </div>
+              )}
+              <pre class="markdown-view-content">{markdownRaw || 'No markdown available.'}</pre>
+            </>
+          ) : (
+            <article
+              ref={contentRef}
+              class="reader-content"
+              dangerouslySetInnerHTML={{
+                __html: readerPrefs.value.contentMode === 'markdown' && markdownHtml
+                  ? markdownHtml
+                  : contentHtml
+              }}
+            />
+          )}
         </div>
       </main>
     </>

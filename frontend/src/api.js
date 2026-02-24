@@ -67,8 +67,8 @@ export function listArticles(params) {
   if (params.audio_status) qs.set('audio_status', params.audio_status);
   if (params.tag) qs.set('tag', params.tag);
   if (params.sort) qs.set('sort', params.sort);
-  if (params.limit) qs.set('limit', params.limit);
-  if (params.offset) qs.set('offset', params.offset);
+  if (params.limit != null) qs.set('limit', params.limit);
+  if (params.offset != null) qs.set('offset', params.offset);
   return request('GET', '/api/articles?' + qs.toString());
 }
 
@@ -163,8 +163,8 @@ export function getArticleMarkdown(articleId) {
 // Search
 export function searchArticles(q, limit, offset) {
   const qs = new URLSearchParams({ q });
-  if (limit) qs.set('limit', limit);
-  if (offset) qs.set('offset', offset);
+  if (limit != null) qs.set('limit', limit);
+  if (offset != null) qs.set('offset', offset);
   return request('GET', '/api/search?' + qs.toString());
 }
 
@@ -232,11 +232,6 @@ export function getAudioTiming(articleId) {
 // Stats
 export function getStats() {
   return request('GET', '/api/stats');
-}
-
-// EPUB export
-export function downloadArticleEpub(articleId) {
-  return downloadFile('/api/articles/' + articleId + '/epub', 'article.epub');
 }
 
 // Export

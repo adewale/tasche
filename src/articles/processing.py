@@ -25,7 +25,6 @@ from __future__ import annotations
 import hashlib
 import json  # noqa: F401 — kept for other callers / queue handler
 import traceback
-from datetime import UTC, datetime
 
 from articles.browser_rendering import BrowserRenderingError, scrape, screenshot
 from articles.extraction import (
@@ -560,4 +559,6 @@ async def _fetch_page(
 
 def _now() -> str:
     """Return the current UTC timestamp as an ISO 8601 string for D1."""
-    return datetime.now(UTC).isoformat()
+    from utils import now_iso
+
+    return now_iso()

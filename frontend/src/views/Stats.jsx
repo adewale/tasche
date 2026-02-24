@@ -49,7 +49,7 @@ export function Stats() {
           <EmptyState title="Failed to load stats">
             {error}
             <br />
-            <button class="btn btn-primary" onClick={loadStats} style="margin-top: 16px">
+            <button class="btn btn-primary mt-4" onClick={loadStats}>
               Retry
             </button>
           </EmptyState>

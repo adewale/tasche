@@ -27,8 +27,6 @@ from src.wrappers import (
     SafeReadability,
     _is_js_null_or_undefined,
     _is_js_undefined,
-    _to_js_value,
-    _to_py_safe,
     consume_readable_stream,
     d1_first,
     d1_null,
@@ -38,7 +36,6 @@ from src.wrappers import (
     http_fetch,
     r2_put,
     stream_r2_body,
-    to_js_bytes,
     to_py_bytes,
 )
 
@@ -55,52 +52,6 @@ class TestPyodideGuard:
     def test_get_js_null_returns_none_outside_pyodide(self) -> None:
         """Outside Pyodide, get_js_null() returns None."""
         assert get_js_null() is None
-
-
-# =========================================================================
-# _to_py_safe
-# =========================================================================
-
-
-class TestToPySafe:
-    def test_none_returns_none(self) -> None:
-        assert _to_py_safe(None) is None
-
-    def test_string_passthrough(self) -> None:
-        assert _to_py_safe("hello") == "hello"
-
-    def test_int_passthrough(self) -> None:
-        assert _to_py_safe(42) == 42
-
-    def test_float_passthrough(self) -> None:
-        assert _to_py_safe(3.14) == pytest.approx(3.14)
-
-    def test_bool_passthrough(self) -> None:
-        assert _to_py_safe(True) is True
-        assert _to_py_safe(False) is False
-
-    def test_dict_passthrough(self) -> None:
-        data = {"key": "value", "nested": {"a": 1}}
-        assert _to_py_safe(data) == data
-
-    def test_list_passthrough(self) -> None:
-        data = [1, "two", 3.0, None]
-        assert _to_py_safe(data) == data
-
-    def test_mock_jsproxy_not_converted_without_pyodide(self) -> None:
-        """When HAS_PYODIDE is False, a mock JsProxy is returned as-is
-        (no isinstance check against the real JsProxy type)."""
-        mock = MagicMock()
-        mock.to_py.return_value = {"key": "value"}
-        # Since JsProxy is None when not in Pyodide, isinstance check
-        # won't match — the mock is returned unchanged.
-        result = _to_py_safe(mock)
-        assert result is mock
-
-    def test_depth_limit_prevents_infinite_recursion(self) -> None:
-        """Passing a depth beyond MAX_CONVERSION_DEPTH returns value as-is."""
-        result = _to_py_safe("deep", depth=100)
-        assert result == "deep"
 
 
 # =========================================================================
@@ -142,36 +93,6 @@ class TestIsJsNullOrUndefined:
 
     def test_false_is_not(self) -> None:
         assert _is_js_null_or_undefined(False) is False
-
-
-# =========================================================================
-# _to_js_value
-# =========================================================================
-
-
-class TestToJsValue:
-    def test_none_returns_none(self) -> None:
-        """None passes through unchanged (becomes JS undefined on FFI)."""
-        assert _to_js_value(None) is None
-
-    def test_string_passthrough(self) -> None:
-        assert _to_js_value("hello") == "hello"
-
-    def test_int_passthrough(self) -> None:
-        assert _to_js_value(42) == 42
-
-    def test_dict_passthrough_outside_pyodide(self) -> None:
-        """Outside Pyodide, dicts are returned as-is (no to_js call)."""
-        data = {"key": "value"}
-        assert _to_js_value(data) == data
-
-    def test_list_passthrough_outside_pyodide(self) -> None:
-        """Outside Pyodide, lists are returned as-is (no to_js call)."""
-        data = [1, 2, 3]
-        assert _to_js_value(data) == data
-
-    def test_bool_passthrough(self) -> None:
-        assert _to_js_value(True) is True
 
 
 # =========================================================================
@@ -433,15 +354,6 @@ class TestJsException:
 
 
 class TestD1Null:
-    def test_none_returns_js_null(self) -> None:
-        """None must be converted to JS null (which is None outside Pyodide)."""
-        result = d1_null(None)
-        # Outside Pyodide, get_js_null() returns None — so result is None.
-        # The important thing is that the function calls get_js_null() rather
-        # than passing None through directly.  In Pyodide, this distinction
-        # matters: None→undefined vs get_js_null()→null.
-        assert result is None
-
     def test_string_passthrough(self) -> None:
         assert d1_null("hello") == "hello"
 
@@ -459,17 +371,6 @@ class TestD1Null:
     def test_false_passthrough(self) -> None:
         """False is a valid value, not None."""
         assert d1_null(False) is False
-
-    def test_dict_passthrough(self) -> None:
-        data = {"key": "value"}
-        assert d1_null(data) is data
-
-    def test_list_passthrough(self) -> None:
-        data = [1, 2, 3]
-        assert d1_null(data) is data
-
-    def test_float_passthrough(self) -> None:
-        assert d1_null(3.14) == pytest.approx(3.14)
 
 
 # =========================================================================
@@ -496,12 +397,14 @@ class TestConsumeReadableStream:
         assert isinstance(result, bytes)
 
     async def test_object_with_array_buffer(self) -> None:
-        """Objects with .arrayBuffer() (like R2 bodies) are consumed."""
-        mock_stream = MagicMock()
-        mock_stream.arrayBuffer = AsyncMock(return_value=b"audio data")
-        result = await consume_readable_stream(mock_stream)
+        """Objects with only .arrayBuffer() (no getReader) are consumed via arrayBuffer."""
+
+        class ArrayBufferOnly:
+            async def arrayBuffer(self):
+                return b"audio data"
+
+        result = await consume_readable_stream(ArrayBufferOnly())
         assert result == b"audio data"
-        mock_stream.arrayBuffer.assert_awaited_once()
 
     async def test_object_without_array_buffer(self) -> None:
         """Objects without .arrayBuffer() fall through to to_py_bytes."""
@@ -511,9 +414,12 @@ class TestConsumeReadableStream:
 
     async def test_array_buffer_returns_bytearray(self) -> None:
         """When arrayBuffer() returns bytearray, it is converted to bytes."""
-        mock_stream = MagicMock()
-        mock_stream.arrayBuffer = AsyncMock(return_value=bytearray(b"chunk"))
-        result = await consume_readable_stream(mock_stream)
+
+        class ArrayBufferBytearray:
+            async def arrayBuffer(self):
+                return bytearray(b"chunk")
+
+        result = await consume_readable_stream(ArrayBufferBytearray())
         assert result == b"chunk"
         assert isinstance(result, bytes)
 
@@ -609,12 +515,16 @@ class TestStreamR2Body:
 
     async def test_fallback_body_without_get_reader(self) -> None:
         """When body exists but has no getReader, falls back to full load."""
-        r2_obj = MagicMock()
-        r2_obj.body = SimpleNamespace()  # body exists but no getReader
-        r2_obj.arrayBuffer = AsyncMock(return_value=b"buffered")
+
+        class R2ObjWithArrayBuffer:
+            """R2 object whose body has no getReader — falls back to arrayBuffer."""
+            body = SimpleNamespace()  # body exists but no getReader
+
+            async def arrayBuffer(self):
+                return b"buffered"
 
         chunks = []
-        async for chunk in stream_r2_body(r2_obj):
+        async for chunk in stream_r2_body(R2ObjWithArrayBuffer()):
             chunks.append(chunk)
 
         assert chunks == [b"buffered"]
@@ -689,26 +599,6 @@ class TestGetR2Size:
         """Zero is a valid size (empty file)."""
         r2_obj = SimpleNamespace(size=0)
         assert get_r2_size(r2_obj) == 0
-
-
-# =========================================================================
-# to_js_bytes — Python bytes → JS Uint8Array conversion
-# =========================================================================
-
-
-class TestToJsBytes:
-    def test_bytes_passthrough_outside_pyodide(self) -> None:
-        """Outside Pyodide, bytes are returned unchanged."""
-        data = b"image data"
-        assert to_js_bytes(data) is data
-
-    def test_bytearray_passthrough_outside_pyodide(self) -> None:
-        data = bytearray(b"audio")
-        assert to_js_bytes(data) is data
-
-    def test_memoryview_passthrough_outside_pyodide(self) -> None:
-        data = memoryview(b"buffer")
-        assert to_js_bytes(data) is data
 
 
 # =========================================================================

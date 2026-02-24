@@ -1,15 +1,40 @@
-import { user, isOffline, syncStatus } from '../state.js';
+import { useState, useEffect, useRef } from 'preact/hooks';
+import { user, isOffline, syncStatus, theme, applyTheme, showShortcuts } from '../state.js';
 import { performLogout } from '../api.js';
-import { IconSearch, IconTag, IconSettings, IconBarChart } from './Icons.jsx';
+import { IconSearch, IconTag, IconSettings, IconBarChart, IconHelpCircle, IconKeyboard, IconMoon, IconSun } from './Icons.jsx';
 
 export function Header() {
   const u = user.value;
   const offline = isOffline.value;
   const syncing = syncStatus.value;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
 
-  async function handleLogout() {
-    await performLogout();
+  useEffect(function () {
+    if (!menuOpen) return;
+    function handleClick(e) {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setMenuOpen(false);
+      }
+    }
+    document.addEventListener('click', handleClick);
+    return function () { document.removeEventListener('click', handleClick); };
+  }, [menuOpen]);
+
+  function toggleTheme() {
+    var current = theme.value;
+    var isDark = current === 'dark' ||
+      (current === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    applyTheme(isDark ? 'light' : 'dark');
   }
+
+  function handleShortcuts() {
+    setMenuOpen(false);
+    showShortcuts.value = true;
+  }
+
+  var isDark = theme.value === 'dark' ||
+    (theme.value === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
 
   return (
     <>
@@ -50,12 +75,27 @@ export function Header() {
             <a href="#/settings" class="btn btn-icon" title="Settings">
               <IconSettings />
             </a>
-            {u && u.avatar_url && (
-              <img class="user-avatar" src={u.avatar_url} alt="Avatar" />
-            )}
-            <button class="btn btn-sm btn-secondary" onClick={handleLogout}>
-              Logout
-            </button>
+            <div class="help-menu" ref={menuRef}>
+              <button
+                class="btn btn-icon"
+                title="Help"
+                onClick={function () { setMenuOpen(!menuOpen); }}
+              >
+                <IconHelpCircle />
+              </button>
+              {menuOpen && (
+                <div class="help-menu-dropdown">
+                  <button class="help-menu-item" onClick={handleShortcuts}>
+                    <IconKeyboard size={16} />
+                    Keyboard shortcuts
+                  </button>
+                  <button class="help-menu-item" onClick={toggleTheme}>
+                    {isDark ? <IconSun size={16} /> : <IconMoon size={16} />}
+                    {isDark ? 'Light mode' : 'Dark mode'}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </header>

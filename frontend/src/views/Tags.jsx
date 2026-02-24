@@ -195,7 +195,7 @@ export function Tags() {
       <Header />
       <main class="main-content">
         <h2 class="section-title">Tags</h2>
-        <div class="input-group" style={{ marginBottom: '16px' }}>
+        <div class="input-group mb-4">
           <input
             class="input"
             type="text"
@@ -214,7 +214,7 @@ export function Tags() {
         <div class="tags-list">
           {!isLoading && tagList.length === 0 && (
             <EmptyState title="No tags yet">
-              Create a tag to organize your articles.
+              Create a tag to organise your articles.
             </EmptyState>
           )}
           {tagList.map(function (t) {
@@ -284,7 +284,7 @@ export function Tags() {
         </div>
 
         {/* Tag Rules Section */}
-        <h2 class="section-title" style={{ marginTop: '40px' }}>Tag Rules</h2>
+        <h2 class="section-title mt-10">Tag Rules</h2>
         <p class="tag-rules-description">
           Rules automatically tag new articles based on their domain, title, or URL.
         </p>
@@ -326,7 +326,7 @@ export function Tags() {
 
         {rulesLoading && <LoadingSpinner />}
 
-        <div class="tags-list" style={{ marginTop: '12px' }}>
+        <div class="tags-list mt-3">
           {!rulesLoading && rules.length === 0 && (
             <EmptyState title="No rules yet">
               Add a rule to automatically tag articles when they are saved.

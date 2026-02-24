@@ -14,11 +14,12 @@ export function MarkdownView({ id }) {
   const [viewMode, setViewMode] = useState('rendered');
 
   const renderedHtml = useMemo(function () {
-    if (!markdown) return null;
+    if (!markdown) return '';
     try {
       return renderMarkdown(markdown);
     } catch (e) {
-      return null;
+      console.error('Markdown rendering failed:', e);
+      return '';
     }
   }, [markdown]);
 
@@ -66,7 +67,7 @@ export function MarkdownView({ id }) {
           <EmptyState title="Could not load markdown">
             {loadError}
             <br />
-            <a href={'#/article/' + id} class="btn btn-secondary" style={{ marginTop: '16px' }}>
+            <a href={'#/article/' + id} class="btn btn-secondary mt-4">
               Back to article
             </a>
           </EmptyState>
@@ -115,13 +116,13 @@ export function MarkdownView({ id }) {
             </button>
           </div>
         </div>
-        {viewMode === 'rendered' && renderedHtml !== null ? (
+        {viewMode === 'source' ? (
+          <pre class="markdown-view-content">{markdown}</pre>
+        ) : (
           <div
             class="reader-content markdown-view-rendered"
             dangerouslySetInnerHTML={{ __html: renderedHtml }}
           />
-        ) : (
-          <pre class="markdown-view-content">{markdown}</pre>
         )}
       </main>
     </>

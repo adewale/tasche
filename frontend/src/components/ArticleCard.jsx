@@ -5,7 +5,7 @@ import { getArticleTags, listenLater as apiListenLater, isOfflineCached } from '
 import { toggleArchive, toggleFavorite, removeArticle } from '../articleActions.js';
 import { nav } from '../nav.js';
 import { playAudio } from './AudioPlayer.jsx';
-import { IconStar, IconTrash, IconCheck, IconCheckSquare, IconHeadphones, IconPlay, IconClock, IconArchive, IconMarkdown } from './Icons.jsx';
+import { IconStar, IconTrash, IconCheck, IconCheckSquare, IconHeadphones, IconPlay, IconClock, IconArchive } from './Icons.jsx';
 
 const tagCache = new Map();
 
@@ -99,11 +99,6 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
     nav.tagFilter(tagId);
   }
 
-  function handleMarkdown(e) {
-    e.stopPropagation();
-    nav.articleMarkdown(a.id);
-  }
-
   var audioStatus = a.audio_status;
   var hasAudio = audioStatus === 'ready';
   var audioPending = audioStatus === 'pending' || audioStatus === 'generating';
@@ -176,20 +171,22 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
         </div>
       </div>
       <div class="article-card-footer">
-        <div class="article-card-tags">
-          {cardTags.map(function (tag) {
-            return (
-              <a
-                key={tag.id}
-                href={'#/?tag=' + tag.id}
-                class="tag-chip"
-                onClick={function (e) { handleTagClick(e, tag.id); }}
-              >
-                {tag.name}
-              </a>
-            );
-          })}
-        </div>
+        {cardTags.length > 0 && (
+          <div class="article-card-tags">
+            {cardTags.map(function (tag) {
+              return (
+                <a
+                  key={tag.id}
+                  href={'#/?tag=' + tag.id}
+                  class="tag-chip"
+                  onClick={function (e) { handleTagClick(e, tag.id); }}
+                >
+                  {tag.name}
+                </a>
+              );
+            })}
+          </div>
+        )}
         <div class="article-card-actions">
           {hasAudio && (
             <button class="audio-ready" title="Play audio" onClick={handlePlayAudio}>
@@ -206,11 +203,6 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
               <IconHeadphones />
             </button>
           )}
-          {a.status === 'ready' && (
-            <button title="View Markdown" onClick={handleMarkdown}>
-              <IconMarkdown />
-            </button>
-          )}
           <button
             class={isArchived ? 'archived' : ''}
             title={isArchived ? 'Move to unread' : 'Archive'}
@@ -220,7 +212,7 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
           </button>
           <button
             class={'fav-btn' + (isFav ? ' favorited' : '')}
-            title="Toggle favorite"
+            title="Toggle favourite"
             onClick={handleFavorite}
           >
             <IconStar filled={!!isFav} />

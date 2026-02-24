@@ -11,11 +11,9 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response
 
-from articles.epub import generate_multi_epub
-from articles.storage import get_content
 from auth.dependencies import get_current_user
 
 router = APIRouter()
@@ -172,86 +170,6 @@ async def export_html(
     return Response(
         content=content,
         media_type="text/html; charset=utf-8",
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
-        },
-    )
-
-
-@router.post("/epub")
-async def export_epub(
-    request: Request,
-    user: dict[str, Any] = Depends(get_current_user),
-) -> Response:
-    """Export multiple articles as a single multi-chapter EPUB.
-
-    Accepts a JSON body with ``article_ids`` (list of article ID strings).
-    Fetches each article's metadata from D1 and HTML content from R2,
-    then generates a single EPUB with one chapter per article.
-
-    Articles without HTML content are skipped.  Returns 404 if no articles
-    have content available.
-    """
-    body = await request.json()
-    article_ids = body.get("article_ids", [])
-
-    if not isinstance(article_ids, list) or not article_ids:
-        raise HTTPException(status_code=422, detail="article_ids must be a non-empty list")
-    if len(article_ids) > 50:
-        raise HTTPException(status_code=422, detail="Cannot export more than 50 articles at once")
-
-    env = request.scope["env"]
-    db = env.DB
-    r2 = env.CONTENT
-    user_id = user["user_id"]
-
-    chapters: list[dict[str, str]] = []
-
-    for article_id in article_ids:
-        if not isinstance(article_id, str):
-            continue
-
-        article = await (
-            db.prepare(
-                "SELECT id, title, author, html_key FROM articles WHERE id = ? AND user_id = ?"
-            )
-            .bind(article_id, user_id)
-            .first()
-        )
-        if article is None:
-            continue
-
-        html_key = article.get("html_key")
-        if not html_key:
-            continue
-
-        html_content = await get_content(r2, html_key)
-        if html_content is None:
-            continue
-
-        chapters.append(
-            {
-                "title": article.get("title") or "Untitled",
-                "author": article.get("author") or "",
-                "html_content": html_content,
-            }
-        )
-
-    if not chapters:
-        raise HTTPException(
-            status_code=404,
-            detail="No articles with content available for EPUB export",
-        )
-
-    date_str = datetime.now(UTC).strftime("%Y-%m-%d")
-    book_title = f"Tasche Collection - {date_str}"
-
-    epub_bytes = generate_multi_epub(book_title, chapters)
-    filename = f"tasche-collection-{date_str}.epub"
-
-    return Response(
-        content=epub_bytes,
-        media_type="application/epub+zip",
         headers={
             "Content-Disposition": f'attachment; filename="{filename}"',
         },

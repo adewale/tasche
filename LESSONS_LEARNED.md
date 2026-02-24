@@ -435,3 +435,126 @@ Python Workers using Pyodide/WASM have a heavy cold start (~1100ms CPU). When a 
 The `_is_js_null_or_undefined()` helper existed in `wrappers.py` but was never called in `SafeR2.get()`, `SafeKV.get()`, or `SafeAI.run()`. The inline fix in `processing.py` (`type(raw_obj).__name__ != "JsNull"`) was correct but in the wrong place — it should be in the wrapper so every caller is protected.
 
 **Lesson:** Every Safe* wrapper method that returns a value from JS must convert JsNull/undefined→None on the way out. The FFI boundary layer must be bidirectional: convert on writes (Python→JS) AND on reads (JS→Python). If you only guard one direction, the other will eventually crash in production.
+
+---
+
+## Commit History Analysis — Patterns of Rework
+
+An analysis of 49 commits over 9 days (2026-02-15 to 2026-02-24) reveals systematic patterns of rework that could be prevented with better tooling and processes.
+
+### Rework Statistics
+
+- **49 total commits**, of which **17 are corrective** (fix-to-feature ratio: 1:1.9)
+- **Top 5 most modified files** (changes across last 50 commits):
+  1. `src/articles/routes.py` — 21 modifications
+  2. `src/articles/processing.py` — 20 modifications
+  3. `tests/unit/test_articles.py` — 13 modifications
+  4. `tests/conftest.py` — 12 modifications
+  5. `src/tts/processing.py` — 12 modifications
+  6. `src/entry.py` — 12 modifications
+  7. `src/wrappers.py` — 10 modifications
+
+### Pattern 1: FFI Boundary Centralization Required 7 Commits
+
+The FFI boundary layer (`wrappers.py`) was touched in 10 separate commits, with 7 specifically about centralization or fixing FFI gaps:
+
+1. `12575c6` — Harden FFI boundary, fix D1 result wrapper bug
+2. `a71559f` — Fix JsNull detection and None→null conversion
+3. `fd5c262` — Centralize all JS/Python FFI operations
+4. `a28bc2d` — Route all R2 writes through r2_put() boundary helper
+5. `ea08511` — Centralize FFI boundary and update all callers
+6. `63e6c41` — Fix FFI boundary gaps and implement wide events
+7. `f47953c` — Add FFI boundary checker script (later removed during cleanup)
+
+The first three happened on consecutive days (Feb 20-22), with each commit discovering a new category of FFI leaks that the previous commit missed. The root cause: the boundary was designed incrementally (reads first, then writes, then null handling) instead of comprehensively from the start.
+
+### Pattern 2: Article Processing Pipeline Is the Perpetual Hotspot
+
+`src/articles/processing.py` and `src/articles/routes.py` together account for 41 modifications — nearly one change per commit on average. This is because:
+
+- The processing pipeline is the longest code path (14 steps across 6 modules)
+- It touches every Cloudflare binding (D1, R2, Queue, AI, Browser Rendering)
+- It is the primary user journey and therefore the first thing tested after any change
+- New features (favicons, auto-tagging, listen-later) all add steps to this pipeline
+
+### Pattern 3: Feature Churn — Added Then Removed
+
+Several features were added and later removed, each requiring two commits:
+
+- **Notes field**: Added in initial impl, removed in `c0df59d` ("no UI specified, unnecessary complexity")
+- **listen_later column**: Added then removed in `f5a79d2`
+- **Highlights view**: Added in `8d05ec2`, removed in `def6c02`
+- **Feeds view**: Added in `8d05ec2`, removed in `def6c02`
+- **Review view**: Added in `8d05ec2`, removed in `def6c02`
+
+Each add-then-remove cycle required changes to routes, tests, frontend, and the service worker.
+
+### Pattern 4: Content Extraction Was Rearchitected 3 Times
+
+1. **Initial**: python-readability (crashed due to `eval()` restriction)
+2. **Fallback**: BeautifulSoup heuristic extractor (lower quality)
+3. **Final**: Readability Service Binding to JS Worker + BS4 fallback
+
+Each pivot required changes to `extraction.py`, `processing.py`, test mocks, and `wrangler.jsonc`.
+
+### Pattern 5: CSS/Design Fixes Cluster After Feature Additions
+
+UI-related commits cluster after major feature additions:
+- `8d05ec2` (16 features) was immediately followed by `9dc0235` (favicon fixes), then `ba0061c` (card design + markdown crash), then `7220f81` (compact cards)
+- Each feature addition changed `app.css`, `ArticleCard.jsx`, and `Library.jsx`
+
+### Diagnostic Tools Created
+
+Based on these patterns, three diagnostic scripts were created in `scripts/agent-tools/`:
+
+1. **`check_ffi_boundary.py`** — Validates that all FFI operations go through Safe* wrappers; detects raw JsProxy usage, direct `.to_py()` calls, and unsafe null handling outside the boundary layer.
+
+2. **`check_pyodide_pitfalls.py`** — Detects common Pyodide/Workers runtime pitfalls: sync handlers (must be async), `eval()`/`Function()` usage, direct `import js` outside boundary modules, `None` comparisons that miss JsNull, and module-level PRNG calls.
+
+3. **`check_handler_consistency.py`** — Audits API route handlers for structural consistency: verifies env access patterns, authentication dependencies, error handling, and response format consistency across all route files.
+
+### 37. Unit Tests That Only Exercise the Fallback Path Give False Confidence
+
+All 134 `test_wrappers.py` tests ran with `HAS_PYODIDE = False`, exercising only the CPython fallback code path. The actual production code — the `if HAS_PYODIDE:` branches that convert JsProxy→dict, detect JsNull, convert None→null, and transform bytes→Uint8Array — had zero test coverage. Every historical FFI production bug (JsNull leak, None→undefined in D1, bytes→PyProxy in R2) lived in these untested branches.
+
+The core issue: the module uses a feature flag (`HAS_PYODIDE`) to switch between two completely different implementations. Testing only one side of the flag is equivalent to testing a different program than the one that runs in production.
+
+**Solution:** Create JS-type fakes (`FakeJsProxy`, `JsNull` sentinel, `FakeJsModule` with `.undefined`/`.JSON`/`.Object`) that simulate Pyodide's types in CPython. Monkeypatch `HAS_PYODIDE=True` plus the three module globals (`JsProxy`, `js`, `to_js`) to point at the fakes. This forces every `if HAS_PYODIDE:` branch to execute with types that behave like the real thing — `type(x).__name__ == "JsNull"` returns True, `isinstance(x, JsProxy)` works, `.to_py()` returns the wrapped value.
+
+**Rule for future sessions:** When a module has a feature flag that switches between a production path and a fallback path, both paths need dedicated tests. The fallback-path tests verify graceful degradation; the production-path tests (using fakes + monkeypatching) verify the actual conversion logic. If the test file only imports the module once without any patching, it's only testing one side.
+
+### 38. E2E Tests Against Real Infrastructure Catch What Three Tiers of Mocks Cannot
+
+Adding 10 E2E smoke tests against the live staging Worker (real D1, real R2, real Pyodide FFI) immediately caught two issues that 893 unit tests missed:
+
+1. **Wrong search endpoint path.** Unit tests used `/api/articles/search` — which always returned a mock-backed 200. The real endpoint is `/api/search`. The unit test mocks never validated the route prefix because the mock router accepted any path the test called. On real infrastructure, this is a 404.
+
+2. **Wrong assumption about duplicate URL behavior.** Unit tests for `check_duplicate()` used a mock D1 that returned a pre-set result, and the test asserted 409. But the real code path on duplicate URL is: find existing → reset status to pending → re-process → return 201 with the *same* article ID. The 409 only fires on a race condition (unique constraint violation). The mock-based test verified the wrong contract.
+
+Both bugs share the same root cause: **mock-based tests verify the test author's mental model of the system, not the system itself.** When the mental model is wrong (wrong URL path, wrong status code for duplicates), the mock obligingly returns whatever the test expects.
+
+Comparing to planet_cf's three-tier strategy (unit→integration→E2E against real Workers), the pattern is clear: each tier catches a different class of bug. Unit tests catch logic errors. FFI contract tests (monkeypatched fakes) catch conversion bugs. E2E tests against real infrastructure catch routing, integration, and contract mismatches. Removing any tier leaves a blind spot.
+
+**What the E2E tests confirmed works correctly on real Cloudflare:**
+- Full article lifecycle: create → process-now → read → update → delete
+- D1 nullable fields return as JSON `null` (not string "undefined")
+- R2 content storage works (bytes cross the FFI correctly)
+- FTS5 search on real D1 returns results
+- Tag creation, assignment, and filtering work end-to-end
+- Worker-first routing correctly sends `/api/*` to FastAPI, not the SPA asset layer
+
+**Lesson:** For platform-specific runtimes, E2E tests against real infrastructure are not optional — they are the only tier that validates the actual contract between your code and the platform. Mock-based tests at any sophistication level (including monkeypatched FFI fakes) can only verify that your code works *if* your assumptions about the platform are correct. E2E tests verify the assumptions themselves.
+
+### 39. ReadableStream `arrayBuffer()` Truncates in Pyodide — Use `getReader()` Instead
+
+TTS-generated audio was 0.57 seconds / 3.4KB when it should have been minutes long. The `audio_duration_seconds` in D1 (776s) was an estimate based on word count — not the actual audio duration — masking the problem entirely.
+
+The pipeline: markdown → strip → chunk (6 chunks × ~1900 chars) → Workers AI per chunk → concatenate → R2. The `consume_readable_stream()` helper in `wrappers.py` checked `hasattr(value, "arrayBuffer")` first. Workers AI returns a ReadableStream that has **both** `.arrayBuffer()` and `.getReader()`. In Pyodide, `await stream.arrayBuffer()` on a ReadableStream may only capture the first buffered chunk of the response, silently discarding the rest. This produced a single MP3 frame (~3.4KB) from what should have been a multi-chunk audio stream.
+
+The fix: prefer `getReader()` over `.arrayBuffer()` in `consume_readable_stream()`. The reader path uses the `getReader()` → `read()` → `releaseLock()` protocol that reads ALL chunks sequentially. This is the reliable way to fully consume a ReadableStream across the Pyodide FFI boundary.
+
+**Why unit tests didn't catch it:** `MockAI` returns plain `bytes`, which bypasses `consume_readable_stream()` entirely (bytes have neither `getReader` nor `arrayBuffer`). The real Workers AI returns a `ReadableStream` JsProxy — a fundamentally different type with different consumption semantics. The FFI conversion path was completely untested.
+
+**Detection required tracing, not guessing:** The pipeline had 3 candidate failure points (arrayBuffer truncation, to_py_bytes truncation, empty AI responses). Without per-chunk diagnostics showing exactly where bytes disappear, any fix attempt would be speculative. The diagnostic trace script (`scripts/agent-tools/trace_tts_pipeline.py`) and per-chunk logging in `process_tts()` made the root cause empirically verifiable.
+
+**Lesson:** When consuming binary data from JS APIs across the Pyodide FFI boundary, always prefer the streaming reader protocol (`getReader()` → `read()` loop) over convenience methods like `arrayBuffer()`. The convenience methods may only return the first buffered chunk when the underlying data is a multi-chunk stream. This applies to Workers AI responses, R2 body streams, and any other JS API that returns ReadableStream objects.

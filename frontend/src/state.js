@@ -31,6 +31,32 @@ export const isOffline = signal(!navigator.onLine);
 // Sync status: null | 'syncing' | 'synced' | 'error'
 export const syncStatus = signal(null);
 
+// Theme: 'light' | 'dark' | 'system'
+function getInitialTheme() {
+  var saved = localStorage.getItem('tasche-theme');
+  return saved === 'light' || saved === 'dark' ? saved : 'system';
+}
+export const theme = signal(getInitialTheme());
+
+export function applyTheme(value) {
+  theme.value = value;
+  if (value === 'system') {
+    localStorage.removeItem('tasche-theme');
+    document.documentElement.removeAttribute('data-theme');
+  } else {
+    localStorage.setItem('tasche-theme', value);
+    document.documentElement.setAttribute('data-theme', value);
+  }
+}
+
+// Apply on load
+if (theme.value !== 'system') {
+  document.documentElement.setAttribute('data-theme', theme.value);
+}
+
+// Keyboard shortcuts help overlay
+export const showShortcuts = signal(false);
+
 // Toast notifications
 export const toasts = signal([]);
 

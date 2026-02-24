@@ -3,7 +3,6 @@ import { Header } from '../components/Header.jsx';
 import { EmptyState, LoadingSpinner } from '../components/EmptyState.jsx';
 import { ArticleCard } from '../components/ArticleCard.jsx';
 import { Pagination } from '../components/Pagination.jsx';
-import { KeyboardShortcutsHelp } from '../components/KeyboardShortcutsHelp.jsx';
 import { IconBookOpen, IconHeadphones, IconSelectMode, IconArchive, IconTrash, IconX } from '../components/Icons.jsx';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts.js';
 import { toggleArchive, toggleFavorite, removeArticle } from '../articleActions.js';
@@ -17,6 +16,7 @@ import {
   isOffline,
   addToast,
   limit as limitSignal,
+  showShortcuts,
 } from '../state.js';
 import {
   listArticles,
@@ -33,7 +33,7 @@ const FILTERS = [
   { key: 'unread', label: 'Unread' },
   { key: 'reading', label: 'Reading' },
   { key: 'archived', label: 'Archived' },
-  { key: 'favorites', label: 'Favorites' },
+  { key: 'favorites', label: 'Favourites' },
   { key: 'listen', label: 'Audio' },
 ];
 
@@ -61,7 +61,7 @@ export function Library({ tag }) {
   const [saveUrl, setSaveUrl] = useState('');
   const [listenLater, setListenLater] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
-  const [showHelp, setShowHelp] = useState(false);
+  var showHelp = showShortcuts.value;
   const [currentSort, setCurrentSort] = useState(getSavedSort);
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState(new Set());
@@ -72,6 +72,7 @@ export function Library({ tag }) {
   const urlInputRef = useRef(null);
 
   useEffect(() => {
+    loadingSignal.value = true;
     articles.value = [];
     offsetSignal.value = 0;
     hasMoreSignal.value = true;
@@ -87,10 +88,8 @@ export function Library({ tag }) {
   }, [articleList.length]);
 
   // Keyboard shortcuts
-  useKeyboardShortcuts(showHelp ? {
-    '?': function () { setShowHelp(false); },
-    Escape: function () { setShowHelp(false); },
-  } : {
+  // Note: '?' is handled globally in App so it works on all screens.
+  useKeyboardShortcuts(showHelp ? {} : {
     j: function () {
       var list = articles.value;
       setSelectedIndex(function (prev) {
@@ -136,7 +135,6 @@ export function Library({ tag }) {
     },
     '/': function () { nav.search(); },
     n: function () { if (urlInputRef.current) urlInputRef.current.focus(); },
-    '?': function () { setShowHelp(true); },
   }, [selectedIndex, showHelp]);
 
   // Scroll selected card into view
@@ -149,7 +147,7 @@ export function Library({ tag }) {
   }, [selectedIndex]);
 
   async function loadArticles(reset) {
-    if (loadingSignal.value || (!hasMoreSignal.value && !reset)) return;
+    if (!reset && (loadingSignal.value || !hasMoreSignal.value)) return;
     loadingSignal.value = true;
 
     const currentOffset = reset ? 0 : offsetSignal.value;
@@ -458,9 +456,6 @@ export function Library({ tag }) {
           onLoadMore={function () { loadArticles(false); }}
         />
       </main>
-      {showHelp && (
-        <KeyboardShortcutsHelp onClose={function () { setShowHelp(false); }} />
-      )}
     </>
   );
 }

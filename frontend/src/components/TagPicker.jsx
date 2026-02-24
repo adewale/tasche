@@ -63,7 +63,7 @@ export function TagPicker({ articleId }) {
 
   return (
     <div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '16px' }}>
+      <div class="flex-wrap-gap mt-4">
         {articleTags.map((t) => (
           <span class="tag-chip" key={t.id}>
             {t.name}
@@ -81,8 +81,7 @@ export function TagPicker({ articleId }) {
       {showPicker && (
         <div class="tag-picker">
           <select
-            class="input"
-            style="width:auto;padding:4px 10px;font-size:0.8125rem;"
+            class="input tag-picker-select"
             value={selectedTagId}
             onChange={(e) => setSelectedTagId(e.target.value)}
           >

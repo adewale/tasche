@@ -429,3 +429,190 @@ class TestReadingStreak:
 
         assert resp.status_code == 200
         assert resp.json()["reading_streak_days"] == 0
+
+    async def test_streak_empty_dates(self) -> None:
+        """Reading streak is 0 when no archived articles exist at all."""
+
+        def execute(sql: str, params: list) -> list:
+            if "DISTINCT date" in sql:
+                return []
+            if "SUM(word_count)" in sql:
+                return [{"total": 0}]
+            if "COUNT(*)" in sql:
+                return [{"cnt": 0}]
+            if "GROUP BY reading_status" in sql:
+                return []
+            if "GROUP BY domain" in sql:
+                return []
+            if "AVG(" in sql:
+                return [{"avg_rt": None}]
+            if "strftime" in sql:
+                return []
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+        client, sid = await _authenticated_client(env)
+        resp = client.get("/api/stats", cookies={COOKIE_NAME: sid})
+
+        assert resp.status_code == 200
+        assert resp.json()["reading_streak_days"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Weekly/monthly activity counts
+# ---------------------------------------------------------------------------
+
+
+class TestWeeklyMonthlyActivity:
+    async def test_articles_this_week_count(self) -> None:
+        """GET /api/stats returns correct articles_this_week count."""
+
+        def execute(sql: str, params: list) -> list:
+            if "COUNT(*)" in sql and "7 days" in sql and "reading_status" not in sql:
+                return [{"cnt": 7}]
+            if "SUM(word_count)" in sql:
+                return [{"total": 0}]
+            if "COUNT(*)" in sql:
+                return [{"cnt": 0}]
+            if "GROUP BY reading_status" in sql:
+                return []
+            if "GROUP BY domain" in sql:
+                return []
+            if "DISTINCT date" in sql:
+                return []
+            if "AVG(" in sql:
+                return [{"avg_rt": None}]
+            if "strftime" in sql:
+                return []
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+        client, sid = await _authenticated_client(env)
+        resp = client.get("/api/stats", cookies={COOKIE_NAME: sid})
+
+        assert resp.status_code == 200
+        assert resp.json()["articles_this_week"] == 7
+
+    async def test_archived_this_month_count(self) -> None:
+        """GET /api/stats returns correct archived_this_month count."""
+
+        def execute(sql: str, params: list) -> list:
+            if "COUNT(*)" in sql and "30 days" in sql and "reading_status = 'archived'" in sql:
+                return [{"cnt": 12}]
+            if "SUM(word_count)" in sql:
+                return [{"total": 0}]
+            if "COUNT(*)" in sql:
+                return [{"cnt": 0}]
+            if "GROUP BY reading_status" in sql:
+                return []
+            if "GROUP BY domain" in sql:
+                return []
+            if "DISTINCT date" in sql:
+                return []
+            if "AVG(" in sql:
+                return [{"avg_rt": None}]
+            if "strftime" in sql:
+                return []
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+        client, sid = await _authenticated_client(env)
+        resp = client.get("/api/stats", cookies={COOKIE_NAME: sid})
+
+        assert resp.status_code == 200
+        assert resp.json()["archived_this_month"] == 12
+
+
+# ---------------------------------------------------------------------------
+# Stats response structure
+# ---------------------------------------------------------------------------
+
+
+class TestStatsResponseStructure:
+    async def test_articles_by_status_has_all_keys(self) -> None:
+        """articles_by_status always includes unread, reading, and archived keys."""
+        env = MockEnv()
+        client, sid = await _authenticated_client(env)
+        resp = client.get("/api/stats", cookies={COOKIE_NAME: sid})
+
+        assert resp.status_code == 200
+        status = resp.json()["articles_by_status"]
+        assert "unread" in status
+        assert "reading" in status
+        assert "archived" in status
+
+    async def test_top_domains_is_list(self) -> None:
+        """top_domains is always a list, even when empty."""
+        env = MockEnv()
+        client, sid = await _authenticated_client(env)
+        resp = client.get("/api/stats", cookies={COOKIE_NAME: sid})
+
+        assert resp.status_code == 200
+        assert isinstance(resp.json()["top_domains"], list)
+
+    async def test_articles_by_month_is_list(self) -> None:
+        """articles_by_month is always a list, even when empty."""
+        env = MockEnv()
+        client, sid = await _authenticated_client(env)
+        resp = client.get("/api/stats", cookies={COOKIE_NAME: sid})
+
+        assert resp.status_code == 200
+        assert isinstance(resp.json()["articles_by_month"], list)
+
+    async def test_avg_reading_time_zero_when_no_data(self) -> None:
+        """avg_reading_time_minutes is 0 when no articles have reading time."""
+        env = MockEnv()
+        client, sid = await _authenticated_client(env)
+        resp = client.get("/api/stats", cookies={COOKIE_NAME: sid})
+
+        assert resp.status_code == 200
+        assert resp.json()["avg_reading_time_minutes"] == 0
+
+    async def test_all_values_are_serializable(self) -> None:
+        """All stats values are JSON-serializable primitives (no None, JsNull, etc.)."""
+
+        def execute(sql: str, params: list) -> list:
+            if "SUM(word_count)" in sql:
+                return [{"total": 0}]
+            if "COUNT(*)" in sql:
+                return [{"cnt": 0}]
+            if "GROUP BY reading_status" in sql:
+                return [
+                    {"reading_status": "unread", "cnt": 1},
+                    {"reading_status": "reading", "cnt": 0},
+                    {"reading_status": "archived", "cnt": 0},
+                ]
+            if "GROUP BY domain" in sql:
+                return []
+            if "DISTINCT date" in sql:
+                return []
+            if "AVG(" in sql:
+                return [{"avg_rt": None}]
+            if "strftime" in sql:
+                return []
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+        client, sid = await _authenticated_client(env)
+        resp = client.get("/api/stats", cookies={COOKIE_NAME: sid})
+
+        assert resp.status_code == 200
+        data = resp.json()
+        # All top-level values should be int, float, list, or dict (no None)
+        for key in [
+            "total_articles",
+            "total_words_read",
+            "articles_this_week",
+            "articles_this_month",
+            "archived_this_week",
+            "archived_this_month",
+            "reading_streak_days",
+            "avg_reading_time_minutes",
+        ]:
+            assert isinstance(data[key], (int, float)), (
+                f"{key} should be numeric, got {type(data[key])}: {data[key]}"
+            )

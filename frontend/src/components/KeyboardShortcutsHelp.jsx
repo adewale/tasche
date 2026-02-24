@@ -5,7 +5,7 @@ var LIBRARY_SHORTCUTS = [
   { keys: ['k'], description: 'Move selection up' },
   { keys: ['o', 'Enter'], description: 'Open selected article' },
   { keys: ['a'], description: 'Archive / unarchive selected' },
-  { keys: ['s'], description: 'Toggle favorite on selected' },
+  { keys: ['s'], description: 'Toggle favourite on selected' },
   { keys: ['d'], description: 'Delete selected article' },
   { keys: ['/'], description: 'Search articles' },
   { keys: ['n'], description: 'Save a new article' },
@@ -15,7 +15,8 @@ var LIBRARY_SHORTCUTS = [
 var READER_SHORTCUTS = [
   { keys: ['Esc', 'h'], description: 'Back to library' },
   { keys: ['a'], description: 'Archive / unarchive article' },
-  { keys: ['s'], description: 'Toggle favorite' },
+  { keys: ['s'], description: 'Toggle favourite' },
+  { keys: ['m'], description: 'Cycle view: Original / Rendered / Source' },
 ];
 
 function ShortcutRow({ shortcut }) {

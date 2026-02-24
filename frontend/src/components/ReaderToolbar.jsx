@@ -27,6 +27,15 @@ export function ReaderToolbar() {
   return (
     <div class="reader-toolbar">
       <SegmentedControl
+        label="View"
+        prefKey="contentMode"
+        options={[
+          { value: 'html', label: 'Original', title: 'Processed HTML from source' },
+          { value: 'markdown', label: 'Rendered', title: 'Markdown rendered as HTML' },
+          { value: 'source', label: 'Source', title: 'Raw markdown source' },
+        ]}
+      />
+      <SegmentedControl
         label="Size"
         prefKey="fontSize"
         options={[

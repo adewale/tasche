@@ -780,3 +780,186 @@ class TestTagsAuthRequired:
         client = TestClient(app, raise_server_exceptions=False)
         resp = client.get("/api/articles/art_001/tags")
         assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Tag creation edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestTagCreationEdgeCases:
+    async def test_tag_name_is_trimmed(self) -> None:
+        """POST /api/tags trims whitespace from the tag name."""
+        calls: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            calls.append({"sql": sql, "params": params})
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/tags",
+            json={"name": "  my tag  "},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 201
+        assert resp.json()["name"] == "my tag"
+
+    async def test_tag_name_with_special_characters(self) -> None:
+        """POST /api/tags accepts tags with special characters."""
+
+        def execute(sql: str, params: list) -> list:
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/tags",
+            json={"name": "C++/Rust"},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 201
+        assert resp.json()["name"] == "C++/Rust"
+
+
+# ---------------------------------------------------------------------------
+# Tag list response shape
+# ---------------------------------------------------------------------------
+
+
+class TestTagListShape:
+    async def test_tag_includes_id_name_article_count(self) -> None:
+        """GET /api/tags returns tags with id, name, and article_count."""
+        tags = [
+            {
+                "id": "tag_1",
+                "user_id": "user_001",
+                "name": "python",
+                "created_at": "2025-01-01",
+                "article_count": 3,
+            },
+        ]
+
+        def execute(sql: str, params: list) -> list:
+            if "FROM tags" in sql and "LEFT JOIN" in sql:
+                return tags
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get(
+            "/api/tags",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        tag = data[0]
+        assert "id" in tag
+        assert "name" in tag
+        assert "article_count" in tag
+        assert tag["article_count"] == 3
+
+    async def test_tags_ordered_by_name(self) -> None:
+        """GET /api/tags returns tags ordered alphabetically by name."""
+        calls: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            calls.append({"sql": sql, "params": params})
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        client.get(
+            "/api/tags",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        tag_queries = [c for c in calls if "FROM tags" in c["sql"]]
+        assert len(tag_queries) >= 1
+        assert "ORDER BY t.name" in tag_queries[0]["sql"]
+
+
+# ---------------------------------------------------------------------------
+# Rename tag edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestRenameTagEdgeCases:
+    async def test_rejects_name_too_long(self) -> None:
+        """PATCH /api/tags/{tag_id} returns 400 when name exceeds 100 chars."""
+        env = MockEnv()
+        client, session_id = await _authenticated_client(env)
+
+        resp = client.patch(
+            "/api/tags/tag_001",
+            json={"name": "x" * 101},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 400
+        assert "100" in resp.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# Article-tag association edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestArticleTagEdgeCases:
+    async def test_get_article_tags_returns_empty_when_no_tags(self) -> None:
+        """GET /api/articles/{id}/tags returns empty list for article with no tags."""
+        article = ArticleFactory.create(id="art_001", user_id="user_001")
+
+        def execute(sql: str, params: list) -> list:
+            if "FROM articles" in sql and params[0] == "art_001":
+                return [article]
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get(
+            "/api/articles/art_001/tags",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    async def test_get_article_tags_uses_inner_join(self) -> None:
+        """GET /api/articles/{id}/tags uses INNER JOIN for efficient querying."""
+        article = ArticleFactory.create(id="art_001", user_id="user_001")
+        calls: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            calls.append({"sql": sql, "params": params})
+            if "FROM articles" in sql and params[0] == "art_001":
+                return [article]
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        client.get(
+            "/api/articles/art_001/tags",
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        tag_queries = [c for c in calls if "FROM tags" in c["sql"]]
+        assert len(tag_queries) >= 1
+        assert "INNER JOIN article_tags" in tag_queries[0]["sql"]

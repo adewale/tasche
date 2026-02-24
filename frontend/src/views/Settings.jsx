@@ -1,7 +1,7 @@
 import { useSignal } from '@preact/signals';
 import { useEffect, useCallback } from 'preact/hooks';
 import { Header } from '../components/Header.jsx';
-import { user } from '../state.js';
+import { user, addToast } from '../state.js';
 import { useSWMessage } from '../hooks/useSWMessage.js';
 import { performLogout, exportData, getCacheStats, triggerAutoPrecache } from '../api.js';
 import { getBookmarkletCode } from '../utils.js';
@@ -59,8 +59,8 @@ export function Settings() {
   function handleExport(format) {
     exporting.value = format;
     exportData(format)
-      .catch(function () {
-        // export errors are non-critical
+      .catch(function (err) {
+        addToast('Export failed: ' + (err.message || 'unknown error'), 'error');
       })
       .finally(function () {
         exporting.value = null;
@@ -73,7 +73,7 @@ export function Settings() {
       <main class="main-content">
         <h2 class="section-title">Settings</h2>
 
-        <div style={{ marginTop: '16px' }}>
+        <div class="mt-4">
           <h3 class="section-title">Offline Reading</h3>
           <div class="settings-toggle-row">
             <div class="settings-toggle-info">
@@ -93,7 +93,7 @@ export function Settings() {
             </button>
           </div>
           {cacheStats.value && (
-            <p class="settings-detail" style={{ marginTop: '12px' }}>
+            <p class="settings-detail mt-3">
               {cacheStats.value.articleCount === 0
                 ? 'No articles cached.'
                 : cacheStats.value.articleCount + ' article' +
@@ -103,8 +103,7 @@ export function Settings() {
             </p>
           )}
           <button
-            class="btn btn-secondary"
-            style={{ marginTop: '8px' }}
+            class="btn btn-secondary mt-2"
             disabled={precaching.value || !navigator.onLine}
             onClick={handlePrecacheNow}
           >
@@ -112,7 +111,7 @@ export function Settings() {
           </button>
         </div>
 
-        <div style={{ marginTop: '32px' }}>
+        <div class="mt-8">
           <h3 class="section-title">Bookmarklet</h3>
           <p class="bookmarklet-hint">
             Drag this link to your bookmarks bar to save articles from any page.
@@ -128,12 +127,12 @@ export function Settings() {
           </a>
         </div>
 
-        <div style={{ marginTop: '32px' }}>
+        <div class="mt-8">
           <h3 class="section-title">Export Data</h3>
           <p class="settings-detail">
             Download your saved articles for backup or migration.
           </p>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <div class="flex-wrap-gap">
             <button
               class="btn btn-secondary"
               disabled={exporting.value !== null}
@@ -151,7 +150,7 @@ export function Settings() {
           </div>
         </div>
 
-        <div style={{ marginTop: '32px' }}>
+        <div class="mt-8">
           {u && (
             <p class="settings-detail">
               Logged in as: <strong>{u.email || u.username || 'Unknown'}</strong>
