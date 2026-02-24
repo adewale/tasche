@@ -108,11 +108,13 @@ async def download_images(
             continue
         total_size += len(data)
 
-        results.append({
-            "url": url,
-            "data": data,
-            "content_type": content_type,
-        })
+        results.append(
+            {
+                "url": url,
+                "data": data,
+                "content_type": content_type,
+            }
+        )
 
     return results
 

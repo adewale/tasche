@@ -218,11 +218,7 @@ def _to_py_safe(value: Any, depth: int = 0) -> Any:
         except Exception as exc:
             import json as _json
 
-            print(
-                _json.dumps(
-                    {"event": "ffi_conversion_error", "error": str(exc)[:200]}
-                )
-            )
+            print(_json.dumps({"event": "ffi_conversion_error", "error": str(exc)[:200]}))
             return None
 
         # to_py() may return nested JsProxy objects inside dicts/lists;
@@ -673,11 +669,7 @@ def d1_rows(results: Any) -> list[dict[str, Any]]:
     if rows is None:
         return []
 
-    return [
-        dict(row) if not isinstance(row, dict) else row
-        for row in rows
-        if row is not None
-    ]
+    return [dict(row) if not isinstance(row, dict) else row for row in rows if row is not None]
 
 
 def d1_first(results: Any) -> dict[str, Any] | None:
@@ -858,9 +850,7 @@ async def http_fetch(
                     timeout=httpx.Timeout(timeout),
                     follow_redirects=follow_redirects,
                 ) as client:
-                    resp = await client.request(
-                        method, url, headers=all_headers, content=body
-                    )
+                    resp = await client.request(method, url, headers=all_headers, content=body)
                     return HttpResponse(
                         status_code=resp.status_code,
                         _body=resp.content,
@@ -889,31 +879,55 @@ class HttpClient:
         pass
 
     async def get(
-        self, url: str, *, headers: dict[str, str] | None = None,
-        timeout: float = 10.0, follow_redirects: bool = True, **kwargs: Any,
+        self,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        timeout: float = 10.0,
+        follow_redirects: bool = True,
+        **kwargs: Any,
     ) -> HttpResponse:
         return await http_fetch(
-            url, method="GET", headers=headers, timeout=timeout,
+            url,
+            method="GET",
+            headers=headers,
+            timeout=timeout,
             follow_redirects=follow_redirects,
         )
 
     async def post(
-        self, url: str, *, headers: dict[str, str] | None = None,
-        json: Any = None, data: dict[str, str] | None = None,
-        timeout: float = 10.0, **kwargs: Any,
+        self,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        json: Any = None,
+        data: dict[str, str] | None = None,
+        timeout: float = 10.0,
+        **kwargs: Any,
     ) -> HttpResponse:
         return await http_fetch(
-            url, method="POST", headers=headers, json_data=json,
+            url,
+            method="POST",
+            headers=headers,
+            json_data=json,
             form_data=data if isinstance(data, dict) else None,
             body=data if isinstance(data, str) else None,
             timeout=timeout,
         )
 
     async def head(
-        self, url: str, *, headers: dict[str, str] | None = None,
-        timeout: float = 10.0, follow_redirects: bool = True, **kwargs: Any,
+        self,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        timeout: float = 10.0,
+        follow_redirects: bool = True,
+        **kwargs: Any,
     ) -> HttpResponse:
         return await http_fetch(
-            url, method="HEAD", headers=headers, timeout=timeout,
+            url,
+            method="HEAD",
+            headers=headers,
+            timeout=timeout,
             follow_redirects=follow_redirects,
         )

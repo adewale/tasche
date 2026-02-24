@@ -211,8 +211,11 @@ class TestSafeEnv:
         from tests.conftest import MockAI, MockD1, MockKV, MockQueue, MockR2, MockReadability
 
         raw = SimpleNamespace(
-            DB=MockD1(), CONTENT=MockR2(), SESSIONS=MockKV(),
-            ARTICLE_QUEUE=MockQueue(), AI=MockAI(),
+            DB=MockD1(),
+            CONTENT=MockR2(),
+            SESSIONS=MockKV(),
+            ARTICLE_QUEUE=MockQueue(),
+            AI=MockAI(),
             READABILITY=MockReadability(),
         )
         env = SafeEnv(raw)
@@ -315,9 +318,7 @@ class TestD1First:
         first row — not the wrapper dict itself.
         """
         wrapped = {
-            "results": [
-                {"id": "abc", "created_at": "2025-01-01", "status": "pending"}
-            ],
+            "results": [{"id": "abc", "created_at": "2025-01-01", "status": "pending"}],
             "success": True,
             "meta": {"changes": 0},
         }
@@ -720,17 +721,13 @@ class TestR2Put:
         """Python bytes are written to R2 (converted in Pyodide)."""
         mock_r2 = AsyncMock()
         await r2_put(mock_r2, "articles/abc/image.webp", b"image data")
-        mock_r2.put.assert_awaited_once_with(
-            "articles/abc/image.webp", b"image data"
-        )
+        mock_r2.put.assert_awaited_once_with("articles/abc/image.webp", b"image data")
 
     async def test_writes_string_to_r2(self) -> None:
         """String values pass through without conversion."""
         mock_r2 = AsyncMock()
         await r2_put(mock_r2, "articles/abc/content.html", "<html>hello</html>")
-        mock_r2.put.assert_awaited_once_with(
-            "articles/abc/content.html", "<html>hello</html>"
-        )
+        mock_r2.put.assert_awaited_once_with("articles/abc/content.html", "<html>hello</html>")
 
     async def test_writes_bytearray_to_r2(self) -> None:
         mock_r2 = AsyncMock()
@@ -744,9 +741,7 @@ class TestR2Put:
         mock_r2 = AsyncMock()
         payload = json.dumps({"title": "Test", "word_count": 42})
         await r2_put(mock_r2, "articles/abc/metadata.json", payload)
-        mock_r2.put.assert_awaited_once_with(
-            "articles/abc/metadata.json", payload
-        )
+        mock_r2.put.assert_awaited_once_with("articles/abc/metadata.json", payload)
 
 
 # =========================================================================
@@ -793,7 +788,7 @@ class TestHttpResponse:
         assert data == {"key": "value", "count": 42}
 
     def test_json_parsing_array(self) -> None:
-        resp = HttpResponse(status_code=200, _body=b'[1, 2, 3]')
+        resp = HttpResponse(status_code=200, _body=b"[1, 2, 3]")
         assert resp.json() == [1, 2, 3]
 
     def test_text_property(self) -> None:
@@ -824,9 +819,7 @@ class TestHttpResponse:
         assert resp.headers == {}
 
     def test_url_attribute(self) -> None:
-        resp = HttpResponse(
-            status_code=200, _body=b"", url="https://example.com/page"
-        )
+        resp = HttpResponse(status_code=200, _body=b"", url="https://example.com/page")
         assert resp.url == "https://example.com/page"
 
     def test_url_default_empty(self) -> None:
@@ -947,10 +940,7 @@ class TestHttpFetch:
 
         assert resp.status_code == 200
         call_args = mock_client.request.call_args
-        assert (
-            call_args.kwargs["headers"]["Content-Type"]
-            == "application/x-www-form-urlencoded"
-        )
+        assert call_args.kwargs["headers"]["Content-Type"] == "application/x-www-form-urlencoded"
 
     async def test_custom_headers(self) -> None:
         mock_resp = MagicMock()
@@ -977,9 +967,7 @@ class TestHttpFetch:
         import httpx
 
         mock_client = AsyncMock()
-        mock_client.request = AsyncMock(
-            side_effect=httpx.TimeoutException("timed out")
-        )
+        mock_client.request = AsyncMock(side_effect=httpx.TimeoutException("timed out"))
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
 
@@ -991,9 +979,7 @@ class TestHttpFetch:
         import httpx
 
         mock_client = AsyncMock()
-        mock_client.request = AsyncMock(
-            side_effect=httpx.ConnectError("connection refused")
-        )
+        mock_client.request = AsyncMock(side_effect=httpx.ConnectError("connection refused"))
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
 
@@ -1034,9 +1020,7 @@ class TestHttpFetch:
         mock_client.__aexit__ = AsyncMock(return_value=None)
 
         with patch("httpx.AsyncClient", return_value=mock_client) as mock_cls:
-            resp = await http_fetch(
-                "https://example.com/login", follow_redirects=False
-            )
+            resp = await http_fetch("https://example.com/login", follow_redirects=False)
 
         assert resp.status_code == 302
         call_kwargs = mock_cls.call_args.kwargs
@@ -1057,7 +1041,9 @@ class TestHttpClient:
     async def test_get_delegates_to_http_fetch(self) -> None:
         expected = HttpResponse(status_code=200, _body=b"ok")
         with patch(
-            "src.wrappers.http_fetch", new_callable=AsyncMock, return_value=expected,
+            "src.wrappers.http_fetch",
+            new_callable=AsyncMock,
+            return_value=expected,
         ) as mock:
             async with HttpClient() as client:
                 resp = await client.get("https://example.com/")
@@ -1073,7 +1059,9 @@ class TestHttpClient:
     async def test_get_with_custom_headers(self) -> None:
         expected = HttpResponse(status_code=200, _body=b"")
         with patch(
-            "src.wrappers.http_fetch", new_callable=AsyncMock, return_value=expected,
+            "src.wrappers.http_fetch",
+            new_callable=AsyncMock,
+            return_value=expected,
         ) as mock:
             async with HttpClient() as client:
                 await client.get(
@@ -1092,7 +1080,9 @@ class TestHttpClient:
     async def test_post_with_json(self) -> None:
         expected = HttpResponse(status_code=201, _body=b'{"id":"new"}')
         with patch(
-            "src.wrappers.http_fetch", new_callable=AsyncMock, return_value=expected,
+            "src.wrappers.http_fetch",
+            new_callable=AsyncMock,
+            return_value=expected,
         ) as mock:
             async with HttpClient() as client:
                 resp = await client.post(
@@ -1113,7 +1103,9 @@ class TestHttpClient:
     async def test_post_with_form_data(self) -> None:
         expected = HttpResponse(status_code=200, _body=b"ok")
         with patch(
-            "src.wrappers.http_fetch", new_callable=AsyncMock, return_value=expected,
+            "src.wrappers.http_fetch",
+            new_callable=AsyncMock,
+            return_value=expected,
         ) as mock:
             async with HttpClient() as client:
                 await client.post(
@@ -1133,7 +1125,9 @@ class TestHttpClient:
     async def test_post_with_string_body(self) -> None:
         expected = HttpResponse(status_code=200, _body=b"ok")
         with patch(
-            "src.wrappers.http_fetch", new_callable=AsyncMock, return_value=expected,
+            "src.wrappers.http_fetch",
+            new_callable=AsyncMock,
+            return_value=expected,
         ) as mock:
             async with HttpClient() as client:
                 await client.post(
@@ -1153,7 +1147,9 @@ class TestHttpClient:
     async def test_head_request(self) -> None:
         expected = HttpResponse(status_code=200, _body=b"")
         with patch(
-            "src.wrappers.http_fetch", new_callable=AsyncMock, return_value=expected,
+            "src.wrappers.http_fetch",
+            new_callable=AsyncMock,
+            return_value=expected,
         ) as mock:
             async with HttpClient() as client:
                 resp = await client.head("https://example.com/page")
@@ -1169,7 +1165,9 @@ class TestHttpClient:
     async def test_head_no_follow_redirects(self) -> None:
         expected = HttpResponse(status_code=301, _body=b"")
         with patch(
-            "src.wrappers.http_fetch", new_callable=AsyncMock, return_value=expected,
+            "src.wrappers.http_fetch",
+            new_callable=AsyncMock,
+            return_value=expected,
         ) as mock:
             async with HttpClient() as client:
                 resp = await client.head(
@@ -1209,9 +1207,7 @@ class TestSafeReadability:
             "excerpt": "Content",
             "byline": "Author",
         }
-        mock_binding.parse.assert_awaited_once_with(
-            "<html>...</html>", "https://example.com"
-        )
+        mock_binding.parse.assert_awaited_once_with("<html>...</html>", "https://example.com")
 
     async def test_parse_handles_null_byline(self) -> None:
         """SafeReadability.parse() handles null byline correctly."""

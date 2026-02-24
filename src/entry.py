@@ -134,12 +134,14 @@ async def health_config(request: Request) -> dict:
             else:
                 has_optional_missing = True
 
-        checks.append({
-            "name": name,
-            "required": required,
-            "status": status,
-            "description": description,
-        })
+        checks.append(
+            {
+                "name": name,
+                "required": required,
+                "status": status,
+                "description": description,
+            }
+        )
 
     if has_required_missing:
         overall = "error"

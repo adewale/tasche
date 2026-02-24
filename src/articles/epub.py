@@ -237,9 +237,7 @@ def _build_content_opf(
             f'href="{html_escape(chapter["filename"])}" '
             f'media-type="application/xhtml+xml"/>'
         )
-        spine_refs.append(
-            f'    <itemref idref="{html_escape(chapter["id"])}"/>'
-        )
+        spine_refs.append(f'    <itemref idref="{html_escape(chapter["id"])}"/>')
 
     manifest = "\n".join(manifest_items)
     spine = "\n".join(spine_refs)
@@ -285,7 +283,7 @@ def _build_toc_ncx(
       <navLabel>
         <text>{html_escape(chapter["title"])}</text>
       </navLabel>
-      <content src="{html_escape(chapter['filename'])}"/>
+      <content src="{html_escape(chapter["filename"])}"/>
     </navPoint>""")
 
     nav_content = "\n".join(nav_points)
@@ -449,11 +447,13 @@ def generate_multi_epub(
         chapter_id = f"chapter-{i + 1}"
         filename = f"chapter-{i + 1}.xhtml"
         chapter_title = article.get("title") or f"Chapter {i + 1}"
-        chapters.append({
-            "id": chapter_id,
-            "filename": filename,
-            "title": chapter_title,
-        })
+        chapters.append(
+            {
+                "id": chapter_id,
+                "filename": filename,
+                "title": chapter_title,
+            }
+        )
 
     buf = io.BytesIO()
 

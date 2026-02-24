@@ -1300,9 +1300,7 @@ class TestGetArticleImage:
         r2 = MockR2()
         env = MockEnv(db=db, content=r2)
 
-        await r2.put(
-            "articles/art_img/images/abc123.webp", b"\x00WEBP_IMAGE_DATA"
-        )
+        await r2.put("articles/art_img/images/abc123.webp", b"\x00WEBP_IMAGE_DATA")
 
         client, session_id = await _authenticated_client(env)
         resp = client.get(
@@ -1487,9 +1485,9 @@ class TestListenLaterIdempotency:
             cookies={COOKIE_NAME: session_id},
         )
 
-        assert (
-            resp.status_code == 200
-        ), f"Expected 200 for already-ready audio, got {resp.status_code}"
+        assert resp.status_code == 200, (
+            f"Expected 200 for already-ready audio, got {resp.status_code}"
+        )
         data = resp.json()
         assert data["audio_status"] == "ready"
 
@@ -1988,9 +1986,7 @@ class TestAuthRequired:
 class TestRetryArticle:
     async def test_retries_failed_article(self) -> None:
         """POST /api/articles/{id}/retry re-queues a failed article."""
-        article = ArticleFactory.create(
-            id="art_fail", user_id="user_001", status="failed"
-        )
+        article = ArticleFactory.create(id="art_fail", user_id="user_001", status="failed")
         updates: list[dict[str, Any]] = []
 
         def execute(sql: str, params: list) -> list:
@@ -2027,9 +2023,7 @@ class TestRetryArticle:
 
     async def test_retries_pending_article(self) -> None:
         """POST /api/articles/{id}/retry re-queues a pending (stuck) article."""
-        article = ArticleFactory.create(
-            id="art_stuck", user_id="user_001", status="pending"
-        )
+        article = ArticleFactory.create(id="art_stuck", user_id="user_001", status="pending")
 
         def execute(sql: str, params: list) -> list:
             if sql.startswith("SELECT") and "id = ?" in sql and params[0] == "art_stuck":
@@ -2052,9 +2046,7 @@ class TestRetryArticle:
 
     async def test_retries_ready_article(self) -> None:
         """POST /api/articles/{id}/retry re-queues a ready article."""
-        article = ArticleFactory.create(
-            id="art_ready", user_id="user_001", status="ready"
-        )
+        article = ArticleFactory.create(id="art_ready", user_id="user_001", status="ready")
 
         def execute(sql: str, params: list) -> list:
             if sql.startswith("SELECT") and "id = ?" in sql and params[0] == "art_ready":
@@ -2098,9 +2090,7 @@ class TestRetryArticle:
 
     async def test_returns_503_on_queue_failure(self) -> None:
         """POST /api/articles/{id}/retry returns 503 and marks failed on queue error."""
-        article = ArticleFactory.create(
-            id="art_qfail", user_id="user_001", status="failed"
-        )
+        article = ArticleFactory.create(id="art_qfail", user_id="user_001", status="failed")
         updates: list[dict[str, Any]] = []
 
         def execute(sql: str, params: list) -> list:
@@ -2424,7 +2414,8 @@ class TestArticleOwnershipIsolation:
     async def test_get_returns_404_for_other_users_article(self) -> None:
         """GET /api/articles/{id} returns 404 when article belongs to another user."""
         other_users_article = ArticleFactory.create(
-            id="art_other", user_id="user_002",
+            id="art_other",
+            user_id="user_002",
         )
 
         def execute(sql: str, params: list) -> list:

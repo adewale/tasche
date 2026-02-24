@@ -112,12 +112,14 @@ def generate_sentence_timing(
     for sentence in sentences:
         wc = len(sentence.split())
         duration = wc / words_per_second if words_per_second > 0 else 0
-        timing_entries.append({
-            "text": sentence,
-            "start": round(cumulative_time, 2),
-            "end": round(cumulative_time + duration, 2),
-            "word_count": wc,
-        })
+        timing_entries.append(
+            {
+                "text": sentence,
+                "start": round(cumulative_time, 2),
+                "end": round(cumulative_time + duration, 2),
+                "word_count": wc,
+            }
+        )
         cumulative_time += duration
 
     return {
@@ -291,9 +293,9 @@ async def process_tts(article_id: str, env: object, *, user_id: str) -> None:
     try:
         # Idempotency check: skip if audio is already ready
         existing = await (
-            db.prepare(
-                "SELECT audio_status FROM articles WHERE id = ? AND user_id = ?"
-            ).bind(article_id, user_id).first()
+            db.prepare("SELECT audio_status FROM articles WHERE id = ? AND user_id = ?")
+            .bind(article_id, user_id)
+            .first()
         )
         if existing and existing.get("audio_status") == "ready":
             evt = current_event()
@@ -303,16 +305,19 @@ async def process_tts(article_id: str, env: object, *, user_id: str) -> None:
             return
 
         # Step 1: Update audio_status to 'generating'
-        await db.prepare(
-            "UPDATE articles SET audio_status = ?, updated_at = ? WHERE id = ? AND user_id = ?"
-        ).bind("generating", _now(), article_id, user_id).run()
+        await (
+            db.prepare(
+                "UPDATE articles SET audio_status = ?, updated_at = ? WHERE id = ? AND user_id = ?"
+            )
+            .bind("generating", _now(), article_id, user_id)
+            .run()
+        )
 
         # Step 2: Fetch markdown content from D1
         article = await (
-            db.prepare(
-                "SELECT markdown_content FROM articles"
-                " WHERE id = ? AND user_id = ?"
-            ).bind(article_id, user_id).first()
+            db.prepare("SELECT markdown_content FROM articles WHERE id = ? AND user_id = ?")
+            .bind(article_id, user_id)
+            .first()
         )
 
         markdown_text = article.get("markdown_content") if article else None
@@ -351,18 +356,24 @@ async def process_tts(article_id: str, env: object, *, user_id: str) -> None:
         # Step 6: Update D1 with audio metadata
         duration = _estimate_duration(tts_text)
 
-        await db.prepare(
-            "UPDATE articles SET audio_key = ?, audio_duration_seconds = ?, "
-            "audio_status = ?, updated_at = ? WHERE id = ? AND user_id = ?"
-        ).bind(audio_r2_key, duration, "ready", _now(), article_id, user_id).run()
+        await (
+            db.prepare(
+                "UPDATE articles SET audio_key = ?, audio_duration_seconds = ?, "
+                "audio_status = ?, updated_at = ? WHERE id = ? AND user_id = ?"
+            )
+            .bind(audio_r2_key, duration, "ready", _now(), article_id, user_id)
+            .run()
+        )
 
         evt = current_event()
         if evt:
-            evt.set_many({
-                "outcome": "success",
-                "audio_key": audio_r2_key,
-                "audio_duration_seconds": duration,
-            })
+            evt.set_many(
+                {
+                    "outcome": "success",
+                    "audio_key": audio_r2_key,
+                    "audio_duration_seconds": duration,
+                }
+            )
 
     except ValueError:
         # Permanent errors (missing content, invalid data) — mark as failed
@@ -370,10 +381,14 @@ async def process_tts(article_id: str, env: object, *, user_id: str) -> None:
         if evt:
             evt.set_many({"outcome": "error", "error.message": traceback.format_exc()[-500:]})
         try:
-            await db.prepare(
-                "UPDATE articles SET audio_status = ?, updated_at = ?"
-                " WHERE id = ? AND user_id = ?"
-            ).bind("failed", _now(), article_id, user_id).run()
+            await (
+                db.prepare(
+                    "UPDATE articles SET audio_status = ?, updated_at = ?"
+                    " WHERE id = ? AND user_id = ?"
+                )
+                .bind("failed", _now(), article_id, user_id)
+                .run()
+            )
         except Exception:
             evt = current_event()
             if evt:
@@ -382,9 +397,11 @@ async def process_tts(article_id: str, env: object, *, user_id: str) -> None:
         # All other errors (network, JS, AI model) — let propagate for queue retry
         evt = current_event()
         if evt:
-            evt.set_many({
-                "outcome": "error",
-                "error.message": traceback.format_exc()[-500:],
-                "retryable": True,
-            })
+            evt.set_many(
+                {
+                    "outcome": "error",
+                    "error.message": traceback.format_exc()[-500:],
+                    "retryable": True,
+                }
+            )
         raise

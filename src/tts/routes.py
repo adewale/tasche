@@ -72,11 +72,13 @@ async def listen_later(
 
     # Enqueue TTS generation job
     try:
-        await env.ARTICLE_QUEUE.send({
-            "type": "tts_generation",
-            "article_id": article_id,
-            "user_id": user_id,
-        })
+        await env.ARTICLE_QUEUE.send(
+            {
+                "type": "tts_generation",
+                "article_id": article_id,
+                "user_id": user_id,
+            }
+        )
     except Exception:
         # Roll back D1 status on queue failure
         await (
@@ -119,13 +121,15 @@ async def get_audio(
                 detail="Audio is still being generated",
             )
         raise HTTPException(
-            status_code=404, detail="No audio available for this article",
+            status_code=404,
+            detail="No audio available for this article",
         )
 
     audio_key = article.get("audio_key")
     if not audio_key:
         raise HTTPException(
-            status_code=404, detail="No audio available for this article",
+            status_code=404,
+            detail="No audio available for this article",
         )
 
     # Fetch audio from R2

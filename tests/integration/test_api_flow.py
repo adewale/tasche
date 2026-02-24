@@ -281,9 +281,11 @@ class StatefulMockD1(MockD1):
                 idx = 0
                 for _i, token in enumerate(sql.split("?")):
                     tok = token.lower()
-                    if ("status" in tok
-                            and "reading_status" not in tok
-                            and "audio_status" not in tok):
+                    if (
+                        "status" in tok
+                        and "reading_status" not in tok
+                        and "audio_status" not in tok
+                    ):
                         article["status"] = params[idx]
                         break
                     idx += 1

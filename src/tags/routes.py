@@ -29,14 +29,13 @@ article_tags_router = APIRouter()
 
 
 async def _get_user_tag(
-    db: Any, tag_id: str, user_id: str,
+    db: Any,
+    tag_id: str,
+    user_id: str,
 ) -> dict[str, Any]:
     """Fetch a tag by ID for a user, or raise 404."""
     tag = await (
-        db.prepare(
-            "SELECT id, user_id, name, created_at FROM tags "
-            "WHERE id = ? AND user_id = ?"
-        )
+        db.prepare("SELECT id, user_id, name, created_at FROM tags WHERE id = ? AND user_id = ?")
         .bind(tag_id, user_id)
         .first()
     )
@@ -46,13 +45,13 @@ async def _get_user_tag(
 
 
 async def _get_user_article_id(
-    db: Any, article_id: str, user_id: str,
+    db: Any,
+    article_id: str,
+    user_id: str,
 ) -> dict[str, Any]:
     """Verify an article belongs to a user, or raise 404."""
     article = await (
-        db.prepare(
-            "SELECT id FROM articles WHERE id = ? AND user_id = ?"
-        )
+        db.prepare("SELECT id FROM articles WHERE id = ? AND user_id = ?")
         .bind(article_id, user_id)
         .first()
     )
@@ -91,25 +90,19 @@ async def create_tag(
 
     # Check for duplicate tag name for this user
     existing = await (
-        db.prepare(
-            "SELECT id FROM tags WHERE user_id = ? AND name = ?"
-        )
-        .bind(user_id, name)
-        .first()
+        db.prepare("SELECT id FROM tags WHERE user_id = ? AND name = ?").bind(user_id, name).first()
     )
     if existing is not None:
         raise HTTPException(
-            status_code=409, detail="Tag with this name already exists",
+            status_code=409,
+            detail="Tag with this name already exists",
         )
 
     tag_id = generate_id()
     now = now_iso()
 
     await (
-        db.prepare(
-            "INSERT INTO tags (id, user_id, name, created_at) "
-            "VALUES (?, ?, ?, ?)"
-        )
+        db.prepare("INSERT INTO tags (id, user_id, name, created_at) VALUES (?, ?, ?, ?)")
         .bind(tag_id, user_id, name, now)
         .run()
     )
@@ -163,7 +156,8 @@ async def rename_tag(
 
     if len(name) > 100:
         raise HTTPException(
-            status_code=400, detail="Tag name must not exceed 100 characters",
+            status_code=400,
+            detail="Tag name must not exceed 100 characters",
         )
 
     env = request.scope["env"]
@@ -174,15 +168,14 @@ async def rename_tag(
 
     # Check for duplicate tag name for this user (excluding current tag)
     existing = await (
-        db.prepare(
-            "SELECT id FROM tags WHERE user_id = ? AND name = ? AND id != ?"
-        )
+        db.prepare("SELECT id FROM tags WHERE user_id = ? AND name = ? AND id != ?")
         .bind(user_id, name, tag_id)
         .first()
     )
     if existing is not None:
         raise HTTPException(
-            status_code=409, detail="Tag with this name already exists",
+            status_code=409,
+            detail="Tag with this name already exists",
         )
 
     await (
@@ -210,11 +203,7 @@ async def delete_tag(
 
     await _get_user_tag(db, tag_id, user_id)
 
-    await (
-        db.prepare("DELETE FROM tags WHERE id = ? AND user_id = ?")
-        .bind(tag_id, user_id)
-        .run()
-    )
+    await db.prepare("DELETE FROM tags WHERE id = ? AND user_id = ?").bind(tag_id, user_id).run()
 
 
 # ---------------------------------------------------------------------------
@@ -248,22 +237,18 @@ async def add_tag_to_article(
 
     # Check if association already exists
     existing = await (
-        db.prepare(
-            "SELECT article_id FROM article_tags "
-            "WHERE article_id = ? AND tag_id = ?"
-        )
+        db.prepare("SELECT article_id FROM article_tags WHERE article_id = ? AND tag_id = ?")
         .bind(article_id, tag_id)
         .first()
     )
     if existing is not None:
         raise HTTPException(
-            status_code=409, detail="Tag already applied to this article",
+            status_code=409,
+            detail="Tag already applied to this article",
         )
 
     await (
-        db.prepare(
-            "INSERT INTO article_tags (article_id, tag_id) VALUES (?, ?)"
-        )
+        db.prepare("INSERT INTO article_tags (article_id, tag_id) VALUES (?, ?)")
         .bind(article_id, tag_id)
         .run()
     )
@@ -272,7 +257,8 @@ async def add_tag_to_article(
 
 
 @article_tags_router.delete(
-    "/{article_id}/tags/{tag_id}", status_code=204,
+    "/{article_id}/tags/{tag_id}",
+    status_code=204,
 )
 async def remove_tag_from_article(
     request: Request,
@@ -292,9 +278,7 @@ async def remove_tag_from_article(
     await _get_user_tag(db, tag_id, user_id)
 
     await (
-        db.prepare(
-            "DELETE FROM article_tags WHERE article_id = ? AND tag_id = ?"
-        )
+        db.prepare("DELETE FROM article_tags WHERE article_id = ? AND tag_id = ?")
         .bind(article_id, tag_id)
         .run()
     )

@@ -521,7 +521,6 @@ class TestProcessArticleImageRewriting:
             f"canonical_url should be extracted from HTML. Params: {params}"
         )
 
-
     async def test_subsequent_duplicate_check_finds_canonical_url(self) -> None:
         """After processing stores canonical_url, check_duplicate should find it."""
         # First, simulate processing that stored canonical_url
@@ -553,7 +552,6 @@ class TestProcessArticleImageRewriting:
         result = await check_duplicate(db, "user_001", "https://example.com/canonical-url")
         assert result is not None, "Duplicate check should find article via canonical_url"
         assert result["id"] == "art_round"
-
 
     async def test_image_paths_match_serving_endpoint_format(self) -> None:
         """Image src attributes should match GET /api/articles/{id}/images/{filename}."""
@@ -587,13 +585,10 @@ class TestProcessArticleImageRewriting:
         # Each image src should match /api/articles/{article_id}/images/{filename}
         for src in img_srcs:
             if src:
-                assert re.match(
-                    r"^/api/articles/art_imgfmt/images/[a-f0-9]+\.\w+$", src
-                ), (
+                assert re.match(r"^/api/articles/art_imgfmt/images/[a-f0-9]+\.\w+$", src), (
                     f"Image src '{src}' does not match expected "
                     f"/api/articles/{{id}}/images/{{filename}} format"
                 )
-
 
     async def test_process_article_with_empty_readability_output(self) -> None:
         """Processing should handle pages where readability extracts minimal content."""
@@ -934,12 +929,14 @@ class TestProcessArticleReadability:
         """When env.READABILITY is present, it is used instead of BS4."""
         db = TrackingD1()
         r2 = MockR2()
-        readability = MockReadability(response={
-            "title": "Readability Title",
-            "html": "<p>Content from Readability.</p>",
-            "excerpt": "Content from Readability.",
-            "byline": "Readability Author",
-        })
+        readability = MockReadability(
+            response={
+                "title": "Readability Title",
+                "html": "<p>Content from Readability.</p>",
+                "excerpt": "Content from Readability.",
+                "byline": "Readability Author",
+            }
+        )
         env = _browser_env(MockEnv(db=db, content=r2, readability=readability))
 
         mock_client = _make_mock_client()
@@ -1020,12 +1017,14 @@ class TestProcessArticleReadability:
         """When Readability returns empty html, fall back to BS4."""
         db = TrackingD1()
         r2 = MockR2()
-        readability = MockReadability(response={
-            "title": "",
-            "html": "",
-            "excerpt": "",
-            "byline": None,
-        })
+        readability = MockReadability(
+            response={
+                "title": "",
+                "html": "",
+                "excerpt": "",
+                "byline": None,
+            }
+        )
         env = _browser_env(MockEnv(db=db, content=r2, readability=readability))
 
         mock_client = _make_mock_client()
@@ -1170,7 +1169,9 @@ class TestProcessArticlePreSuppliedContent:
             from articles.processing import process_article
 
             await process_article(
-                "art_presupplied", "https://example.com/paywalled", env,
+                "art_presupplied",
+                "https://example.com/paywalled",
+                env,
             )
 
         # The page URL should NOT have been fetched (only image URLs, if any)
@@ -1225,7 +1226,9 @@ class TestProcessArticlePreSuppliedContent:
             from articles.processing import process_article
 
             await process_article(
-                "art_premium", "https://example.com/premium", env,
+                "art_premium",
+                "https://example.com/premium",
+                env,
             )
 
         # Verify content.html was stored in R2

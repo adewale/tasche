@@ -68,8 +68,20 @@ def extract_article(html: str) -> dict:
 
 # Tags that are never article content.
 _JUNK_TAGS = {
-    "script", "style", "nav", "footer", "header", "aside", "form",
-    "noscript", "iframe", "svg", "button", "input", "select", "textarea",
+    "script",
+    "style",
+    "nav",
+    "footer",
+    "header",
+    "aside",
+    "form",
+    "noscript",
+    "iframe",
+    "svg",
+    "button",
+    "input",
+    "select",
+    "textarea",
 }
 
 # Roles / classes / IDs that signal non-content regions.

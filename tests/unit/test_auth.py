@@ -235,6 +235,7 @@ class TestDisableAuth:
     def setup_method(self) -> None:
         """Reset the module-level dev user cache before each test."""
         import src.auth.dependencies as deps
+
         deps._dev_user = None
 
     def test_returns_dev_user_without_cookie(self) -> None:
@@ -727,7 +728,8 @@ class TestCallbackUserAgentHeader:
 
         # Find the /user call (not /user/emails) and check headers
         user_calls = [
-            c for c in mock_fetch.call_args_list
+            c
+            for c in mock_fetch.call_args_list
             if c.args and "api.github.com/user" in c.args[0] and "emails" not in c.args[0]
         ]
         assert len(user_calls) >= 1, "Expected at least one call to /user"

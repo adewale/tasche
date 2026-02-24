@@ -32,9 +32,7 @@ async def get_stats(
 
     # 1. Total articles
     total_row = await (
-        db.prepare("SELECT COUNT(*) AS cnt FROM articles WHERE user_id = ?")
-        .bind(user_id)
-        .first()
+        db.prepare("SELECT COUNT(*) AS cnt FROM articles WHERE user_id = ?").bind(user_id).first()
     )
     total_articles = (total_row or {}).get("cnt", 0)
 
@@ -122,8 +120,7 @@ async def get_stats(
         .all()
     )
     top_domains = [
-        {"domain": row.get("domain", ""), "count": row.get("cnt", 0)}
-        for row in domain_rows
+        {"domain": row.get("domain", ""), "count": row.get("cnt", 0)} for row in domain_rows
     ]
 
     # 9. Reading streak (consecutive days with at least one archived article)

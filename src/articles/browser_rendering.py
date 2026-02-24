@@ -12,9 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
-BROWSER_API_BASE = (
-    "https://api.cloudflare.com/client/v4/accounts/{account_id}/browser-rendering"
-)
+BROWSER_API_BASE = "https://api.cloudflare.com/client/v4/accounts/{account_id}/browser-rendering"
 
 
 class BrowserRenderingError(Exception):
@@ -119,9 +117,7 @@ async def scrape(
 
     resp = await client.post(endpoint, json=payload, headers=headers, timeout=30.0)
     if resp.status_code != 200:
-        raise BrowserRenderingError(
-            f"Scrape failed: HTTP {resp.status_code} — {resp.text[:500]}"
-        )
+        raise BrowserRenderingError(f"Scrape failed: HTTP {resp.status_code} — {resp.text[:500]}")
 
     data = resp.json()
     # The API returns the rendered HTML in the "result" field.

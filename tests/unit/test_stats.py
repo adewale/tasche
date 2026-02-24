@@ -301,10 +301,7 @@ class TestReadingStreak:
         from datetime import date, timedelta
 
         today = date.today()
-        dates = [
-            {"d": (today - timedelta(days=i)).isoformat()}
-            for i in range(5)
-        ]
+        dates = [{"d": (today - timedelta(days=i)).isoformat()} for i in range(5)]
 
         def execute(sql: str, params: list) -> list:
             if "DISTINCT date" in sql:
@@ -336,10 +333,7 @@ class TestReadingStreak:
         from datetime import date, timedelta
 
         yesterday = date.today() - timedelta(days=1)
-        dates = [
-            {"d": (yesterday - timedelta(days=i)).isoformat()}
-            for i in range(3)
-        ]
+        dates = [{"d": (yesterday - timedelta(days=i)).isoformat()} for i in range(3)]
 
         def execute(sql: str, params: list) -> list:
             if "DISTINCT date" in sql:

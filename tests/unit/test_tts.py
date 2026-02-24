@@ -837,9 +837,7 @@ class TestGenerateSentenceTiming:
         """Generates timing entries with correct structure."""
         from tts.processing import generate_sentence_timing
 
-        result = generate_sentence_timing(
-            "First sentence here. Second sentence there."
-        )
+        result = generate_sentence_timing("First sentence here. Second sentence there.")
         assert "sentences" in result
         assert "words_per_minute" in result
         assert "total_duration_seconds" in result
@@ -918,6 +916,7 @@ class TestTTSProcessingStoresTimingData:
 
         # Verify timing JSON was stored
         import json
+
         assert "articles/art_timing1/audio-timing.json" in r2._store
         timing_raw = r2._store["articles/art_timing1/audio-timing.json"]
         timing = json.loads(timing_raw)

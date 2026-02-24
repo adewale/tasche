@@ -36,10 +36,14 @@ async def _get_or_create_dev_user(db: Any) -> dict[str, Any]:
         return _dev_user
 
     now = datetime.now(UTC).isoformat()
-    await db.prepare(
-        "INSERT OR IGNORE INTO users (id, github_id, email, username, avatar_url, "
-        "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
-    ).bind(_DEV_USER_ID, 0, "dev@localhost", "dev", "", now, now).run()
+    await (
+        db.prepare(
+            "INSERT OR IGNORE INTO users (id, github_id, email, username, avatar_url, "
+            "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+        )
+        .bind(_DEV_USER_ID, 0, "dev@localhost", "dev", "", now, now)
+        .run()
+    )
 
     _dev_user = {
         "user_id": _DEV_USER_ID,

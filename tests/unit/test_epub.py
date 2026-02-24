@@ -148,9 +148,7 @@ class TestGenerateEpub:
 
     def test_content_xhtml_includes_article_html(self) -> None:
         """content.xhtml wraps the article HTML in a valid XHTML document."""
-        epub_bytes = generate_epub(
-            "Test", "Author", "<p>Article paragraph here.</p>"
-        )
+        epub_bytes = generate_epub("Test", "Author", "<p>Article paragraph here.</p>")
         with _parse_epub(epub_bytes) as zf:
             xhtml = zf.read("OEBPS/content.xhtml").decode("utf-8")
             assert "Article paragraph here." in xhtml
@@ -188,9 +186,7 @@ class TestGenerateEpub:
 
     def test_escapes_special_characters_in_title(self) -> None:
         """Special characters in the title are escaped in XML."""
-        epub_bytes = generate_epub(
-            'Title with <script> & "quotes"', "Author", "<p>Text</p>"
-        )
+        epub_bytes = generate_epub('Title with <script> & "quotes"', "Author", "<p>Text</p>")
         with _parse_epub(epub_bytes) as zf:
             opf = zf.read("OEBPS/content.opf").decode("utf-8")
             assert "&lt;script&gt;" in opf

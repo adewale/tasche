@@ -44,6 +44,7 @@ async def _stream_r2_object(
         headers={"Cache-Control": cache_control},
     )
 
+
 # Column list for the list endpoint — excludes large fields like markdown_content.
 _LIST_COLUMNS = (
     "id, user_id, original_url, final_url, canonical_url, domain, title, "
@@ -163,9 +164,7 @@ async def create_article(
             )
         else:
             await (
-                db.prepare(
-                    "UPDATE articles SET status = 'pending', updated_at = ? WHERE id = ?"
-                )
+                db.prepare("UPDATE articles SET status = 'pending', updated_at = ? WHERE id = ?")
                 .bind(now, article_id)
                 .run()
             )
@@ -185,9 +184,13 @@ async def create_article(
                         "'unread', 0, 'pending', ?, ?)"
                     )
                     .bind(
-                        article_id, user_id, url, domain,
+                        article_id,
+                        user_id,
+                        url,
+                        domain,
                         title,
-                        now, now,
+                        now,
+                        now,
                     )
                     .run()
                 )
@@ -199,9 +202,13 @@ async def create_article(
                         "VALUES (?, ?, ?, ?, ?, 'pending', 'unread', 0, ?, ?)"
                     )
                     .bind(
-                        article_id, user_id, url, domain,
+                        article_id,
+                        user_id,
+                        url,
+                        domain,
                         title,
-                        now, now,
+                        now,
+                        now,
                     )
                     .run()
                 )
@@ -225,20 +232,20 @@ async def create_article(
 
     # Enqueue processing job
     try:
-        await env.ARTICLE_QUEUE.send({
-            "type": "article_processing",
-            "article_id": article_id,
-            "url": url,
-            "user_id": user_id,
-        })
+        await env.ARTICLE_QUEUE.send(
+            {
+                "type": "article_processing",
+                "article_id": article_id,
+                "url": url,
+                "user_id": user_id,
+            }
+        )
     except Exception as exc:
         # Mark article as failed if we cannot enqueue the processing job
         fail_now = now_iso()
         try:
             await (
-                db.prepare(
-                    "UPDATE articles SET status = ?, updated_at = ? WHERE id = ?"
-                )
+                db.prepare("UPDATE articles SET status = ?, updated_at = ? WHERE id = ?")
                 .bind("failed", fail_now, article_id)
                 .run()
             )
@@ -330,10 +337,7 @@ async def list_articles(
 
     where = " AND ".join(where_clauses)
     order_by = _VALID_SORT_OPTIONS.get(sort, _VALID_SORT_OPTIONS["newest"])
-    sql = (
-        f"SELECT {_LIST_COLUMNS} FROM articles WHERE {where} "
-        f"ORDER BY {order_by} LIMIT ? OFFSET ?"
-    )
+    sql = f"SELECT {_LIST_COLUMNS} FROM articles WHERE {where} ORDER BY {order_by} LIMIT ? OFFSET ?"
     params.extend([limit, offset])
 
     return await db.prepare(sql).bind(*params).all()
@@ -539,7 +543,9 @@ async def get_article(
     user_id = user["user_id"]
 
     article = await _get_user_article(
-        db, article_id, user_id,
+        db,
+        article_id,
+        user_id,
         fields=_LIST_COLUMNS + ", markdown_content",
     )
     return article
@@ -596,9 +602,7 @@ async def get_article_markdown(
     db = env.DB
     user_id = user["user_id"]
 
-    article = await _get_user_article(
-        db, article_id, user_id, fields="id, markdown_content"
-    )
+    article = await _get_user_article(db, article_id, user_id, fields="id, markdown_content")
 
     markdown_content = article.get("markdown_content")
     if not markdown_content:
@@ -894,33 +898,29 @@ async def retry_article(
     db = env.DB
     user_id = user["user_id"]
 
-    article = await _get_user_article(
-        db, article_id, user_id, fields="id, original_url, status"
-    )
+    article = await _get_user_article(db, article_id, user_id, fields="id, original_url, status")
 
     now = now_iso()
     await (
-        db.prepare(
-            "UPDATE articles SET status = 'pending', updated_at = ? WHERE id = ?"
-        )
+        db.prepare("UPDATE articles SET status = 'pending', updated_at = ? WHERE id = ?")
         .bind(now, article_id)
         .run()
     )
 
     try:
-        await env.ARTICLE_QUEUE.send({
-            "type": "article_processing",
-            "article_id": article_id,
-            "url": article["original_url"],
-            "user_id": user_id,
-        })
+        await env.ARTICLE_QUEUE.send(
+            {
+                "type": "article_processing",
+                "article_id": article_id,
+                "url": article["original_url"],
+                "user_id": user_id,
+            }
+        )
     except Exception as exc:
         fail_now = now_iso()
         try:
             await (
-                db.prepare(
-                    "UPDATE articles SET status = ?, updated_at = ? WHERE id = ?"
-                )
+                db.prepare("UPDATE articles SET status = ?, updated_at = ? WHERE id = ?")
                 .bind("failed", fail_now, article_id)
                 .run()
             )
@@ -953,9 +953,7 @@ async def process_now(
     db = env.DB
     user_id = user["user_id"]
 
-    article = await _get_user_article(
-        db, article_id, user_id, fields="id, original_url, status"
-    )
+    article = await _get_user_article(db, article_id, user_id, fields="id, original_url, status")
 
     try:
         await process_article(article_id, article["original_url"], env)
@@ -1037,9 +1035,7 @@ async def get_article_epub(
     r2 = env.CONTENT
     user_id = user["user_id"]
 
-    article = await _get_user_article(
-        db, article_id, user_id, fields="id, title, author, html_key"
-    )
+    article = await _get_user_article(db, article_id, user_id, fields="id, title, author, html_key")
 
     html_key = article.get("html_key")
     if not html_key:

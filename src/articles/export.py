@@ -22,7 +22,8 @@ router = APIRouter()
 
 
 async def _get_all_articles_with_tags(
-    db: Any, user_id: str,
+    db: Any,
+    user_id: str,
 ) -> list[dict[str, Any]]:
     """Fetch all articles for a user with their associated tags.
 
@@ -30,9 +31,7 @@ async def _get_all_articles_with_tags(
     containing a list of tag name strings.
     """
     articles = await (
-        db.prepare(
-            "SELECT * FROM articles WHERE user_id = ? ORDER BY created_at DESC"
-        )
+        db.prepare("SELECT * FROM articles WHERE user_id = ? ORDER BY created_at DESC")
         .bind(user_id)
         .all()
     )
@@ -85,10 +84,7 @@ def _iso_to_unix(iso_str: str | None) -> int:
 def _escape_html(text: str) -> str:
     """Escape HTML special characters in text."""
     return (
-        text.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
+        text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
     )
 
 
@@ -200,13 +196,9 @@ async def export_epub(
     article_ids = body.get("article_ids", [])
 
     if not isinstance(article_ids, list) or not article_ids:
-        raise HTTPException(
-            status_code=422, detail="article_ids must be a non-empty list"
-        )
+        raise HTTPException(status_code=422, detail="article_ids must be a non-empty list")
     if len(article_ids) > 50:
-        raise HTTPException(
-            status_code=422, detail="Cannot export more than 50 articles at once"
-        )
+        raise HTTPException(status_code=422, detail="Cannot export more than 50 articles at once")
 
     env = request.scope["env"]
     db = env.DB
@@ -221,8 +213,7 @@ async def export_epub(
 
         article = await (
             db.prepare(
-                "SELECT id, title, author, html_key FROM articles "
-                "WHERE id = ? AND user_id = ?"
+                "SELECT id, title, author, html_key FROM articles WHERE id = ? AND user_id = ?"
             )
             .bind(article_id, user_id)
             .first()
@@ -238,11 +229,13 @@ async def export_epub(
         if html_content is None:
             continue
 
-        chapters.append({
-            "title": article.get("title") or "Untitled",
-            "author": article.get("author") or "",
-            "html_content": html_content,
-        })
+        chapters.append(
+            {
+                "title": article.get("title") or "Untitled",
+                "author": article.get("author") or "",
+                "html_content": html_content,
+            }
+        )
 
     if not chapters:
         raise HTTPException(

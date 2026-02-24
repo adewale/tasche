@@ -48,9 +48,7 @@ async def login(request: Request) -> RedirectResponse:
 
     # Generate CSRF state token and store in KV with 10-minute TTL
     state = generate_id(32)
-    await env.SESSIONS.put(
-        f"{OAUTH_STATE_PREFIX}{state}", "1", expirationTtl=OAUTH_STATE_TTL
-    )
+    await env.SESSIONS.put(f"{OAUTH_STATE_PREFIX}{state}", "1", expirationTtl=OAUTH_STATE_TTL)
 
     params = {
         "client_id": client_id,
@@ -109,9 +107,7 @@ async def callback(request: Request) -> RedirectResponse:
     token_data = token_resp.json()
 
     if "error" in token_data:
-        error_detail = token_data.get(
-            "error_description", token_data["error"]
-        )
+        error_detail = token_data.get("error_description", token_data["error"])
         raise HTTPException(
             status_code=400,
             detail=f"GitHub OAuth error: {error_detail}",
@@ -175,9 +171,7 @@ async def callback(request: Request) -> RedirectResponse:
     db = env.DB
     now = now_iso()
 
-    existing = await db.prepare(
-        "SELECT id FROM users WHERE github_id = ?"
-    ).bind(github_id).first()
+    existing = await db.prepare("SELECT id FROM users WHERE github_id = ?").bind(github_id).first()
 
     if existing:
         user_id = existing["id"]

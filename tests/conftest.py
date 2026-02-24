@@ -510,7 +510,7 @@ def parse_update_params(sql: str, params: list[Any]) -> dict[str, Any]:
             result[col] = params[i]
 
     # Remaining params are WHERE clause params
-    result["_where"] = params[len(columns):]
+    result["_where"] = params[len(columns) :]
     return result
 
 
@@ -601,6 +601,7 @@ SAMPLE_HTML = """
 </body>
 </html>
 """
+
 
 def _make_mock_response(
     *,

@@ -413,12 +413,14 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
 
         evt = current_event()
         if evt:
-            evt.set_many({
-                "outcome": "success",
-                "extraction_method": extraction_method,
-                "word_count": word_count,
-                "image_count": len(image_map),
-            })
+            evt.set_many(
+                {
+                    "outcome": "success",
+                    "extraction_method": extraction_method,
+                    "word_count": word_count,
+                    "image_count": len(image_map),
+                }
+            )
 
         # Auto-enqueue TTS if listen_later was requested at save time
         try:
@@ -448,30 +450,36 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
         # Transient network errors — let propagate for queue retry
         evt = current_event()
         if evt:
-            evt.set_many({
-                "outcome": "error",
-                "error.message": traceback.format_exc()[-500:],
-                "retryable": True,
-            })
+            evt.set_many(
+                {
+                    "outcome": "error",
+                    "error.message": traceback.format_exc()[-500:],
+                    "retryable": True,
+                }
+            )
         raise
     except HttpError as exc:
         if exc.status_code >= 500:
             # Server errors are transient — let propagate for queue retry
             evt = current_event()
             if evt:
-                evt.set_many({
-                    "outcome": "error",
-                    "error.message": traceback.format_exc()[-500:],
-                    "retryable": True,
-                })
+                evt.set_many(
+                    {
+                        "outcome": "error",
+                        "error.message": traceback.format_exc()[-500:],
+                        "retryable": True,
+                    }
+                )
             raise
         # Client errors (4xx) are permanent — mark as failed
         evt = current_event()
         if evt:
-            evt.set_many({
-                "outcome": "error",
-                "error.message": traceback.format_exc()[-500:],
-            })
+            evt.set_many(
+                {
+                    "outcome": "error",
+                    "error.message": traceback.format_exc()[-500:],
+                }
+            )
         try:
             await (
                 db.prepare("UPDATE articles SET status = ?, updated_at = ? WHERE id = ?")
@@ -486,10 +494,12 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
         # Other permanent errors (invalid content, etc.) — mark as failed
         evt = current_event()
         if evt:
-            evt.set_many({
-                "outcome": "error",
-                "error.message": traceback.format_exc()[-500:],
-            })
+            evt.set_many(
+                {
+                    "outcome": "error",
+                    "error.message": traceback.format_exc()[-500:],
+                }
+            )
         try:
             await (
                 db.prepare("UPDATE articles SET status = ?, updated_at = ? WHERE id = ?")

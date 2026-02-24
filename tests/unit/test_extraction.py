@@ -324,7 +324,7 @@ class TestHtmlToMarkdown:
 
     def test_code_block_no_language_class(self) -> None:
         """Code blocks without a language class produce plain fenced blocks."""
-        html = '<pre><code>plain code</code></pre>'
+        html = "<pre><code>plain code</code></pre>"
         md = html_to_markdown(html)
         assert md.startswith("```\n")
         assert "plain code" in md

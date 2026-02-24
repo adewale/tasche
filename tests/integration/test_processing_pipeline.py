@@ -67,7 +67,9 @@ REALISTIC_HTML = """
 """
 
 
-def _make_realistic_client(html: str = REALISTIC_HTML, final_url: str = "https://okayfail.com/2025/in-praise-of-dhh.html"):
+def _make_realistic_client(
+    html: str = REALISTIC_HTML, final_url: str = "https://okayfail.com/2025/in-praise-of-dhh.html"
+):
     """Create a mock client that serves realistic HTML and image responses."""
     page_response = _make_mock_response(
         text=html,
@@ -174,9 +176,7 @@ class TestFullPipelineEndToEnd:
         stored_html = r2._store["articles/art_e2e_001/content.html"]
         if isinstance(stored_html, bytes):
             stored_html = stored_html.decode("utf-8")
-        assert "cdn.okayfail.com" not in stored_html, (
-            "Original image URLs should be rewritten"
-        )
+        assert "cdn.okayfail.com" not in stored_html, "Original image URLs should be rewritten"
 
     async def test_first_update_is_processing(self) -> None:
         """The very first D1 operation sets status='processing'."""

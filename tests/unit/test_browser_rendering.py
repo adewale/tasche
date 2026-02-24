@@ -17,8 +17,12 @@ from src.articles.browser_rendering import (
 )
 
 
-def _mock_client(status_code: int = 200, content: bytes = b"image-data",
-                 text: str = "", json_data: dict | None = None) -> AsyncMock:
+def _mock_client(
+    status_code: int = 200,
+    content: bytes = b"image-data",
+    text: str = "",
+    json_data: dict | None = None,
+) -> AsyncMock:
     """Create a mock HTTP client with a .post() that returns a mock response."""
     resp = MagicMock()
     resp.status_code = status_code
@@ -60,8 +64,14 @@ class TestScreenshot:
     async def test_sends_viewport_config(self) -> None:
         """Screenshot sends viewport dimensions in the payload."""
         client = _mock_client()
-        await screenshot(client, "https://example.com", "acct-123", "token-abc",
-                         viewport_width=800, viewport_height=600)
+        await screenshot(
+            client,
+            "https://example.com",
+            "acct-123",
+            "token-abc",
+            viewport_width=800,
+            viewport_height=600,
+        )
         payload = client.post.call_args[1]["json"]
         assert payload["viewport"]["width"] == 800
         assert payload["viewport"]["height"] == 600

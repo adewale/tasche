@@ -60,16 +60,26 @@ class WideEvent:
     """
 
     __slots__ = (
-        "_fields", "_start",
-        "_d1_count", "_d1_ms",
-        "_r2_get_count", "_r2_get_ms",
-        "_r2_put_count", "_r2_put_ms",
-        "_r2_del_count", "_r2_del_ms",
-        "_kv_count", "_kv_ms",
-        "_queue_count", "_queue_ms",
-        "_ai_count", "_ai_ms",
-        "_http_count", "_http_ms",
-        "_svc_count", "_svc_ms",
+        "_fields",
+        "_start",
+        "_d1_count",
+        "_d1_ms",
+        "_r2_get_count",
+        "_r2_get_ms",
+        "_r2_put_count",
+        "_r2_put_ms",
+        "_r2_del_count",
+        "_r2_del_ms",
+        "_kv_count",
+        "_kv_ms",
+        "_queue_count",
+        "_queue_ms",
+        "_ai_count",
+        "_ai_ms",
+        "_http_count",
+        "_http_ms",
+        "_svc_count",
+        "_svc_ms",
     )
 
     def __init__(self, pipeline: str, **initial_fields: Any) -> None:
