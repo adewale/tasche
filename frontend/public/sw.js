@@ -2,7 +2,7 @@
  * Tasche Service Worker
  *
  * Handles:
- * - App shell caching (index.html)
+ * - Network-first for HTML navigation and hashed assets
  * - API response caching for GET requests
  * - Offline fallback with cached content
  * - Background sync for offline mutations
@@ -10,16 +10,11 @@
  * - LRU cache eviction for offline content
  */
 
-const CACHE_NAME = 'tasche-v1';
-const STATIC_CACHE = 'tasche-static-v1';
+const STATIC_CACHE = 'tasche-static-v2';
 const API_CACHE = 'tasche-api-v1';
 const OFFLINE_CACHE = 'tasche-offline-v1';
+const CACHE_NAME = 'tasche-v1';
 const OFFLINE_META_KEY = 'tasche-offline-meta';
-
-const APP_SHELL = [
-  '/',
-  '/manifest.json',
-];
 
 const SYNC_QUEUE_KEY = 'tasche-sync-queue';
 
@@ -29,21 +24,21 @@ const MAX_OFFLINE_ARTICLES = 100;
 // Default number of articles to auto-precache
 const DEFAULT_PRECACHE_LIMIT = 20;
 
+// Timeout for individual fetch requests during precaching (ms)
+const PRECACHE_FETCH_TIMEOUT = 10000;
+
 // ---------------------------------------------------------------------------
-// Install — cache app shell
+// Install — skip waiting, let activate handle cache cleanup
 // ---------------------------------------------------------------------------
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(STATIC_CACHE).then((cache) => {
-      return cache.addAll(APP_SHELL);
-    })
-  );
-  self.skipWaiting();
+  // Don't precache the app shell — network-first handles it.
+  // skipWaiting only after install succeeds (it's a no-op promise here).
+  event.waitUntil(self.skipWaiting());
 });
 
 // ---------------------------------------------------------------------------
-// Activate — clean old caches, preserve sync queue + offline cache
+// Activate — clean old caches, claim clients
 // ---------------------------------------------------------------------------
 
 self.addEventListener('activate', (event) => {
@@ -55,13 +50,12 @@ self.addEventListener('activate', (event) => {
           .filter((key) => !KEEP.includes(key))
           .map((key) => caches.delete(key))
       );
-    })
+    }).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
 // ---------------------------------------------------------------------------
-// Fetch — serve from cache, fall back to network
+// Fetch — route by request type
 // ---------------------------------------------------------------------------
 
 self.addEventListener('fetch', (event) => {
@@ -70,66 +64,96 @@ self.addEventListener('fetch', (event) => {
   // Only handle same-origin requests
   if (url.origin !== self.location.origin) return;
 
-  // Static assets — cache first
-  if (APP_SHELL.includes(url.pathname) || url.pathname.startsWith('/static/') || url.pathname.startsWith('/assets/')) {
-    event.respondWith(cacheFirst(event.request, STATIC_CACHE));
+  // Hashed assets (/assets/index-CnPyFRMI.js) — cache first is safe because
+  // the hash changes on every build, so a cache hit is always correct.
+  if (url.pathname.startsWith('/assets/')) {
+    event.respondWith(cacheFirstHashedAsset(event.request));
     return;
   }
 
-  // API GET requests — network first, then check offline cache, then API cache
+  // Navigation and app shell (/, /manifest.json, /static/*) — network first
+  // so we always get the latest index.html with correct script hashes.
+  if (url.pathname === '/' || url.pathname === '/manifest.json' || url.pathname.startsWith('/static/')) {
+    event.respondWith(networkFirstNavigation(event.request));
+    return;
+  }
+
+  // API GET requests — network first, then offline cache, then API cache
   if (url.pathname.startsWith('/api/') && event.request.method === 'GET') {
     event.respondWith(networkFirstWithOffline(event.request));
     return;
   }
 
-  // Everything else — network only
-  event.respondWith(fetch(event.request));
+  // Everything else — network only (no respondWith, let browser handle)
 });
 
-async function cacheFirst(request, cacheName) {
+/**
+ * Cache-first for hashed assets. The content-hash in the filename guarantees
+ * that a cache hit is always fresh. Cache misses go to network.
+ */
+async function cacheFirstHashedAsset(request) {
   const cached = await caches.match(request);
   if (cached) return cached;
 
   try {
     const response = await fetch(request);
     if (response.ok) {
-      const cache = await caches.open(cacheName);
+      const cache = await caches.open(STATIC_CACHE);
       cache.put(request, response.clone());
     }
     return response;
   } catch (err) {
-    // Return a basic offline page if we can't fetch
-    const fallback = await caches.match('/');
-    if (fallback) return fallback;
+    return new Response('Offline', { status: 503, statusText: 'Service Unavailable' });
+  }
+}
+
+/**
+ * Network-first for navigation requests (index.html, manifest, static assets).
+ * Always tries the network to get the latest HTML with correct script hashes.
+ * Falls back to cache only when offline.
+ */
+async function networkFirstNavigation(request) {
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      const cache = await caches.open(STATIC_CACHE);
+      cache.put(request, response.clone());
+    }
+    return response;
+  } catch (err) {
+    const cached = await caches.match(request);
+    if (cached) return cached;
     return new Response('Offline', { status: 503, statusText: 'Service Unavailable' });
   }
 }
 
 /**
  * Network first, then check the offline cache (explicit saves), then the API cache.
- * This ensures explicitly saved offline content is served even when the API cache
- * entry has been evicted.
+ * Only caches successful (2xx) complete responses.
  */
 async function networkFirstWithOffline(request) {
   try {
     const response = await fetch(request);
     if (response.ok) {
+      // Clone before reading to ensure a complete response is cached
+      const clone = response.clone();
       const cache = await caches.open(API_CACHE);
-      cache.put(request, response.clone());
+      await cache.put(request, clone);
     }
     return response;
   } catch (err) {
     // Try offline cache first (explicit saves)
-    const offlineCached = await caches.open(OFFLINE_CACHE).then((c) => c.match(request));
+    const offlineCache = await caches.open(OFFLINE_CACHE);
+    const offlineCached = await offlineCache.match(request);
     if (offlineCached) {
-      // Update access time for LRU eviction (fire-and-forget)
       updateAccessTime(request.url);
       return offlineCached;
     }
 
-    // Then try API cache (automatic caching)
-    const cached = await caches.match(request);
-    if (cached) return cached;
+    // Then try API cache (automatic caching) — scope to API_CACHE only
+    const apiCache = await caches.open(API_CACHE);
+    const apiCached = await apiCache.match(request);
+    if (apiCached) return apiCached;
 
     return new Response(
       JSON.stringify({ error: 'Offline' }),
@@ -154,7 +178,6 @@ async function replayQueue() {
 
   const remaining = [];
 
-  // Notify clients that sync is starting
   notifyClients({ type: 'SYNC_STATUS', status: 'syncing' });
 
   for (const item of queue) {
@@ -166,18 +189,15 @@ async function replayQueue() {
         credentials: 'include',
       });
       if (!response.ok && response.status >= 500) {
-        // Server error — keep in queue for retry
         remaining.push(item);
       }
     } catch (err) {
-      // Network error — keep in queue
       remaining.push(item);
     }
   }
 
   await saveQueue(remaining);
 
-  // Notify clients about sync result
   if (remaining.length === 0) {
     notifyClients({ type: 'SYNC_STATUS', status: 'synced' });
   } else {
@@ -222,48 +242,52 @@ async function getOfflineMeta() {
 }
 
 async function saveOfflineMeta(meta) {
-  const cache = await caches.open(OFFLINE_CACHE);
-  await cache.put(
-    OFFLINE_META_KEY,
-    new Response(JSON.stringify(meta), {
-      headers: { 'Content-Type': 'application/json' },
-    })
-  );
+  try {
+    const cache = await caches.open(OFFLINE_CACHE);
+    await cache.put(
+      OFFLINE_META_KEY,
+      new Response(JSON.stringify(meta), {
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+  } catch {
+    // Quota exceeded or other storage error — log but don't crash
+  }
 }
 
 /**
  * Update access time for an article when served from offline cache (true LRU).
+ * Awaits the full save chain so errors are properly contained.
  */
-function updateAccessTime(url) {
-  // Extract article ID from URL like /api/articles/{id} or /api/articles/{id}/content
-  const match = url.match(/\/api\/articles\/([^/]+)/);
-  if (!match) return;
-  const articleId = match[1];
+async function updateAccessTime(url) {
+  try {
+    const match = url.match(/\/api\/articles\/([^/]+)/);
+    if (!match) return;
+    const articleId = match[1];
 
-  getOfflineMeta().then(function (meta) {
+    const meta = await getOfflineMeta();
     if (meta[articleId]) {
       meta[articleId].accessedAt = Date.now();
-      saveOfflineMeta(meta);
+      await saveOfflineMeta(meta);
     }
-  }).catch(function () {});
+  } catch {
+    // Non-critical — LRU ordering may be slightly stale
+  }
 }
 
 /**
  * Evict the least recently used articles if the count exceeds MAX_OFFLINE_ARTICLES.
- * Each entry in meta is: { [articleId]: { accessedAt, hasContent, hasAudio } }
  */
 async function evictIfNeeded(meta) {
   const ids = Object.keys(meta);
   if (ids.length <= MAX_OFFLINE_ARTICLES) return meta;
 
-  // Sort by accessedAt ascending (oldest first)
   ids.sort((a, b) => (meta[a].accessedAt || 0) - (meta[b].accessedAt || 0));
 
   const cache = await caches.open(OFFLINE_CACHE);
   const toEvict = ids.slice(0, ids.length - MAX_OFFLINE_ARTICLES);
 
   for (const id of toEvict) {
-    // Delete all cached URLs for this article
     await cache.delete('/api/articles/' + id);
     await cache.delete('/api/articles/' + id + '/content');
     await cache.delete('/api/articles/' + id + '/audio');
@@ -282,6 +306,26 @@ async function notifyClients(message) {
   for (const client of clients) {
     client.postMessage(message);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Fetch with timeout helper
+// ---------------------------------------------------------------------------
+
+function fetchWithTimeout(url, options, timeoutMs) {
+  return new Promise(function (resolve, reject) {
+    var timer = setTimeout(function () {
+      reject(new Error('Fetch timeout: ' + url));
+    }, timeoutMs);
+
+    fetch(url, options).then(function (resp) {
+      clearTimeout(timer);
+      resolve(resp);
+    }).catch(function (err) {
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -333,7 +377,6 @@ self.addEventListener('message', (event) => {
 async function handleQueueRequest(event) {
   const queue = await getQueue();
   const newReq = event.data.request;
-  // Deduplicate: if a request with the same URL and method exists, replace it
   const existingIndex = queue.findIndex(
     (item) => item.url === newReq.url && item.method === newReq.method
   );
@@ -346,7 +389,6 @@ async function handleQueueRequest(event) {
 }
 
 async function handleCacheArticles(event) {
-  // Pre-cache article detail endpoints for offline reading
   const articleIds = event.data.articleIds || [];
   const cache = await caches.open(API_CACHE);
   for (const id of articleIds) {
@@ -354,7 +396,7 @@ async function handleCacheArticles(event) {
     try {
       const cached = await cache.match(url);
       if (!cached) {
-        const resp = await fetch(url, { credentials: 'include' });
+        const resp = await fetchWithTimeout(url, { credentials: 'include' }, PRECACHE_FETCH_TIMEOUT);
         if (resp.ok) cache.put(url, resp);
       }
     } catch (e) {
@@ -374,24 +416,20 @@ async function handleSaveForOffline(event) {
   const contentUrl = '/api/articles/' + articleId + '/content';
 
   try {
-    // Fetch and cache article detail JSON
     const detailResp = await fetch(detailUrl, { credentials: 'include' });
     if (detailResp.ok) {
       await cache.put(detailUrl, detailResp.clone());
     }
 
-    // Fetch and cache article content HTML
     const contentResp = await fetch(contentUrl, { credentials: 'include' });
     if (contentResp.ok) {
       await cache.put(contentUrl, contentResp.clone());
     }
 
-    // Only mark as cached if both responses were OK
     if (!detailResp.ok || !contentResp.ok) {
       throw new Error('Failed to cache: detail=' + detailResp.status + ' content=' + contentResp.status);
     }
 
-    // Update metadata
     const existing = meta[articleId] || {};
     meta[articleId] = {
       ...existing,
@@ -399,11 +437,9 @@ async function handleSaveForOffline(event) {
       accessedAt: Date.now(),
     };
 
-    // Evict old entries if needed
     const cleaned = await evictIfNeeded(meta);
     await saveOfflineMeta(cleaned);
 
-    // Notify the requesting client
     if (event.source) {
       event.source.postMessage({
         type: 'OFFLINE_SAVED',
@@ -440,7 +476,6 @@ async function handleSaveAudioOffline(event) {
       throw new Error('Failed to fetch audio: ' + audioResp.status);
     }
 
-    // Update metadata
     const existing = meta[articleId] || {};
     meta[articleId] = {
       ...existing,
@@ -489,7 +524,7 @@ async function handleCheckOfflineStatus(event) {
 }
 
 // ---------------------------------------------------------------------------
-// Auto-precache — automatically cache recent unread articles
+// Auto-precache — automatically cache recent unread articles with timeouts
 // ---------------------------------------------------------------------------
 
 async function handleAutoPrecache(event) {
@@ -499,9 +534,8 @@ async function handleAutoPrecache(event) {
   var failed = 0;
 
   try {
-    // Fetch list of recent unread articles
     var listUrl = '/api/articles?reading_status=unread&limit=' + limit + '&sort=created_at:desc';
-    var listResp = await fetch(listUrl, { credentials: 'include' });
+    var listResp = await fetchWithTimeout(listUrl, { credentials: 'include' }, PRECACHE_FETCH_TIMEOUT);
     if (!listResp.ok) {
       throw new Error('Failed to fetch article list: ' + listResp.status);
     }
@@ -521,18 +555,15 @@ async function handleAutoPrecache(event) {
     var cache = await caches.open(OFFLINE_CACHE);
     var meta = await getOfflineMeta();
 
-    // Only cache articles that are ready (have content) and not already cached
     for (var i = 0; i < articles.length; i++) {
       var article = articles[i];
       if (!article.id) continue;
 
-      // Skip articles that are still processing
       if (article.status && article.status !== 'ready') {
         skipped++;
         continue;
       }
 
-      // Skip if already in offline cache with content
       if (meta[article.id] && meta[article.id].hasContent) {
         skipped++;
         continue;
@@ -542,13 +573,13 @@ async function handleAutoPrecache(event) {
         var detailUrl = '/api/articles/' + article.id;
         var contentUrl = '/api/articles/' + article.id + '/content';
 
-        var detailResp = await fetch(detailUrl, { credentials: 'include' });
+        var detailResp = await fetchWithTimeout(detailUrl, { credentials: 'include' }, PRECACHE_FETCH_TIMEOUT);
         if (!detailResp.ok) {
           failed++;
           continue;
         }
 
-        var contentResp = await fetch(contentUrl, { credentials: 'include' });
+        var contentResp = await fetchWithTimeout(contentUrl, { credentials: 'include' }, PRECACHE_FETCH_TIMEOUT);
         if (!contentResp.ok) {
           failed++;
           continue;
@@ -571,7 +602,6 @@ async function handleAutoPrecache(event) {
       }
     }
 
-    // Evict old entries if over the limit
     meta = await evictIfNeeded(meta);
     await saveOfflineMeta(meta);
 
@@ -600,14 +630,12 @@ async function handleGetCacheStats(event) {
     var articleIds = Object.keys(meta);
     var articleCount = articleIds.length;
 
-    // Estimate cache size by checking stored responses
     var totalSize = 0;
     var cache = await caches.open(OFFLINE_CACHE);
     var keys = await cache.keys();
 
     for (var i = 0; i < keys.length; i++) {
       var key = keys[i];
-      // Skip the metadata key
       if (key.url && key.url.endsWith(OFFLINE_META_KEY)) continue;
       try {
         var resp = await cache.match(key);

@@ -192,22 +192,10 @@ from tts.routes import router as tts_router  # noqa: E402
 
 app.include_router(tts_router, prefix="/api/articles", tags=["tts"])
 
-# Highlights router
-from highlights.routes import article_highlights_router  # noqa: E402
-from highlights.routes import router as highlights_router  # noqa: E402
-
-app.include_router(highlights_router, prefix="/api/highlights", tags=["highlights"])
-app.include_router(article_highlights_router, prefix="/api/articles", tags=["highlights"])
-
 # Stats router
 from stats.routes import router as stats_router  # noqa: E402
 
 app.include_router(stats_router, prefix="/api/stats", tags=["stats"])
-
-# Feeds router
-from feeds.routes import router as feeds_router  # noqa: E402
-
-app.include_router(feeds_router, prefix="/api/feeds", tags=["feeds"])
 
 
 # ---------------------------------------------------------------------------
@@ -351,25 +339,6 @@ class Default(WorkerEntrypoint):
                 checked += 1
 
             evt.set("articles_checked", checked)
-
-            # Refresh all active feeds for all users with feeds
-            feeds_checked = 0
-            try:
-                from feeds.processing import refresh_all_feeds
-
-                user_rows = await db.prepare(
-                    "SELECT DISTINCT user_id FROM feeds WHERE is_active = 1"
-                ).all()
-
-                for user_row in user_rows:
-                    uid = user_row.get("user_id")
-                    if uid:
-                        result = await refresh_all_feeds(env, uid)
-                        feeds_checked += result.get("feeds_checked", 0)
-            except Exception:
-                evt.set("feed_refresh_error", traceback.format_exc()[-500:])
-
-            evt.set("feeds_checked", feeds_checked)
             evt.set("outcome", "success")
 
         except Exception as exc:

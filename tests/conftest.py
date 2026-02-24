@@ -431,62 +431,6 @@ class ArticleFactory:
 
 
 # ---------------------------------------------------------------------------
-# Feed factory
-# ---------------------------------------------------------------------------
-
-
-def make_feed(**overrides: Any) -> dict[str, Any]:
-    """Create a feed dict with sensible defaults.
-
-    Tests only need to override the fields they care about::
-
-        feed = make_feed(title="My Feed")
-    """
-    defaults: dict[str, Any] = {
-        "id": "feed_001",
-        "user_id": "user_001",
-        "url": "https://example.com/feed.xml",
-        "title": "Example Feed",
-        "site_url": "https://example.com",
-        "last_fetched_at": "2025-01-01T00:00:00",
-        "last_entry_published": None,
-        "fetch_interval_minutes": 60,
-        "is_active": 1,
-        "created_at": "2025-01-01T00:00:00",
-        "updated_at": "2025-01-01T00:00:00",
-    }
-    defaults.update(overrides)
-    return defaults
-
-
-# ---------------------------------------------------------------------------
-# Highlight factory
-# ---------------------------------------------------------------------------
-
-
-def make_highlight(**overrides: Any) -> dict[str, Any]:
-    """Create a highlight dict with sensible defaults.
-
-    Tests only need to override the fields they care about::
-
-        h = make_highlight(color="green", note="important")
-    """
-    defaults: dict[str, Any] = {
-        "id": "hl_001",
-        "article_id": "art_001",
-        "text": "highlighted text",
-        "note": "",
-        "prefix": "some ",
-        "suffix": " here",
-        "color": "yellow",
-        "created_at": "2025-01-01T00:00:00",
-        "updated_at": "2025-01-01T00:00:00",
-    }
-    defaults.update(overrides)
-    return defaults
-
-
-# ---------------------------------------------------------------------------
 # Shared user data constant
 # ---------------------------------------------------------------------------
 

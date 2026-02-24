@@ -1,6 +1,6 @@
 import { user, isOffline, syncStatus } from '../state.js';
 import { performLogout } from '../api.js';
-import { IconSearch, IconTag, IconSettings, IconHighlight, IconShuffle, IconBarChart, IconRss } from './Icons.jsx';
+import { IconSearch, IconTag, IconSettings, IconBarChart } from './Icons.jsx';
 
 export function Header() {
   const u = user.value;
@@ -41,17 +41,8 @@ export function Header() {
             <a href="#/search" class="btn btn-icon" title="Search">
               <IconSearch />
             </a>
-            <a href="#/highlights" class="btn btn-icon" title="Highlights">
-              <IconHighlight />
-            </a>
-            <a href="#/review" class="btn btn-icon" title="Review">
-              <IconShuffle />
-            </a>
             <a href="#/stats" class="btn btn-icon" title="Stats">
               <IconBarChart />
-            </a>
-            <a href="#/feeds" class="btn btn-icon" title="Feeds">
-              <IconRss />
             </a>
             <a href="#/tags" class="btn btn-icon" title="Tags">
               <IconTag />

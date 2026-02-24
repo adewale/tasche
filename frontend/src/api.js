@@ -220,34 +220,6 @@ export function checkOriginal(articleId) {
   return request('POST', '/api/articles/' + articleId + '/check-original');
 }
 
-// Highlights
-export function getHighlights(articleId) {
-  return request('GET', '/api/articles/' + articleId + '/highlights');
-}
-
-export function createHighlight(articleId, data) {
-  return request('POST', '/api/articles/' + articleId + '/highlights', data);
-}
-
-export function updateHighlight(id, data) {
-  return request('PATCH', '/api/highlights/' + id, data);
-}
-
-export function deleteHighlight(id) {
-  return request('DELETE', '/api/highlights/' + id);
-}
-
-export function getRandomHighlight() {
-  return request('GET', '/api/highlights/random');
-}
-
-export function getAllHighlights(limit, offset) {
-  var qs = new URLSearchParams();
-  if (limit) qs.set('limit', limit);
-  if (offset) qs.set('offset', offset);
-  return request('GET', '/api/highlights?' + qs.toString());
-}
-
 // TTS / Audio
 export function listenLater(articleId) {
   return request('POST', '/api/articles/' + articleId + '/listen-later');
@@ -409,31 +381,6 @@ export function getCacheStats() {
       type: 'GET_CACHE_STATS',
     });
   });
-}
-
-// Feeds
-export function getFeeds() {
-  return request('GET', '/api/feeds');
-}
-
-export function addFeed(url) {
-  return request('POST', '/api/feeds', { url });
-}
-
-export function deleteFeed(id) {
-  return request('DELETE', '/api/feeds/' + id);
-}
-
-export function refreshFeed(id) {
-  return request('POST', '/api/feeds/' + id + '/refresh');
-}
-
-export function refreshAllFeeds() {
-  return request('POST', '/api/feeds/refresh-all');
-}
-
-export function importOPML(opml) {
-  return request('POST', '/api/feeds/import-opml', { opml });
 }
 
 // Trigger sync queue replay
