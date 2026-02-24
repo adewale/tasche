@@ -358,7 +358,7 @@ input, textarea {
 .article-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
 .article-card {
@@ -373,6 +373,10 @@ input, textarea {
   display: block;
   position: relative;
   overflow: hidden;
+}
+
+.article-card--reading {
+  border-left: 3px solid var(--accent);
 }
 
 .article-card--processing {
@@ -412,18 +416,27 @@ input, textarea {
 
 .article-card-favicon {
   flex-shrink: 0;
-  width: 32px;
   display: flex;
   align-items: flex-start;
   padding-top: 2px;
 }
 
-.article-card-favicon img {
-  border-radius: var(--radius-sm);
+.favicon-container {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.favicon-container img {
+  border-radius: 2px;
 }
 
 .article-card--compact .article-card-body {
-  gap: 8px;
+  gap: 10px;
 }
 
 .processing-overlay {
@@ -453,7 +466,7 @@ input, textarea {
 }
 
 .article-card-title {
-  font-size: 1rem;
+  font-size: 1.0625rem;
   font-weight: 600;
   line-height: 1.4;
   margin-bottom: 4px;
@@ -468,21 +481,15 @@ input, textarea {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   font-size: 0.8125rem;
   color: var(--text-secondary);
 }
 
-.article-card-domain {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+.article-card-meta > span + span::before {
+  content: '\00b7';
+  margin-right: 6px;
   color: var(--text-muted);
-}
-
-.article-card-domain .favicon {
-  flex-shrink: 0;
-  border-radius: 2px;
 }
 
 .article-card-excerpt {
@@ -548,46 +555,23 @@ input, textarea {
   color: var(--accent);
 }
 
-.reading-status-badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.reading-status-badge.unread {
-  background: var(--accent-light);
-  color: var(--accent);
-}
-
-.reading-status-badge.reading {
-  background: var(--status-reading-bg);
-  color: var(--status-reading-text);
-}
-
-.reading-status-badge.archived {
-  background: var(--bg-secondary);
-  color: var(--text-muted);
-}
 
 /* Reading progress */
 
 .reading-progress-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
   height: 3px;
-  background: var(--border);
-  border-radius: 2px;
   overflow: hidden;
-  margin-top: 8px;
 }
 
 .reading-progress-bar-fill {
   height: 100%;
   background: var(--accent);
   transition: width 0.3s ease;
-  border-radius: 2px;
+  border-radius: 0 2px 0 0;
 }
 
 /* Reader */
@@ -1641,7 +1625,7 @@ mark {
   }
 
   .article-card-title {
-    font-size: 1.0625rem;
+    font-size: 1.125rem;
   }
 
   .article-card-thumbnail {

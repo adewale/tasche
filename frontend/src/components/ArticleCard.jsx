@@ -119,6 +119,7 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
   if (isProcessing) cardClass += ' article-card--processing';
   if (selectMode) cardClass += ' article-card--selectable';
   if (selected) cardClass += ' article-card--checked';
+  if (statusClass === 'reading') cardClass += ' article-card--reading';
 
   return (
     <div class={cardClass} onClick={handleClick}>
@@ -147,36 +148,24 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
           </div>
         ) : faviconSrc ? (
           <div class="article-card-favicon">
-            <img
-              src={faviconSrc}
-              alt=""
-              width="24"
-              height="24"
-              loading="lazy"
-              onError={function (e) { e.target.parentNode.style.display = 'none'; }}
-            />
+            <div class="favicon-container">
+              <img
+                src={faviconSrc}
+                alt=""
+                width="16"
+                height="16"
+                loading="lazy"
+                onError={function (e) { e.target.closest('.article-card-favicon').style.display = 'none'; }}
+              />
+            </div>
           </div>
         ) : null}
         <div class="article-card-content">
           <div class="article-card-title">{a.title || a.original_url}</div>
           <div class="article-card-meta">
-            {a.domain && (
-              <span class="article-card-domain">
-                <img
-                  class="favicon"
-                  src={'https://www.google.com/s2/favicons?domain=' + a.domain + '&sz=16'}
-                  alt=""
-                  width="14"
-                  height="14"
-                  loading="lazy"
-                  onError={function (e) { e.target.style.display = 'none'; }}
-                />
-                {a.domain}
-              </span>
-            )}
+            {a.domain && <span>{a.domain}</span>}
             {readingTime && <span>{readingTime}</span>}
             <span>{formatDate(a.created_at)}</span>
-            <span class={'reading-status-badge ' + statusClass}>{statusClass}</span>
             {offlineSaved && (
               <span class="offline-indicator" title="Available offline">
                 <IconCheck size={10} />
@@ -186,14 +175,6 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
           {a.excerpt && <div class="article-card-excerpt">{a.excerpt}</div>}
         </div>
       </div>
-      {progress > 0 && (
-        <div class="reading-progress-bar">
-          <div
-            class="reading-progress-bar-fill"
-            style={{ width: Math.round(progress * 100) + '%' }}
-          />
-        </div>
-      )}
       <div class="article-card-footer">
         <div class="article-card-tags">
           {cardTags.map(function (tag) {
@@ -249,6 +230,14 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
           </button>
         </div>
       </div>
+      {progress > 0 && (
+        <div class="reading-progress-bar">
+          <div
+            class="reading-progress-bar-fill"
+            style={{ width: Math.round(progress * 100) + '%' }}
+          />
+        </div>
+      )}
     </div>
   );
 }

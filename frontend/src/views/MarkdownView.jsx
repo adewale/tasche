@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'preact/hooks';
+import { useState, useEffect, useMemo } from 'preact/hooks';
 import { Header } from '../components/Header.jsx';
 import { EmptyState, LoadingSpinner } from '../components/EmptyState.jsx';
 import { addToast } from '../state.js';
@@ -12,6 +12,15 @@ export function MarkdownView({ id }) {
   const [loadError, setLoadError] = useState(null);
   const [copied, setCopied] = useState(false);
   const [viewMode, setViewMode] = useState('rendered');
+
+  const renderedHtml = useMemo(function () {
+    if (!markdown) return null;
+    try {
+      return renderMarkdown(markdown);
+    } catch (e) {
+      return null;
+    }
+  }, [markdown]);
 
   useEffect(function () {
     let cancelled = false;
@@ -106,10 +115,10 @@ export function MarkdownView({ id }) {
             </button>
           </div>
         </div>
-        {viewMode === 'rendered' ? (
+        {viewMode === 'rendered' && renderedHtml !== null ? (
           <div
             class="reader-content markdown-view-rendered"
-            dangerouslySetInnerHTML={{ __html: renderMarkdown(markdown) }}
+            dangerouslySetInnerHTML={{ __html: renderedHtml }}
           />
         ) : (
           <pre class="markdown-view-content">{markdown}</pre>

@@ -123,20 +123,7 @@ export function Search() {
                 <HighlightedText text={a.title || a.original_url} query={currentQuery} />
               </div>
               <div class="article-card-meta">
-                {a.domain && (
-                  <span class="article-card-domain">
-                    <img
-                      class="favicon"
-                      src={'https://www.google.com/s2/favicons?domain=' + a.domain + '&sz=16'}
-                      alt=""
-                      width="14"
-                      height="14"
-                      loading="lazy"
-                      onError={function (e) { e.target.style.display = 'none'; }}
-                    />
-                    {a.domain}
-                  </span>
-                )}
+                {a.domain && <span>{a.domain}</span>}
                 <span>{formatDate(a.created_at)}</span>
               </div>
               {a.excerpt && (

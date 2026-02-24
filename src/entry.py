@@ -11,7 +11,6 @@ Queue messages are dispatched to the appropriate handler based on the
 from __future__ import annotations
 
 import json
-import traceback
 
 from wide_event import begin_event, current_event, emit_event
 from wrappers import SafeEnv, _to_py_safe
