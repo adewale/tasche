@@ -2329,3 +2329,81 @@ class TestBatchDeleteArticles:
             json={"article_ids": ["art_1"]},
         )
         assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# GET /api/articles/{article_id}/markdown — Serve article markdown
+# ---------------------------------------------------------------------------
+
+
+class TestGetArticleMarkdown:
+    async def test_returns_markdown_content(self) -> None:
+        """GET /api/articles/{id}/markdown returns stored markdown as text."""
+        article = ArticleFactory.create(
+            id="art_md",
+            markdown_content="# Hello\n\nWorld",
+        )
+
+        def execute(sql, params):
+            if "SELECT" in sql:
+                return [article]
+            return []
+
+        env = MockEnv(db=MockD1(execute=execute))
+        client, sid = await _authenticated_client(env)
+        resp = client.get(
+            "/api/articles/art_md/markdown",
+            cookies={COOKIE_NAME: sid},
+        )
+        assert resp.status_code == 200
+        assert resp.text == "# Hello\n\nWorld"
+        assert "text/markdown" in resp.headers["content-type"]
+
+    async def test_returns_cache_header(self) -> None:
+        """GET /api/articles/{id}/markdown includes Cache-Control header."""
+        article = ArticleFactory.create(
+            id="art_md_cache",
+            markdown_content="# Cached",
+        )
+
+        def execute(sql, params):
+            if "SELECT" in sql:
+                return [article]
+            return []
+
+        env = MockEnv(db=MockD1(execute=execute))
+        client, sid = await _authenticated_client(env)
+        resp = client.get(
+            "/api/articles/art_md_cache/markdown",
+            cookies={COOKIE_NAME: sid},
+        )
+        assert resp.status_code == 200
+        assert "private" in resp.headers.get("cache-control", "")
+
+    async def test_returns_404_when_no_markdown(self) -> None:
+        """GET /api/articles/{id}/markdown returns 404 when markdown is empty."""
+        article = ArticleFactory.create(
+            id="art_nomd",
+            markdown_content=None,
+        )
+
+        def execute(sql, params):
+            if "SELECT" in sql:
+                return [article]
+            return []
+
+        env = MockEnv(db=MockD1(execute=execute))
+        client, sid = await _authenticated_client(env)
+        resp = client.get(
+            "/api/articles/art_nomd/markdown",
+            cookies={COOKIE_NAME: sid},
+        )
+        assert resp.status_code == 404
+
+    async def test_requires_auth(self) -> None:
+        """GET /api/articles/{id}/markdown returns 401 without auth."""
+        env = MockEnv()
+        app = _make_app(env)
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.get("/api/articles/some-id/markdown")
+        assert resp.status_code == 401
