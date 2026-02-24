@@ -190,6 +190,44 @@ def _make_excerpt(html: str, max_length: int = 300) -> str:
     return truncated + "..."
 
 
+def _unwrap_layout_tables(soup: BeautifulSoup) -> None:
+    """Replace layout tables with their cell contents in-place.
+
+    Old-school HTML (e.g. paulgraham.com) uses nested ``<table>`` elements
+    for page layout.  ``markdownify`` converts these into markdown table
+    syntax, producing unreadable output.
+
+    Heuristic: a table is *layout* if >=50% of its own (non-nested) cells
+    are empty.  Only counts cells belonging directly to the table, not
+    cells inside nested sub-tables.  Process innermost tables first so
+    nested layout tables unwind correctly.
+    """
+    # Process innermost tables first (reverse avoids mutation issues)
+    for table in reversed(soup.find_all("table")):
+        # Collect only this table's own rows (not from nested tables)
+        own_cells = []
+        for tr in table.find_all("tr", recursive=False):
+            own_cells.extend(tr.find_all(["td", "th"], recursive=False))
+        # Also check rows inside direct thead/tbody/tfoot
+        for section in table.find_all(["thead", "tbody", "tfoot"], recursive=False):
+            for tr in section.find_all("tr", recursive=False):
+                own_cells.extend(tr.find_all(["td", "th"], recursive=False))
+        if not own_cells:
+            table.unwrap()
+            continue
+        # Single-cell tables are always layout wrappers, never data
+        if len(own_cells) <= 1:
+            table.unwrap()
+            continue
+        empty = sum(1 for c in own_cells if not c.get_text(strip=True))
+        if empty >= len(own_cells) * 0.5:
+            table.unwrap()
+    # Clean up any orphaned row/cell tags left after unwrapping
+    for tag in soup.find_all(["tr", "td", "th", "thead", "tbody", "tfoot"]):
+        if not tag.find_parent("table"):
+            tag.unwrap()
+
+
 def html_to_markdown(html: str) -> str:
     """Convert clean HTML to Markdown using markdownify.
 
@@ -203,11 +241,10 @@ def html_to_markdown(html: str) -> str:
     str
         Markdown representation of the HTML content.
     """
-    # Pre-strip script and style tags via BeautifulSoup since markdownify's
-    # strip parameter may not handle them reliably.
     soup = BeautifulSoup(html, "html.parser")
     for tag in soup(["script", "style"]):
         tag.decompose()
+    _unwrap_layout_tables(soup)
     cleaned_html = str(soup)
 
     md = markdownify(cleaned_html, heading_style="ATX")

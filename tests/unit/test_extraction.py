@@ -7,8 +7,11 @@ and image path rewriting.
 
 from __future__ import annotations
 
+from bs4 import BeautifulSoup
+
 from src.articles.extraction import (
     _extract_article_bs4,
+    _unwrap_layout_tables,
     calculate_reading_time,
     count_words,
     extract_article,
@@ -254,6 +257,183 @@ class TestHtmlToMarkdown:
         md = html_to_markdown(html)
         assert "alert" not in md
         assert "Text" in md
+
+    def test_layout_tables_produce_clean_markdown(self) -> None:
+        """Layout tables should not appear as markdown table syntax."""
+        html = """
+        <table><tr><td>
+            <table><tr><td></td><td>
+                <h1>My Article</h1>
+                <p>Some real content here.</p>
+            </td></tr></table>
+        </td></tr></table>
+        """
+        md = html_to_markdown(html)
+        assert "# My Article" in md
+        assert "Some real content here." in md
+        # No table pipes should remain
+        assert "|" not in md
+
+    def test_data_tables_preserved_in_markdown(self) -> None:
+        """Real data tables (multi-cell, mostly filled) are kept."""
+        html = """
+        <p>Here is a comparison:</p>
+        <table>
+            <tr><th>Name</th><th>Value</th></tr>
+            <tr><td>Alpha</td><td>100</td></tr>
+            <tr><td>Beta</td><td>200</td></tr>
+        </table>
+        """
+        md = html_to_markdown(html)
+        assert "Alpha" in md
+        assert "Beta" in md
+        # Data tables should produce pipe-delimited markdown
+        assert "|" in md
+
+    def test_paulgraham_style_nested_layout_tables(self) -> None:
+        """Deeply nested single-cell layout tables produce prose, not table syntax."""
+        html = """
+        <table border="0" cellpadding="0" cellspacing="0"><tr><td>
+            <table border="0"><tr><td></td><td>
+                <table><tr><td>
+                    <h2>Taste for Makers</h2>
+                    <p>February 2002</p>
+                    <p>I was talking recently to a friend who teaches at MIT.</p>
+                    <p>His students were not able to distinguish good design from bad.</p>
+                </td></tr></table>
+            </td></tr></table>
+        </td></tr></table>
+        """
+        md = html_to_markdown(html)
+        assert "Taste for Makers" in md
+        assert "talking recently" in md
+        # Should have no table pipe characters at all
+        assert "|" not in md
+
+    def test_markdown_no_excessive_whitespace(self) -> None:
+        """Converted markdown should not have 3+ consecutive blank lines."""
+        html = """
+        <p>First paragraph.</p>
+        <br><br><br><br>
+        <p>Second paragraph.</p>
+        """
+        md = html_to_markdown(html)
+        assert "\n\n\n" not in md
+
+
+# =========================================================================
+# _unwrap_layout_tables (direct unit tests)
+# =========================================================================
+
+
+class TestUnwrapLayoutTables:
+    def test_unwraps_single_cell_table(self) -> None:
+        """A table with exactly one cell is always a layout wrapper."""
+        html = "<table><tr><td><p>Content</p></td></tr></table>"
+        soup = BeautifulSoup(html, "html.parser")
+        _unwrap_layout_tables(soup)
+        assert soup.find("table") is None
+        assert "Content" in soup.get_text()
+
+    def test_unwraps_majority_empty_cells(self) -> None:
+        """Tables where >50% of cells are empty are layout tables."""
+        html = """
+        <table>
+            <tr><td></td><td></td><td>Content</td></tr>
+        </table>
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        _unwrap_layout_tables(soup)
+        assert soup.find("table") is None
+        assert "Content" in soup.get_text()
+
+    def test_preserves_data_table(self) -> None:
+        """Tables where most cells have content are kept intact."""
+        html = """
+        <table>
+            <tr><th>Name</th><th>Age</th></tr>
+            <tr><td>Alice</td><td>30</td></tr>
+            <tr><td>Bob</td><td>25</td></tr>
+        </table>
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        _unwrap_layout_tables(soup)
+        assert soup.find("table") is not None
+
+    def test_unwraps_empty_table(self) -> None:
+        """A table with no cells at all is unwrapped."""
+        html = "<table></table>"
+        soup = BeautifulSoup(html, "html.parser")
+        _unwrap_layout_tables(soup)
+        assert soup.find("table") is None
+
+    def test_nested_layout_tables_unwrap_completely(self) -> None:
+        """Nested single-cell layout tables all get removed."""
+        html = """
+        <table><tr><td>
+            <table><tr><td>
+                <p>Deep content</p>
+            </td></tr></table>
+        </td></tr></table>
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        _unwrap_layout_tables(soup)
+        assert soup.find("table") is None
+        assert "Deep content" in soup.get_text()
+
+    def test_cleans_orphaned_row_tags(self) -> None:
+        """After unwrapping tables, orphaned tr/td/th tags are also unwrapped."""
+        html = "<table><tr><td><p>Text</p></td></tr></table>"
+        soup = BeautifulSoup(html, "html.parser")
+        _unwrap_layout_tables(soup)
+        assert soup.find("tr") is None
+        assert soup.find("td") is None
+        assert "Text" in soup.get_text()
+
+    def test_preserves_data_table_with_one_empty_cell(self) -> None:
+        """A 2x2 table with only one empty cell (25%) is data, not layout."""
+        html = """
+        <table>
+            <tr><td>A</td><td>B</td></tr>
+            <tr><td>C</td><td></td></tr>
+        </table>
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        _unwrap_layout_tables(soup)
+        # 1 empty out of 4 = 25% < 50%, so table is preserved
+        assert soup.find("table") is not None
+
+    def test_handles_tbody_wrapped_rows(self) -> None:
+        """Tables with <tbody> wrappers around rows are handled correctly."""
+        html = """
+        <table><tbody>
+            <tr><td></td><td></td></tr>
+            <tr><td>X</td><td></td></tr>
+        </tbody></table>
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        _unwrap_layout_tables(soup)
+        # 3 empty out of 4 = 75% > 50%, unwrapped
+        assert soup.find("table") is None
+        assert "X" in soup.get_text()
+
+    def test_mixed_layout_and_data_tables(self) -> None:
+        """A layout wrapper around a real data table: layout removed, data kept."""
+        html = """
+        <table><tr><td>
+            <table>
+                <tr><th>Col1</th><th>Col2</th></tr>
+                <tr><td>Val1</td><td>Val2</td></tr>
+            </table>
+        </td></tr></table>
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        _unwrap_layout_tables(soup)
+        # The outer single-cell table should be unwrapped
+        # The inner data table (0 empty out of 4) should be kept
+        tables = soup.find_all("table")
+        assert len(tables) == 1
+        assert "Val1" in tables[0].get_text()
 
 
 # =========================================================================
