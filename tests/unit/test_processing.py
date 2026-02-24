@@ -19,6 +19,7 @@ from tests.conftest import (
     _make_mock_client,
     _make_mock_response,
     _noop_screenshot,
+    parse_update_params,
 )
 
 # =========================================================================
@@ -672,9 +673,9 @@ class TestProcessArticleUserTitle:
         ]
         assert len(update_stmts) >= 1
         sql, params = update_stmts[-1]
-        # title is the first param in the big UPDATE
-        assert params[0] == user_title, (
-            f"User-supplied title should be preserved. Got: {params[0]!r}"
+        fields = parse_update_params(sql, params)
+        assert fields["title"] == user_title, (
+            f"User-supplied title should be preserved. Got: {fields.get('title')!r}"
         )
 
 
@@ -724,17 +725,13 @@ class TestProcessArticleWithNoCanonical:
         ]
         assert len(update_stmts) >= 1
         sql, params = update_stmts[-1]
+        fields = parse_update_params(sql, params)
 
-        # The fields in order: title, excerpt, author, word_count, reading_time,
-        #                       domain, final_url, canonical_url, ...
-        # canonical_url is at index 7
-        canonical_in_params = params[7]
-        final_in_params = params[6]
-        assert canonical_in_params == "https://example.com/final-destination", (
-            f"canonical_url should fall back to final_url. Got: {canonical_in_params}"
+        assert fields["canonical_url"] == "https://example.com/final-destination", (
+            f"canonical_url should fall back to final_url. Got: {fields.get('canonical_url')}"
         )
-        assert final_in_params == "https://example.com/final-destination", (
-            f"final_url should be the final destination URL. Got: {final_in_params}"
+        assert fields["final_url"] == "https://example.com/final-destination", (
+            f"final_url should be the final destination URL. Got: {fields.get('final_url')}"
         )
 
 
@@ -897,13 +894,9 @@ class TestProcessArticleExactAssertions:
         ]
         assert len(update_stmts) >= 1
         sql, params = update_stmts[-1]
+        fields = parse_update_params(sql, params)
 
-        # The 'status' field is the 14th SET clause (0-indexed: position 13)
-        # In the SQL: title, excerpt, author, word_count, reading_time_minutes,
-        #             domain, final_url, canonical_url, html_key, thumbnail_key,
-        #             original_key, image_count, markdown_content, status, updated_at
-        # So "ready" should be at index 13 in the params list
-        assert params[13] == "ready"
+        assert fields["status"] == "ready"
 
     async def test_failed_status_at_exact_index(self) -> None:
         """Verify the failure UPDATE sets status='failed' at param index 0."""
@@ -926,8 +919,9 @@ class TestProcessArticleExactAssertions:
             if sql.strip().startswith("UPDATE") and "status = ?" in sql and "title" not in sql
         ]
         assert len(failed_updates) >= 1
-        _sql, params = failed_updates[-1]
-        assert params[0] == "failed"
+        sql, params = failed_updates[-1]
+        fields = parse_update_params(sql, params)
+        assert fields["status"] == "failed"
 
 
 # =========================================================================

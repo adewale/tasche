@@ -473,6 +473,48 @@ class TrackingD1(MockD1):
 
 
 # ---------------------------------------------------------------------------
+# SQL param parsing helper
+# ---------------------------------------------------------------------------
+
+
+def parse_update_params(sql: str, params: list[Any]) -> dict[str, Any]:
+    """Parse an UPDATE ... SET col1 = ?, col2 = ? ... statement into a dict.
+
+    Maps each SET column name to its corresponding bound parameter value.
+    Also includes a ``_where`` key with the WHERE clause parameters.
+
+    Example::
+
+        sql = "UPDATE articles SET title = ?, status = ? WHERE id = ?"
+        params = ["My Title", "ready", "art_001"]
+        result = parse_update_params(sql, params)
+        # {"title": "My Title", "status": "ready", "_where": ["art_001"]}
+    """
+    # Extract the SET clause between SET and WHERE
+    set_match = re.search(r"SET\s+(.*?)\s+WHERE", sql, re.IGNORECASE | re.DOTALL)
+    if not set_match:
+        return {"_raw_params": params}
+
+    set_clause = set_match.group(1)
+    # Split on commas, extract column names (before " = ?")
+    columns = []
+    for part in set_clause.split(","):
+        part = part.strip()
+        col_match = re.match(r"(\w+)\s*=\s*\?", part)
+        if col_match:
+            columns.append(col_match.group(1))
+
+    result: dict[str, Any] = {}
+    for i, col in enumerate(columns):
+        if i < len(params):
+            result[col] = params[i]
+
+    # Remaining params are WHERE clause params
+    result["_where"] = params[len(columns):]
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Shared test app helpers
 # ---------------------------------------------------------------------------
 

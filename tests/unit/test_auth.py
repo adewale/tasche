@@ -47,11 +47,11 @@ class TestCreateSession:
         session_id = await create_session(kv, user_data)
 
         assert session_id  # non-empty
-        key = f"{SESSION_PREFIX}{session_id}"
-        assert key in kv._store
-        stored = json.loads(kv._store[key])
-        assert stored["user_id"] == "u1"
-        assert stored["email"] == "test@example.com"
+        # Verify through the public get_session API, not mock internals
+        result = await get_session(kv, session_id)
+        assert result is not None
+        assert result["user_id"] == "u1"
+        assert result["email"] == "test@example.com"
 
 
 class TestGetSession:

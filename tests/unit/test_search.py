@@ -185,10 +185,14 @@ class TestSearchArticles:
 
         select_calls = [c for c in captured if "SELECT" in c["sql"]]
         assert len(select_calls) >= 1
+        sql = select_calls[0]["sql"]
         params = select_calls[0]["params"]
-        # params should be [query, user_id, limit, offset]
-        assert 5 in params
-        assert 10 in params
+        # SQL should have LIMIT and OFFSET clauses
+        assert "LIMIT ?" in sql
+        assert "OFFSET ?" in sql
+        # params are [query, user_id, limit, offset] — verify by position
+        assert params[-2] == 5, f"limit should be 5, got {params[-2]}"
+        assert params[-1] == 10, f"offset should be 10, got {params[-1]}"
 
 
 # ---------------------------------------------------------------------------

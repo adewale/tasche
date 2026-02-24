@@ -2407,3 +2407,106 @@ class TestGetArticleMarkdown:
         client = TestClient(app, raise_server_exceptions=False)
         resp = client.get("/api/articles/some-id/markdown")
         assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Cross-user article isolation
+# ---------------------------------------------------------------------------
+
+
+class TestArticleOwnershipIsolation:
+    """Verify that a user cannot access, modify, or delete another user's articles.
+
+    The _get_user_article helper uses WHERE id = ? AND user_id = ?, so
+    cross-user access returns 404 (not 403) to avoid revealing article existence.
+    """
+
+    async def test_get_returns_404_for_other_users_article(self) -> None:
+        """GET /api/articles/{id} returns 404 when article belongs to another user."""
+        other_users_article = ArticleFactory.create(
+            id="art_other", user_id="user_002",
+        )
+
+        def execute(sql: str, params: list) -> list:
+            # The query is: WHERE id = ? AND user_id = ?
+            # Since user_id won't match user_001 (the authenticated user),
+            # return empty to simulate no match.
+            if "id = ?" in sql and "user_id = ?" in sql:
+                art_id = params[0]
+                uid = params[1]
+                if art_id == "art_other" and uid == other_users_article["user_id"]:
+                    return [other_users_article]
+                return []  # user_001 asking for user_002's article → no match
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+        client, session_id = await _authenticated_client(env)
+
+        resp = client.get(
+            "/api/articles/art_other",
+            cookies={COOKIE_NAME: session_id},
+        )
+        assert resp.status_code == 404
+
+    async def test_patch_returns_404_for_other_users_article(self) -> None:
+        """PATCH /api/articles/{id} returns 404 for another user's article."""
+        db = MockD1(execute=lambda sql, params: [])
+        env = MockEnv(db=db)
+        client, session_id = await _authenticated_client(env)
+
+        resp = client.patch(
+            "/api/articles/art_other",
+            json={"reading_status": "archived"},
+            cookies={COOKIE_NAME: session_id},
+        )
+        assert resp.status_code == 404
+
+    async def test_delete_returns_404_for_other_users_article(self) -> None:
+        """DELETE /api/articles/{id} returns 404 for another user's article."""
+        db = MockD1(execute=lambda sql, params: [])
+        env = MockEnv(db=db)
+        client, session_id = await _authenticated_client(env)
+
+        resp = client.delete(
+            "/api/articles/art_other",
+            cookies={COOKIE_NAME: session_id},
+        )
+        assert resp.status_code == 404
+
+    async def test_content_returns_404_for_other_users_article(self) -> None:
+        """GET /api/articles/{id}/content returns 404 for another user's article."""
+        db = MockD1(execute=lambda sql, params: [])
+        env = MockEnv(db=db)
+        client, session_id = await _authenticated_client(env)
+
+        resp = client.get(
+            "/api/articles/art_other/content",
+            cookies={COOKIE_NAME: session_id},
+        )
+        assert resp.status_code == 404
+
+    async def test_list_only_returns_own_articles(self) -> None:
+        """GET /api/articles only returns articles belonging to the authenticated user."""
+        own_article = ArticleFactory.create(id="art_mine", user_id="user_001")
+        other_article = ArticleFactory.create(id="art_theirs", user_id="user_002")
+
+        def execute(sql: str, params: list) -> list:
+            if "FROM articles" in sql and "user_id = ?" in sql:
+                uid = params[0]
+                # Only return articles matching the requested user_id
+                return [a for a in [own_article, other_article] if a["user_id"] == uid]
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+        client, session_id = await _authenticated_client(env)
+
+        resp = client.get(
+            "/api/articles",
+            cookies={COOKIE_NAME: session_id},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["id"] == "art_mine"
