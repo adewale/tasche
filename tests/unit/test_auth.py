@@ -17,12 +17,14 @@ from fastapi.testclient import TestClient
 from src.auth.dependencies import get_current_user
 from src.auth.routes import OAUTH_STATE_PREFIX, router
 from src.auth.session import (
+    _REFRESH_INTERVAL,
     COOKIE_NAME,
     SESSION_PREFIX,
     create_session,
     delete_session,
     get_session,
     parse_allowed_emails,
+    refresh_session,
 )
 from tests.conftest import MockD1, MockEnv, MockKV
 
@@ -82,6 +84,84 @@ class TestDeleteSession:
 
         await delete_session(kv, session_id)
         assert await get_session(kv, session_id) is None
+
+
+class TestRefreshSession:
+    async def test_refreshes_when_no_refreshed_at(self) -> None:
+        """refresh_session writes to KV when user_data has no refreshed_at."""
+        kv = MockKV()
+        user_data = {"user_id": "u1", "email": "test@example.com"}
+        session_id = "test_session_123"
+
+        # Pre-populate KV so we can verify it gets updated
+        key = f"{SESSION_PREFIX}{session_id}"
+        kv._store[key] = json.dumps(user_data)
+
+        await refresh_session(kv, session_id, user_data)
+
+        # Should have written refreshed_at to KV
+        stored = json.loads(kv._store[key])
+        assert "refreshed_at" in stored
+        assert stored["refreshed_at"] > 0
+
+    async def test_refreshes_when_interval_exceeded(self) -> None:
+        """refresh_session writes to KV when last refresh was over 1 hour ago."""
+        import time
+
+        kv = MockKV()
+        old_time = time.time() - _REFRESH_INTERVAL - 100  # well past the threshold
+        user_data = {
+            "user_id": "u1",
+            "email": "test@example.com",
+            "refreshed_at": old_time,
+        }
+        session_id = "test_session_456"
+        key = f"{SESSION_PREFIX}{session_id}"
+        kv._store[key] = json.dumps(user_data)
+
+        await refresh_session(kv, session_id, user_data)
+
+        stored = json.loads(kv._store[key])
+        assert stored["refreshed_at"] > old_time
+
+    async def test_skips_when_recently_refreshed(self) -> None:
+        """refresh_session does NOT write to KV when refreshed less than 1 hour ago."""
+        import time
+
+        kv = MockKV()
+        recent_time = time.time() - 60  # only 60 seconds ago
+        user_data = {
+            "user_id": "u1",
+            "email": "test@example.com",
+            "refreshed_at": recent_time,
+        }
+        session_id = "test_session_789"
+        key = f"{SESSION_PREFIX}{session_id}"
+        original_json = json.dumps(user_data)
+        kv._store[key] = original_json
+
+        await refresh_session(kv, session_id, user_data)
+
+        # KV should NOT have been updated
+        assert kv._store[key] == original_json
+
+    async def test_updates_user_data_in_place(self) -> None:
+        """refresh_session mutates user_data dict with new refreshed_at."""
+        import time
+
+        kv = MockKV()
+        user_data = {"user_id": "u1", "email": "test@example.com"}
+        session_id = "test_session_mut"
+        key = f"{SESSION_PREFIX}{session_id}"
+        kv._store[key] = json.dumps(user_data)
+
+        before = time.time()
+        await refresh_session(kv, session_id, user_data)
+        after = time.time()
+
+        # user_data dict should have been mutated
+        assert "refreshed_at" in user_data
+        assert before <= user_data["refreshed_at"] <= after
 
 
 # =========================================================================

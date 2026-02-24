@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from src.articles.export import router
+from src.articles.export import _escape_html, _iso_to_unix, router
 from src.auth.session import COOKIE_NAME
 from tests.conftest import (
     ArticleFactory,
@@ -333,3 +333,56 @@ class TestExportHtml:
         client = TestClient(app, raise_server_exceptions=False)
         resp = client.get("/api/export/html")
         assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Utility functions
+# ---------------------------------------------------------------------------
+
+
+class TestIsoToUnix:
+    def test_converts_valid_iso_timestamp(self) -> None:
+        """_iso_to_unix converts a valid ISO 8601 string to a Unix timestamp."""
+        result = _iso_to_unix("2025-06-15T12:00:00+00:00")
+        assert result == 1749988800
+
+    def test_converts_naive_iso_timestamp(self) -> None:
+        """_iso_to_unix handles ISO timestamps without timezone."""
+        result = _iso_to_unix("2025-01-01T00:00:00")
+        assert isinstance(result, int)
+        assert result > 0
+
+    def test_returns_zero_for_none(self) -> None:
+        """_iso_to_unix returns 0 when input is None."""
+        assert _iso_to_unix(None) == 0
+
+    def test_returns_zero_for_empty_string(self) -> None:
+        """_iso_to_unix returns 0 when input is an empty string."""
+        assert _iso_to_unix("") == 0
+
+    def test_returns_zero_for_invalid_string(self) -> None:
+        """_iso_to_unix returns 0 for unparseable date strings."""
+        assert _iso_to_unix("not-a-date") == 0
+
+
+class TestEscapeHtml:
+    def test_escapes_ampersand(self) -> None:
+        """_escape_html converts & to &amp;."""
+        assert _escape_html("A & B") == "A &amp; B"
+
+    def test_escapes_angle_brackets(self) -> None:
+        """_escape_html converts < and > to entities."""
+        assert _escape_html("<script>") == "&lt;script&gt;"
+
+    def test_escapes_double_quotes(self) -> None:
+        """_escape_html converts double quotes to &quot;."""
+        assert _escape_html('say "hello"') == "say &quot;hello&quot;"
+
+    def test_leaves_safe_text_unchanged(self) -> None:
+        """_escape_html does not modify text without special characters."""
+        assert _escape_html("Hello World") == "Hello World"
+
+    def test_handles_all_special_chars_together(self) -> None:
+        """_escape_html escapes multiple special chars in one string."""
+        result = _escape_html('<a href="x?a=1&b=2">')
+        assert result == "&lt;a href=&quot;x?a=1&amp;b=2&quot;&gt;"
