@@ -111,8 +111,11 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
   var isArchived = a.reading_status === 'archived';
 
   var thumbnailSrc = a.thumbnail_key ? '/api/articles/' + a.id + '/thumbnail' : null;
+  var hasThumbnail = thumbnailSrc && !thumbError;
+  var faviconSrc = a.domain ? 'https://www.google.com/s2/favicons?domain=' + a.domain + '&sz=32' : null;
 
   var cardClass = 'article-card';
+  if (!hasThumbnail) cardClass += ' article-card--compact';
   if (isProcessing) cardClass += ' article-card--processing';
   if (selectMode) cardClass += ' article-card--selectable';
   if (selected) cardClass += ' article-card--checked';
@@ -133,7 +136,7 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
             <IconCheckSquare size={20} checked={!!selected} />
           </div>
         )}
-        {thumbnailSrc && !thumbError ? (
+        {hasThumbnail ? (
           <div class="article-card-thumbnail">
             <img
               src={thumbnailSrc}
@@ -142,11 +145,18 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
               onError={function () { setThumbError(true); }}
             />
           </div>
-        ) : (
-          <div class="article-card-thumbnail article-card-thumbnail--placeholder">
-            <span>{(a.title || a.domain || '?').charAt(0).toUpperCase()}</span>
+        ) : faviconSrc ? (
+          <div class="article-card-favicon">
+            <img
+              src={faviconSrc}
+              alt=""
+              width="24"
+              height="24"
+              loading="lazy"
+              onError={function (e) { e.target.parentNode.style.display = 'none'; }}
+            />
           </div>
-        )}
+        ) : null}
         <div class="article-card-content">
           <div class="article-card-title">{a.title || a.original_url}</div>
           <div class="article-card-meta">

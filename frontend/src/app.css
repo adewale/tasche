@@ -410,13 +410,20 @@ input, textarea {
   display: block;
 }
 
-.article-card-thumbnail--placeholder {
+.article-card-favicon {
+  flex-shrink: 0;
+  width: 32px;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-muted);
-  font-size: 1.5rem;
-  font-weight: 700;
+  align-items: flex-start;
+  padding-top: 2px;
+}
+
+.article-card-favicon img {
+  border-radius: var(--radius-sm);
+}
+
+.article-card--compact .article-card-body {
+  gap: 8px;
 }
 
 .processing-overlay {
