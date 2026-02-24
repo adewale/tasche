@@ -228,6 +228,17 @@ def _unwrap_layout_tables(soup: BeautifulSoup) -> None:
             tag.unwrap()
 
 
+def _get_code_language(el: Tag) -> str:
+    """Extract the programming language from a ``<pre>`` element's ``<code>`` child."""
+    code = el.find("code")
+    if code:
+        for cls in code.get("class", []):
+            m = re.match(r"(?:language-|lang-)?(\w+)", cls)
+            if m:
+                return m.group(1)
+    return ""
+
+
 def html_to_markdown(html: str) -> str:
     """Convert clean HTML to Markdown using markdownify.
 
@@ -247,7 +258,13 @@ def html_to_markdown(html: str) -> str:
     _unwrap_layout_tables(soup)
     cleaned_html = str(soup)
 
-    md = markdownify(cleaned_html, heading_style="ATX")
+    md = markdownify(
+        cleaned_html,
+        heading_style="ATX",
+        code_language_callback=_get_code_language,
+        sub_symbol="<sub>",
+        sup_symbol="<sup>",
+    )
     # Clean up excessive whitespace while preserving paragraph breaks
     md = re.sub(r"\n{3,}", "\n\n", md)
     return md.strip()

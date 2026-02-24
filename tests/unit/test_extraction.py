@@ -310,6 +310,102 @@ class TestHtmlToMarkdown:
         # Should have no table pipe characters at all
         assert "|" not in md
 
+    def test_code_block_preserves_language(self) -> None:
+        """Code blocks with language class retain the language annotation."""
+        html = '<pre><code class="language-python">x = 1</code></pre>'
+        md = html_to_markdown(html)
+        assert md.startswith("```python")
+
+    def test_code_block_language_javascript(self) -> None:
+        """Language annotation works for javascript too."""
+        html = '<pre><code class="language-javascript">const x = 1;</code></pre>'
+        md = html_to_markdown(html)
+        assert md.startswith("```javascript")
+
+    def test_code_block_no_language_class(self) -> None:
+        """Code blocks without a language class produce plain fenced blocks."""
+        html = '<pre><code>plain code</code></pre>'
+        md = html_to_markdown(html)
+        assert md.startswith("```\n")
+        assert "plain code" in md
+
+    def test_superscript_preserved(self) -> None:
+        """Superscript is not silently dropped."""
+        html = "<p>x<sup>2</sup> + y<sup>3</sup></p>"
+        md = html_to_markdown(html)
+        # The superscript content must appear distinctly from adjacent text
+        assert "2" in md
+        assert "x2 " not in md  # must not silently merge into surrounding text
+
+    def test_subscript_preserved(self) -> None:
+        """Subscript is not silently dropped."""
+        html = "<p>H<sub>2</sub>O</p>"
+        md = html_to_markdown(html)
+        assert "2" in md
+        assert "H2O" not in md  # must not silently merge
+
+    def test_ordered_list_numbering(self) -> None:
+        """Ordered lists produce numbered items."""
+        html = "<ol><li>First</li><li>Second</li><li>Third</li></ol>"
+        md = html_to_markdown(html)
+        assert "1." in md
+        assert "2." in md
+        assert "3." in md
+
+    def test_nested_lists(self) -> None:
+        """Nested lists produce indented sub-items."""
+        html = "<ul><li>A<ul><li>A1</li></ul></li><li>B</li></ul>"
+        md = html_to_markdown(html)
+        assert "A" in md
+        assert "A1" in md
+        assert "B" in md
+        # Sub-item should be indented
+        lines = md.strip().split("\n")
+        a1_line = next(line for line in lines if "A1" in line)
+        assert a1_line.startswith(" ") or a1_line.startswith("\t")
+
+    def test_blockquote_preserved(self) -> None:
+        """Blockquotes produce > prefix."""
+        html = "<blockquote><p>A wise quote.</p></blockquote>"
+        md = html_to_markdown(html)
+        assert md.startswith(">")
+        assert "A wise quote." in md
+
+    def test_inline_code_preserved(self) -> None:
+        """Inline code produces backtick-wrapped text."""
+        html = "<p>Use <code>git commit</code> to save.</p>"
+        md = html_to_markdown(html)
+        assert "`git commit`" in md
+
+    def test_horizontal_rule(self) -> None:
+        """Horizontal rules produce --- markers."""
+        html = "<p>Above</p><hr><p>Below</p>"
+        md = html_to_markdown(html)
+        assert "---" in md
+        assert "Above" in md
+        assert "Below" in md
+
+    def test_complex_article_structure(self) -> None:
+        """A realistic article with mixed elements converts correctly."""
+        html = """
+        <h1>My Article</h1>
+        <p>Intro with <a href="https://example.com">a link</a>.</p>
+        <h2>Section</h2>
+        <p>Text with <strong>bold</strong> and <em>italic</em>.</p>
+        <ul><li>Point 1</li><li>Point 2</li></ul>
+        <blockquote><p>A quote.</p></blockquote>
+        <pre><code class="language-python">x = 1</code></pre>
+        """
+        md = html_to_markdown(html)
+        assert "# My Article" in md
+        assert "## Section" in md
+        assert "[a link](https://example.com)" in md
+        assert "**bold**" in md
+        assert "*italic*" in md
+        assert "Point 1" in md
+        assert "> A quote." in md
+        assert "```python" in md
+
     def test_markdown_no_excessive_whitespace(self) -> None:
         """Converted markdown should not have 3+ consecutive blank lines."""
         html = """
