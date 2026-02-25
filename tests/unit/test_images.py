@@ -8,7 +8,7 @@ keys, correct file extensions from content-type).
 from __future__ import annotations
 
 import hashlib
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from articles.images import download_images, store_images
 from tests.conftest import MockR2
@@ -55,10 +55,10 @@ class TestDownloadImagesBasic:
             ]
         )
 
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=_make_mock_response(content=b"IMG_DATA"))
+        mock_fetch = AsyncMock(return_value=_make_mock_response(content=b"IMG_DATA"))
 
-        result = await download_images(mock_client, html)
+        with patch("articles.images.http_fetch", mock_fetch):
+            result = await download_images(html)
 
         assert len(result) == 2
         assert result[0]["url"] == "https://cdn.example.com/photo1.jpg"
@@ -67,8 +67,9 @@ class TestDownloadImagesBasic:
 
     async def test_empty_html_returns_empty(self) -> None:
         """download_images with no img tags returns an empty list."""
-        mock_client = AsyncMock()
-        result = await download_images(mock_client, "<html><body><p>No images</p></body></html>")
+        mock_fetch = AsyncMock()
+        with patch("articles.images.http_fetch", mock_fetch):
+            result = await download_images("<html><body><p>No images</p></body></html>")
         assert result == []
 
 
@@ -83,10 +84,10 @@ class TestDownloadImagesSizeLimits:
         html = _make_html_with_images(["https://cdn.example.com/huge.jpg"])
 
         big_data = b"x" * 3_000_000  # 3 MB, exceeds default 2 MB limit
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=_make_mock_response(content=big_data))
+        mock_fetch = AsyncMock(return_value=_make_mock_response(content=big_data))
 
-        result = await download_images(mock_client, html)
+        with patch("articles.images.http_fetch", mock_fetch):
+            result = await download_images(html)
         assert len(result) == 0
 
     async def test_custom_per_image_limit(self) -> None:
@@ -94,16 +95,16 @@ class TestDownloadImagesSizeLimits:
         html = _make_html_with_images(["https://cdn.example.com/small.jpg"])
 
         data = b"x" * 500
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=_make_mock_response(content=data))
+        mock_fetch = AsyncMock(return_value=_make_mock_response(content=data))
 
-        # With a limit of 100, the 500-byte image should be skipped
-        result = await download_images(mock_client, html, max_per_image=100)
-        assert len(result) == 0
+        with patch("articles.images.http_fetch", mock_fetch):
+            # With a limit of 100, the 500-byte image should be skipped
+            result = await download_images(html, max_per_image=100)
+            assert len(result) == 0
 
-        # With a limit of 1000, it should be included
-        result = await download_images(mock_client, html, max_per_image=1000)
-        assert len(result) == 1
+            # With a limit of 1000, it should be included
+            result = await download_images(html, max_per_image=1000)
+            assert len(result) == 1
 
     async def test_stops_at_total_limit(self) -> None:
         """download_images stops downloading once max_total is reached."""
@@ -116,12 +117,12 @@ class TestDownloadImagesSizeLimits:
         )
 
         data = b"x" * 500
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=_make_mock_response(content=data))
+        mock_fetch = AsyncMock(return_value=_make_mock_response(content=data))
 
         # Total limit of 800 means only 1 image can fit (500 bytes each, second
         # would push total to 1000 which exceeds 800)
-        result = await download_images(mock_client, html, max_total=800)
+        with patch("articles.images.http_fetch", mock_fetch):
+            result = await download_images(html, max_total=800)
         assert len(result) == 1
 
     async def test_cumulative_total_is_enforced(self) -> None:
@@ -135,12 +136,12 @@ class TestDownloadImagesSizeLimits:
         )
 
         data = b"x" * 400
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=_make_mock_response(content=data))
+        mock_fetch = AsyncMock(return_value=_make_mock_response(content=data))
 
         # 3 images * 400 bytes = 1200 total, limit is 1000
         # First two fit (800), third would push to 1200 -> skipped
-        result = await download_images(mock_client, html, max_total=1000)
+        with patch("articles.images.http_fetch", mock_fetch):
+            result = await download_images(html, max_total=1000)
         assert len(result) == 2
 
 
@@ -159,17 +160,17 @@ class TestDownloadImagesDataURI:
             ]
         )
 
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=_make_mock_response(content=b"real_image"))
+        mock_fetch = AsyncMock(return_value=_make_mock_response(content=b"real_image"))
 
-        result = await download_images(mock_client, html)
+        with patch("articles.images.http_fetch", mock_fetch):
+            result = await download_images(html)
 
         # Only the non-data-URI image should be downloaded
         assert len(result) == 1
         assert result[0]["url"] == "https://cdn.example.com/real.jpg"
 
-        # HTTP client should only have been called once (not for the data URI)
-        assert mock_client.get.call_count == 1
+        # HTTP fetch should only have been called once (not for the data URI)
+        assert mock_fetch.call_count == 1
 
 
 # ---------------------------------------------------------------------------
@@ -188,13 +189,13 @@ class TestDownloadImagesDedupe:
             ]
         )
 
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=_make_mock_response(content=b"img_data"))
+        mock_fetch = AsyncMock(return_value=_make_mock_response(content=b"img_data"))
 
-        result = await download_images(mock_client, html)
+        with patch("articles.images.http_fetch", mock_fetch):
+            result = await download_images(html)
 
         assert len(result) == 1
-        assert mock_client.get.call_count == 1
+        assert mock_fetch.call_count == 1
 
 
 # ---------------------------------------------------------------------------
@@ -207,18 +208,20 @@ class TestDownloadImagesSSRF:
         """Images pointing to localhost are blocked by SSRF protection."""
         html = _make_html_with_images(["http://localhost/internal.jpg"])
 
-        mock_client = AsyncMock()
-        result = await download_images(mock_client, html)
+        mock_fetch = AsyncMock()
+        with patch("articles.images.http_fetch", mock_fetch):
+            result = await download_images(html)
 
         assert len(result) == 0
-        mock_client.get.assert_not_called()
+        mock_fetch.assert_not_called()
 
     async def test_skips_127_0_0_1(self) -> None:
         """Images pointing to 127.0.0.1 are blocked."""
         html = _make_html_with_images(["http://127.0.0.1:8080/secret.png"])
 
-        mock_client = AsyncMock()
-        result = await download_images(mock_client, html)
+        mock_fetch = AsyncMock()
+        with patch("articles.images.http_fetch", mock_fetch):
+            result = await download_images(html)
 
         assert len(result) == 0
 
@@ -226,8 +229,9 @@ class TestDownloadImagesSSRF:
         """Images pointing to 10.x.x.x private IPs are blocked."""
         html = _make_html_with_images(["http://10.0.0.5/internal.png"])
 
-        mock_client = AsyncMock()
-        result = await download_images(mock_client, html)
+        mock_fetch = AsyncMock()
+        with patch("articles.images.http_fetch", mock_fetch):
+            result = await download_images(html)
 
         assert len(result) == 0
 
@@ -235,8 +239,9 @@ class TestDownloadImagesSSRF:
         """Images pointing to 192.168.x.x private IPs are blocked."""
         html = _make_html_with_images(["http://192.168.1.100/photo.jpg"])
 
-        mock_client = AsyncMock()
-        result = await download_images(mock_client, html)
+        mock_fetch = AsyncMock()
+        with patch("articles.images.http_fetch", mock_fetch):
+            result = await download_images(html)
 
         assert len(result) == 0
 
@@ -244,8 +249,9 @@ class TestDownloadImagesSSRF:
         """Images pointing to the cloud metadata endpoint (169.254.169.254) are blocked."""
         html = _make_html_with_images(["http://169.254.169.254/latest/meta-data/"])
 
-        mock_client = AsyncMock()
-        result = await download_images(mock_client, html)
+        mock_fetch = AsyncMock()
+        with patch("articles.images.http_fetch", mock_fetch):
+            result = await download_images(html)
 
         assert len(result) == 0
 
@@ -257,10 +263,10 @@ class TestDownloadImagesSSRF:
         resp = _make_mock_response(content=b"redirected_data")
         resp.url = "http://10.0.0.1/internal.jpg"
 
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=resp)
+        mock_fetch = AsyncMock(return_value=resp)
 
-        result = await download_images(mock_client, html)
+        with patch("articles.images.http_fetch", mock_fetch):
+            result = await download_images(html)
         assert len(result) == 0
 
 
@@ -274,30 +280,30 @@ class TestDownloadImagesNon200:
         """Images returning 404 are skipped."""
         html = _make_html_with_images(["https://cdn.example.com/missing.jpg"])
 
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=_make_mock_response(status_code=404, content=b""))
+        mock_fetch = AsyncMock(return_value=_make_mock_response(status_code=404, content=b""))
 
-        result = await download_images(mock_client, html)
+        with patch("articles.images.http_fetch", mock_fetch):
+            result = await download_images(html)
         assert len(result) == 0
 
     async def test_skips_500_response(self) -> None:
         """Images returning 500 are skipped."""
         html = _make_html_with_images(["https://cdn.example.com/error.jpg"])
 
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=_make_mock_response(status_code=500, content=b""))
+        mock_fetch = AsyncMock(return_value=_make_mock_response(status_code=500, content=b""))
 
-        result = await download_images(mock_client, html)
+        with patch("articles.images.http_fetch", mock_fetch):
+            result = await download_images(html)
         assert len(result) == 0
 
     async def test_skips_on_http_error_exception(self) -> None:
         """Images that raise httpx.HTTPError during download are skipped."""
         html = _make_html_with_images(["https://cdn.example.com/timeout.jpg"])
 
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(side_effect=TimeoutError("timeout"))
+        mock_fetch = AsyncMock(side_effect=TimeoutError("timeout"))
 
-        result = await download_images(mock_client, html)
+        with patch("articles.images.http_fetch", mock_fetch):
+            result = await download_images(html)
         assert len(result) == 0
 
 

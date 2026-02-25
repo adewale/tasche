@@ -27,6 +27,27 @@ from wrappers import stream_r2_body
 router = APIRouter()
 
 
+async def _enqueue_or_fail(
+    env: Any,
+    db: Any,
+    message: dict,
+    article_id: str,
+    status_field: str = "status",
+    rollback_value: str | None = "failed",
+) -> None:
+    """Send a message to ARTICLE_QUEUE, rolling back on failure."""
+    try:
+        await env.ARTICLE_QUEUE.send(message)
+    except Exception:
+        now = now_iso()
+        await (
+            db.prepare(f"UPDATE articles SET {status_field} = ?, updated_at = ? WHERE id = ?")
+            .bind(rollback_value, now, article_id)
+            .run()
+        )
+        raise HTTPException(status_code=503, detail="Failed to enqueue processing job")
+
+
 async def _stream_r2_object(
     r2_obj: Any,
     media_type: str,
@@ -230,30 +251,17 @@ async def create_article(
         await r2.put(raw_key, content)
 
     # Enqueue processing job
-    try:
-        await env.ARTICLE_QUEUE.send(
-            {
-                "type": "article_processing",
-                "article_id": article_id,
-                "url": url,
-                "user_id": user_id,
-            }
-        )
-    except Exception as exc:
-        # Mark article as failed if we cannot enqueue the processing job
-        fail_now = now_iso()
-        try:
-            await (
-                db.prepare("UPDATE articles SET status = ?, updated_at = ? WHERE id = ?")
-                .bind("failed", fail_now, article_id)
-                .run()
-            )
-        except Exception:
-            pass  # Best-effort status update
-        raise HTTPException(
-            status_code=503,
-            detail="Failed to enqueue article for processing",
-        ) from exc
+    await _enqueue_or_fail(
+        env,
+        db,
+        {
+            "type": "article_processing",
+            "article_id": article_id,
+            "url": url,
+            "user_id": user_id,
+        },
+        article_id,
+    )
 
     result: dict[str, Any] = {"id": article_id, "status": "pending"}
     if is_update:
@@ -907,29 +915,17 @@ async def retry_article(
         .run()
     )
 
-    try:
-        await env.ARTICLE_QUEUE.send(
-            {
-                "type": "article_processing",
-                "article_id": article_id,
-                "url": article["original_url"],
-                "user_id": user_id,
-            }
-        )
-    except Exception as exc:
-        fail_now = now_iso()
-        try:
-            await (
-                db.prepare("UPDATE articles SET status = ?, updated_at = ? WHERE id = ?")
-                .bind("failed", fail_now, article_id)
-                .run()
-            )
-        except Exception:
-            pass
-        raise HTTPException(
-            status_code=503,
-            detail="Failed to enqueue article for processing",
-        ) from exc
+    await _enqueue_or_fail(
+        env,
+        db,
+        {
+            "type": "article_processing",
+            "article_id": article_id,
+            "url": article["original_url"],
+            "user_id": user_id,
+        },
+        article_id,
+    )
 
     return {"id": article_id, "status": "pending"}
 

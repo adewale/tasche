@@ -347,7 +347,7 @@ class Default(WorkerEntrypoint):
             evt.set("error.type", type(exc).__name__)
             evt.set("error.message", str(exc)[:500])
         finally:
-            emit_event(evt, force=True)
+            emit_event(evt)
 
     async def queue(self, batch: object, env: object = None, ctx: object = None) -> None:  # type: ignore[override]
         """Handle a batch of queue messages.
@@ -402,4 +402,4 @@ class Default(WorkerEntrypoint):
                 message.retry()
             finally:
                 if evt:
-                    emit_event(evt, force=True)
+                    emit_event(evt)

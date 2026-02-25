@@ -4,7 +4,8 @@ import { EmptyState, LoadingSpinner } from '../components/EmptyState.jsx';
 import { TagPicker } from '../components/TagPicker.jsx';
 import { ReaderToolbar } from '../components/ReaderToolbar.jsx';
 import { playAudio, audioState, getAudio } from '../components/AudioPlayer.jsx';
-import { articles, currentArticle, addToast } from '../state.js';
+import { articles, addToast } from '../state.js';
+import { toggleArchive, toggleFavorite, removeArticle } from '../articleActions.js';
 import { readerPrefs, getReaderStyle, updatePref } from '../readerPrefs.js';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts.js';
 import { useSWMessage } from '../hooks/useSWMessage.js';
@@ -25,7 +26,6 @@ import {
   getArticle,
   getArticleContent,
   updateArticle,
-  deleteArticle as apiDeleteArticle,
   listenLater as apiListenLater,
   retryArticle as apiRetryArticle,
   checkOriginal as apiCheckOriginal,
@@ -186,7 +186,6 @@ export function Reader({ id }) {
         clearTimeout(scrollTimer);
       }
       window.removeEventListener('scroll', handleScroll);
-      currentArticle.value = null;
     };
   }, [id]);
 
@@ -386,24 +385,14 @@ export function Reader({ id }) {
   async function handleArchiveToggle() {
     if (!article) return;
     var newStatus = article.reading_status === 'archived' ? 'unread' : 'archived';
-    try {
-      await updateArticle(id, { reading_status: newStatus });
-      var updated = { ...article, reading_status: newStatus };
-      setArticle(updated);
-      articles.value = articles.value.map(function (a) {
-        return a.id === id ? { ...a, reading_status: newStatus } : a;
-      });
-      addToast(newStatus === 'archived' ? 'Archived' : 'Moved to unread', 'success');
-    } catch (err) {
-      addToast(err.message, 'error');
-    }
+    await toggleArchive(article);
+    setArticle({ ...article, reading_status: newStatus });
   }
 
   async function loadArticle(currentId) {
     try {
       const art = await getArticle(currentId);
       setArticle(art);
-      currentArticle.value = art;
 
       let html = '';
       const r2Html = await getArticleContent(currentId);
@@ -446,18 +435,9 @@ export function Reader({ id }) {
 
   async function handleFavorite() {
     if (!article) return;
-    const newFav = !article.is_favorite;
-    try {
-      await updateArticle(id, { is_favorite: newFav });
-      const updated = { ...article, is_favorite: newFav ? 1 : 0 };
-      setArticle(updated);
-      articles.value = articles.value.map((a) =>
-        a.id === id ? { ...a, is_favorite: updated.is_favorite } : a,
-      );
-      addToast(newFav ? 'Added to favourites' : 'Removed from favourites', 'success');
-    } catch (e) {
-      addToast(e.message, 'error');
-    }
+    const newFav = !article.is_favorite ? 1 : 0;
+    await toggleFavorite(article);
+    setArticle({ ...article, is_favorite: newFav });
   }
 
   async function handleStatusChange(e) {
@@ -498,14 +478,10 @@ export function Reader({ id }) {
 
   async function handleDelete() {
     if (deleting) return;
-    if (!confirm('Delete this article?')) return;
     setDeleting(true);
     try {
-      await apiDeleteArticle(id);
-      addToast('Article deleted', 'success');
-      nav.library();
-    } catch (e) {
-      addToast(e.message, 'error');
+      const deleted = await removeArticle(id);
+      if (deleted) nav.library();
     } finally {
       setDeleting(false);
     }

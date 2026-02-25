@@ -11,7 +11,6 @@ Covers:
 from __future__ import annotations
 
 import json
-from unittest.mock import patch
 
 from src.wide_event import WideEvent, begin_event, current_event, emit_event
 
@@ -200,20 +199,20 @@ class TestEventLifecycle:
         assert current_event() is not None
 
         # Clean up
-        emit_event(evt, force=True)
+        emit_event(evt)
 
     def test_emit_event_clears_current(self, capsys) -> None:
         """emit_event clears the current event after emission."""
         evt = begin_event("test")
-        emit_event(evt, force=True)
+        emit_event(evt)
 
         assert current_event() is None
 
     def test_emit_event_prints_json(self, capsys) -> None:
-        """emit_event with force=True prints a JSON line to stdout."""
+        """emit_event prints a JSON line to stdout."""
         evt = begin_event("test", request_id="r2")
         evt.set("outcome", "success")
-        emit_event(evt, force=True)
+        emit_event(evt)
 
         captured = capsys.readouterr()
         data = json.loads(captured.out.strip())
@@ -222,26 +221,13 @@ class TestEventLifecycle:
         assert data["request_id"] == "r2"
         assert data["outcome"] == "success"
 
-    def test_emit_event_respects_sampling(self, capsys) -> None:
-        """emit_event without force respects tail sampling."""
+    def test_emit_event_always_emits(self, capsys) -> None:
+        """emit_event always emits the event."""
         evt = begin_event("test")
         evt.set("status_code", 200)
         evt.set("outcome", "success")
 
-        with patch("src.wide_event._should_sample", return_value=False):
-            emit_event(evt)
-
-        captured = capsys.readouterr()
-        assert captured.out.strip() == ""
-
-    def test_force_bypasses_sampling(self, capsys) -> None:
-        """emit_event with force=True always emits."""
-        evt = begin_event("test")
-        evt.set("status_code", 200)
-        evt.set("outcome", "success")
-
-        with patch("src.wide_event._should_sample", return_value=False):
-            emit_event(evt, force=True)
+        emit_event(evt)
 
         captured = capsys.readouterr()
         assert captured.out.strip() != ""

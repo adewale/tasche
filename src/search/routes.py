@@ -12,6 +12,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
+from articles.routes import _LIST_COLUMNS
 from auth.dependencies import get_current_user
 
 router = APIRouter()
@@ -38,16 +39,6 @@ def _sanitize_fts5_query(query: str) -> str:
             # Wrap in double quotes to treat as a literal
             safe_tokens.append(f'"{cleaned}"')
     return " ".join(safe_tokens)
-
-
-# Column list for search results — same as the articles list endpoint.
-_SEARCH_COLUMNS = (
-    "id, user_id, original_url, final_url, canonical_url, domain, title, "
-    "excerpt, author, word_count, reading_time_minutes, image_count, status, "
-    "reading_status, is_favorite, audio_key, audio_duration_seconds, "
-    "audio_status, html_key, thumbnail_key, original_key, original_status, "
-    "scroll_position, reading_progress, created_at, updated_at"
-)
 
 
 @router.get("")
@@ -87,7 +78,7 @@ async def search_articles(
     user_id = user["user_id"]
 
     # Prefix columns with "articles." to avoid ambiguity with FTS5 table columns.
-    prefixed = ", ".join(f"articles.{c.strip()}" for c in _SEARCH_COLUMNS.split(","))
+    prefixed = ", ".join(f"articles.{c.strip()}" for c in _LIST_COLUMNS.split(","))
     sql = (
         f"SELECT {prefixed} FROM articles "
         "INNER JOIN articles_fts ON articles.rowid = articles_fts.rowid "

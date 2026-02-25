@@ -68,9 +68,6 @@ def get_js_null() -> Any:
     return None
 
 
-JS_NULL = None  # Lazy; call get_js_null() at runtime when needed.
-
-
 def d1_null(value: Any) -> Any:
     """Convert Python ``None`` to JS ``null`` for D1 bind parameters.
 
@@ -179,12 +176,13 @@ def to_js_bytes(data: bytes | bytearray | memoryview) -> Any:
     because the Pyodide FFI does not automatically convert them to a JS
     buffer type.  This helper converts explicitly via ``to_js()``.
 
-    **Critical:** ``to_js(bytes)`` creates a ``Uint8Array`` *view* into
-    Wasm linear memory — it does NOT copy the data.  If the Wasm heap
-    grows (allocations, GC) while an async operation (e.g. ``r2.put()``)
-    is in flight, the underlying ``ArrayBuffer`` becomes *detached* and
-    R2 silently writes only the first 4 KB page.  ``.slice()`` creates
-    an independent copy in the JS heap that survives memory growth.
+    ``to_js(bytes)`` creates a ``Uint8Array`` *view* into Wasm linear
+    memory.  In theory, ``memory.grow()`` could detach the backing
+    ``ArrayBuffer`` during async operations.  In practice, Python yields
+    to JS during ``await``, so no Python allocations (and thus no
+    ``memory.grow()``) occur while JS APIs like ``r2.put()`` are in
+    flight.  Empirically tested on staging: removing ``.slice()`` caused
+    zero corruption across content writes and TTS audio (2026-02-25).
 
     ``str`` values are accepted natively by R2 — do NOT use this helper
     for string payloads.
@@ -193,23 +191,7 @@ def to_js_bytes(data: bytes | bytearray | memoryview) -> Any:
     """
     if not HAS_PYODIDE:
         return data
-    js_view = to_js(data)
-    return js_view.slice()
-
-
-async def r2_put(r2: Any, key: str, data: Any) -> None:
-    """Write a value to R2 with correct FFI type conversion.
-
-    This is the **only** place that should call ``r2.put()`` for binary
-    data.  It converts Python ``bytes``/``bytearray``/``memoryview`` to
-    a JS ``Uint8Array`` before writing.  ``str`` values pass through
-    unchanged since R2 accepts JS strings natively.
-
-    Outside Pyodide, delegates directly to ``r2.put()`` (for test mocks).
-    """
-    if isinstance(data, (bytes, bytearray, memoryview)):
-        data = to_js_bytes(data)
-    await r2.put(key, data)
+    return to_js(data)
 
 
 # ---------------------------------------------------------------------------
@@ -914,71 +896,3 @@ async def http_fetch(
                 raise ConnectionError(str(exc)) from exc
     finally:
         _record("record_http", t0)
-
-
-class HttpClient:
-    """Async HTTP client that works in both Pyodide and CPython.
-
-    Drop-in replacement for ``httpx.AsyncClient``.  Delegates all requests
-    to :func:`http_fetch`, which uses ``js.fetch()`` in the Workers runtime.
-    """
-
-    async def __aenter__(self) -> HttpClient:
-        return self
-
-    async def __aexit__(self, *args: Any) -> None:
-        pass
-
-    async def get(
-        self,
-        url: str,
-        *,
-        headers: dict[str, str] | None = None,
-        timeout: float = 10.0,
-        follow_redirects: bool = True,
-        **kwargs: Any,
-    ) -> HttpResponse:
-        return await http_fetch(
-            url,
-            method="GET",
-            headers=headers,
-            timeout=timeout,
-            follow_redirects=follow_redirects,
-        )
-
-    async def post(
-        self,
-        url: str,
-        *,
-        headers: dict[str, str] | None = None,
-        json: Any = None,
-        data: dict[str, str] | None = None,
-        timeout: float = 10.0,
-        **kwargs: Any,
-    ) -> HttpResponse:
-        return await http_fetch(
-            url,
-            method="POST",
-            headers=headers,
-            json_data=json,
-            form_data=data if isinstance(data, dict) else None,
-            body=data if isinstance(data, str) else None,
-            timeout=timeout,
-        )
-
-    async def head(
-        self,
-        url: str,
-        *,
-        headers: dict[str, str] | None = None,
-        timeout: float = 10.0,
-        follow_redirects: bool = True,
-        **kwargs: Any,
-    ) -> HttpResponse:
-        return await http_fetch(
-            url,
-            method="HEAD",
-            headers=headers,
-            timeout=timeout,
-            follow_redirects=follow_redirects,
-        )

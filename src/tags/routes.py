@@ -16,6 +16,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
+from articles.routes import _get_user_article
 from auth.dependencies import get_current_user
 from utils import generate_id, now_iso
 
@@ -42,22 +43,6 @@ async def _get_user_tag(
     if tag is None:
         raise HTTPException(status_code=404, detail="Tag not found")
     return tag
-
-
-async def _get_user_article_id(
-    db: Any,
-    article_id: str,
-    user_id: str,
-) -> dict[str, Any]:
-    """Verify an article belongs to a user, or raise 404."""
-    article = await (
-        db.prepare("SELECT id FROM articles WHERE id = ? AND user_id = ?")
-        .bind(article_id, user_id)
-        .first()
-    )
-    if article is None:
-        raise HTTPException(status_code=404, detail="Article not found")
-    return article
 
 
 # ---------------------------------------------------------------------------
@@ -232,7 +217,7 @@ async def add_tag_to_article(
     db = env.DB
     user_id = user["user_id"]
 
-    await _get_user_article_id(db, article_id, user_id)
+    await _get_user_article(db, article_id, user_id, fields="id")
     await _get_user_tag(db, tag_id, user_id)
 
     # Check if association already exists
@@ -274,7 +259,7 @@ async def remove_tag_from_article(
     db = env.DB
     user_id = user["user_id"]
 
-    await _get_user_article_id(db, article_id, user_id)
+    await _get_user_article(db, article_id, user_id, fields="id")
     await _get_user_tag(db, tag_id, user_id)
 
     await (
@@ -298,7 +283,7 @@ async def get_article_tags(
     db = env.DB
     user_id = user["user_id"]
 
-    await _get_user_article_id(db, article_id, user_id)
+    await _get_user_article(db, article_id, user_id, fields="id")
 
     return await (
         db.prepare(

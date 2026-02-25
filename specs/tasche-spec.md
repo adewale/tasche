@@ -28,7 +28,7 @@
 - **Permanence**: You control the data—it doesn't disappear when a startup dies
 - **Cost**: ~$5/month on Workers Paid plan, paid directly to Cloudflare
 
-The `ALLOWED_EMAILS` env var restricts access to the owner (or use "first user wins" mode). Auth is simply "is this me?"
+The `ALLOWED_EMAILS` env var restricts access to the owner (strict whitelist only — "first user wins" mode is not implemented). Auth is simply "is this me?"
 
 ### 1.1 Core Promise: Your Articles Survive
 
@@ -124,7 +124,8 @@ Reading requires visual attention. Listening enables multitasking—commutes, ex
 - Clear mental model: "Listen Later" is a distinct action
 
 **Idempotency:** The listen-later endpoint MUST check `audio_status` before enqueuing:
-- `pending` or `generating`: Return 409 Conflict (already in progress)
+- `pending`: Return 409 Conflict (already queued)
+- `generating`: Allow re-queue as a recovery mechanism for stuck jobs (reset to `pending` and re-enqueue)
 - `ready`: Return 200 with existing audio data (no re-enqueue)
 - `null` or `failed`: Proceed to enqueue (new request or retry)
 
@@ -173,7 +174,7 @@ User clicks "Listen Later"
 **R2 storage:** Audio stored as `articles/{id}/audio.mp3`. Zero egress fees mean offline audio sync doesn't blow up costs.
 
 **PWA audio features:**
-- Play/pause, skip ±15s, playback speed (1x, 1.5x, 2x)
+- Play/pause, skip ±15s, playback speed (0.75x, 1x, 1.25x, 1.5x, 1.75x, 2x)
 - Background playback (continues when screen off)
 - Offline sync: "Download for offline listening" caches audio to device
 - Listen Later queue: filtered view of articles with audio ready
@@ -332,16 +333,12 @@ For a simple schema like Tasche's, raw SQL is clearer than an ORM anyway.
 
 | Library | Version | Purpose | Pyodide Status |
 |---------|---------|---------|----------------|
-| **beautifulsoup4** | ^4.12.x | HTML parsing | ✅ Available |
-| **python-readability** | ^0.1.x | Article extraction | ✅ Works (uses native JS engine) |
+| **beautifulsoup4** | ^4.12.x | HTML parsing, fallback extraction | ✅ Available |
 | **markdownify** | ^0.11.x | HTML to Markdown | ✅ Pure Python |
 | **httpx** | ^0.27.x | HTTP client | ✅ Available |
 
-**Why python-readability over readability-lxml:**
-- Wraps the actual @mozilla/readability (Firefox Reader View engine)
-- Uses Pyodide's native JS engine—no C extensions needed
-- Same algorithm Mozilla actively maintains for modern web pages
-- Better HTML5 handling, metadata extraction (author, date, excerpt)
+**Content extraction: Readability Service Binding with BeautifulSoup fallback.**
+`python-readability` is **not used** — it calls `js.eval()` to load Mozilla Readability JS, which is blocked in Workers (`EvalError: Code generation from strings disallowed`). Instead, content extraction uses a **Readability Service Binding** to a separate JS Worker that runs @mozilla/readability natively, with BeautifulSoup as a fallback when the service binding is unavailable or extraction fails.
 
 ### 2.5 Browser Rendering: REST API
 
@@ -385,7 +382,8 @@ Use `secrets.token_urlsafe(16)` for 22-character URL-safe IDs, or `uuid.uuid4()`
 | Library | Reason |
 |---------|--------|
 | `lxml` (standalone) | C extension may not work in Pyodide |
-| `readability-lxml` | Requires lxml; use `python-readability` instead |
+| `readability-lxml` | Requires lxml |
+| `python-readability` | Calls `js.eval()` which is blocked in Workers (`EvalError`). Use Readability Service Binding instead. |
 | `playwright` | No Python Workers support |
 | `selenium` | Requires browser binary |
 | `requests` | Use `httpx` instead (async support) |
@@ -596,7 +594,7 @@ User saves URL → POST /api/articles
 **Why Workers Static Assets for Tasche:**
 - **Unified deployment**: API and frontend deploy together with a single `wrangler deploy`
 - **PWA support**: Serves the app shell, manifest.json, and Service Worker. Users can "Add to Home Screen" and get an app-like experience.
-- **SPA routing**: Configure `not_found_handling = "single-page-application"` for client-side routing
+- **SPA routing**: Configure `not_found_handling = "none"` — the Worker handles SPA fallback manually in its `fetch()` handler
 - **Offline-first**: The Service Worker intercepts requests and serves cached articles when offline
 - **Global CDN**: Assets cached at 300+ edge locations
 
@@ -606,10 +604,12 @@ User saves URL → POST /api/articles
 {
   "assets": {
     "directory": "./dist/client",
-    "not_found_handling": "single-page-application"
+    "not_found_handling": "none"
   }
 }
 ```
+
+**Why not `"single-page-application"`?** The `single-page-application` setting intercepts browser navigation requests (`Sec-Fetch-Mode: navigate`) to *all* paths — including API paths like `/api/auth/login` — and serves `index.html` instead of forwarding to the Worker. This silently breaks OAuth login and any other API endpoint accessed via browser navigation. The Worker handles SPA fallback manually: it routes `/api/*` to FastAPI, delegates everything else to `env.ASSETS.fetch()`, and returns `/index.html` for asset 404s.
 
 **PWA architecture:**
 
@@ -804,6 +804,7 @@ flowchart TB
 | Session Management | KV | Auth sessions with TTL |
 | Background Processing | Queues | Article fetching, content extraction, TTS generation |
 | Content Extraction | Browser Rendering REST API | Screenshot and HTML scraping |
+| Readability Extraction | Service Binding (`READABILITY`) | @mozilla/readability via separate JS Worker, BeautifulSoup fallback |
 | Authentication | Manual GitHub OAuth | OAuth flow with KV sessions |
 | Listen Later (TTS) | Workers AI | Text-to-speech via @cf/deepgram/aura-2-en |
 
@@ -836,6 +837,11 @@ flowchart TB
 | `html_key` | TEXT | — | R2 path to content.html |
 | `thumbnail_key` | TEXT | — | R2 path to thumbnail.webp |
 | `original_key` | TEXT | — | R2 path to original.webp (full-page screenshot) |
+| `markdown_content` | TEXT | — | Full Markdown for FTS5 indexing and TTS source |
+| `scroll_position` | REAL | — | Reading scroll position (0–1 percentage), default 0 |
+| `reading_progress` | REAL | — | Reading progress (0–1 percentage), default 0 |
+| `original_status` | TEXT | — | URL health: 'available', 'paywalled', 'gone', 'domain_dead', 'unknown' |
+| `last_checked_at` | TEXT | — | When `original_status` was last verified (ISO 8601) |
 | `created_at` | TEXT | — | When saved (ISO 8601 with timezone) |
 | `updated_at` | TEXT | — | Last modified (ISO 8601 with timezone) |
 
@@ -844,7 +850,7 @@ flowchart TB
 - `title`: max 500 characters
 - Return 400 with a clear error message when limits are exceeded
 
-**Uniqueness:** A `UNIQUE(user_id, original_url)` index prevents duplicate articles per user. The API should return 409 Conflict when a duplicate is detected.
+**Uniqueness:** A `UNIQUE(user_id, original_url)` index prevents duplicate articles per user. When a duplicate URL is detected (matching `original_url`, `final_url`, or `canonical_url`), the API **re-processes the existing article** — it resets `status` to `pending`, re-enqueues the article for processing, and returns **201 with `updated: true` and the original `created_at`**. This lets users "re-save" an article to refresh its content. A 409 Conflict is only returned if a race-condition unique constraint violation occurs during INSERT.
 
 **Tags table:**
 
@@ -986,7 +992,7 @@ version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi",
-    "python-readability",
+    "beautifulsoup4",
     "markdownify",
     "httpx",
 ]
@@ -1027,7 +1033,7 @@ The whole point of a read-it-later app is **permanence**. When the original arti
 | `domain_dead` | Entire domain unreachable | Show: "Source website offline" |
 | `unknown` | Never checked | No indicator |
 
-**Periodic health check (via Durable Objects alarm):** A scheduled task periodically checks if original URLs are still accessible and updates their status.
+**Periodic health check (via Cron Trigger `0 3 * * *`):** A daily scheduled task checks if original URLs are still accessible and updates their status. A Cron Trigger is simpler and sufficient for a daily health check — no Durable Objects overhead needed.
 
 ---
 
@@ -1248,7 +1254,7 @@ Each screen below is a route in the SPA. The wireframes show layout structure, n
 - Play/pause toggle
 - Skip backward/forward 15 seconds
 - Seek bar with current time / total duration
-- Playback speed: cycle through 0.75x → 1x → 1.25x → 1.5x → 2x
+- Playback speed: cycle through 0.75x → 1x → 1.25x → 1.5x → 1.75x → 2x
 - Media Session API: lock screen shows article title, play/pause, skip controls
 - Background playback: audio continues when screen is off or app is backgrounded
 
@@ -1353,13 +1359,13 @@ The TTS model receives **plain text**, not markdown. Before sending to Workers A
 
 Without stripping, the TTS model reads out "hash hash Introduction, asterisk asterisk bold text asterisk asterisk" — rendering the feature unusable.
 
-### 10.6 Audio Streaming
+### 10.6 Audio Response
 
-The audio endpoint MUST stream from R2's ReadableStream rather than buffering the entire file in memory via `arrayBuffer()`. Workers have a 128MB memory limit; large audio files can cause OOM crashes. Use the R2 object's `body` stream with chunked reading.
+The audio endpoint buffers the full audio body from R2 and returns it as a `Response` (not a `StreamingResponse`). The Cloudflare Workers ASGI adapter for Python only consumes the first yielded chunk from `StreamingResponse` async generators, silently truncating output. Full buffering is required to deliver the complete audio file. Audio files for typical articles are well within Workers' memory limits.
 
 ### 10.7 Service Worker Cache Management
 
-The service worker uses three caches: `STATIC_CACHE` (app shell), `API_CACHE` (API responses), and `CACHE_NAME` (sync queue for offline mutations). The activate handler MUST preserve all three during cache cleanup. Failing to preserve `CACHE_NAME` would lose queued offline mutations during a service worker update.
+The service worker uses four caches: `STATIC_CACHE` (app shell), `API_CACHE` (API responses), `OFFLINE_CACHE` (explicitly saved article content and audio for offline reading), and `CACHE_NAME` (sync queue for offline mutations). The activate handler MUST preserve all four during cache cleanup. Failing to preserve `CACHE_NAME` would lose queued offline mutations during a service worker update.
 
 ### 10.8 Offline Sync Queue Deduplication
 
@@ -1397,7 +1403,7 @@ Save scroll position as a **percentage** (0-1) of total scrollable height, not a
 
 ### 11.3 Request Handling
 
-10. **Stream large responses** — Don't buffer entire article content in memory. Use FastAPI's `StreamingResponse` to pipe R2 object bodies directly to the client.
+10. **Avoid `StreamingResponse` with async generators** — The Cloudflare Workers ASGI adapter for Python only consumes the first yielded chunk, silently truncating output. Buffer the full body from R2 and return a `Response` instead.
 
 11. **Never store request-scoped state in globals** — Workers reuse isolates across requests. Global variables persist and leak between requests. Always pass state through function arguments or store on `request.state`.
 
@@ -1510,6 +1516,21 @@ Each milestone is a **vertical slice** — it delivers a complete, end-to-end us
 | 8 | Observability | Wide events middleware emits one JSON log line per request with full context | ✅ |
 | 9 | Hardening | 28 security and edge-case fixes: SSRF, FTS5 injection, input validation, TTS idempotency, queue retry, cookie behavior | ✅ |
 
+**Additional implemented features (v0.1.0):**
+
+| Feature | Endpoint / Location | Description |
+|---------|---------------------|-------------|
+| Tag rules / auto-tagging | CRUD at `/api/tag-rules` | Users define rules (e.g., domain matches, keyword patterns) that automatically apply tags during article processing |
+| Data export | `/api/export/json`, `/api/export/bookmarks` | Export full library as JSON or Netscape HTML bookmarks file |
+| Reading statistics | `/api/stats` | Aggregated reading stats: articles saved, read, archived, total reading time, etc. |
+| Batch operations | `/api/articles/batch-update`, `/api/articles/batch-delete` | Bulk status updates and deletions for multiple articles at once |
+| Browser extension | `extension/` directory | Browser extension for saving articles (alternative to bookmarklet) |
+| Markdown view | `#/article/:id/markdown` | View article as rendered Markdown (alternative to the HTML reader view) |
+| Reader preferences | `ReaderToolbar` component | Font size adjustment and theme selection (light/dark) in reader view |
+| Keyboard shortcuts | Library and reader views | `j`/`k` navigation between articles, `?` for help overlay |
+| Tag rename | `PATCH /api/tags/{tag_id}` | Rename an existing tag; updates all associations |
+| Article retry | `POST /api/articles/{id}/retry` | Re-process a failed article (resets status to pending and re-enqueues) |
+
 ### Phase 10: Polished Reading Experience
 
 **User journey:** *"I open Tasche on my phone. Article cards show thumbnails and tags at a glance. I tap one and read it. I tap the headphone icon — audio generates. I lock my screen and keep listening with lock-screen controls."*
@@ -1532,7 +1553,7 @@ Each milestone is a **vertical slice** — it delivers a complete, end-to-end us
 | Task | Layer | Details |
 |------|-------|---------|
 | `original_status` column | D1 migration | Add field to articles table: `available`, `paywalled`, `gone`, `domain_dead`, `unknown` |
-| URL health checker | Backend | Cron Trigger or Durable Objects alarm periodically HEAD-checks original URLs, updates `original_status` |
+| URL health checker | Backend | Cron Trigger (`0 3 * * *`) periodically HEAD-checks original URLs, updates `original_status` |
 | Status indicators in reader | Frontend | Show status badge: "Original is gone. Good thing you saved it." / "Original requires subscription" / etc. |
 | `metadata.json` per article | Backend | Store archive timestamp, image count, provenance in R2 alongside content |
 | Full-page screenshot | Backend | Store `original.webp` via Browser Rendering for archival fallback |

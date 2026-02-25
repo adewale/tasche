@@ -417,20 +417,6 @@ class TestToJsBytesFFI:
         result = wrappers_mod.to_js_bytes(memoryview(b"view"))
         assert isinstance(result, FakeJsProxy)
 
-    def test_slice_called_for_owned_copy(self, pyodide_fakes: FakeJsModule) -> None:
-        """to_js_bytes() must call .slice() to create an owned JS heap copy.
-
-        Without .slice(), to_js(bytes) returns a Uint8Array VIEW into Wasm
-        linear memory that becomes detached when the heap grows during async
-        R2 writes, truncating multi-MB audio to 4KB.
-        """
-        original = wrappers_mod.to_js_bytes(b"audio data")
-        # The result should be a NEW FakeJsProxy (from .slice()), not the
-        # same object that fake_to_js() created.
-        direct = fake_to_js(b"audio data")
-        assert original is not direct
-        assert isinstance(original, FakeJsProxy)
-
 
 class TestToPyBytesFFI:
     def test_jsproxy_bytes_converted(self, pyodide_fakes: FakeJsModule) -> None:

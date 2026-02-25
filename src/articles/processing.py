@@ -38,8 +38,9 @@ from articles.extraction import (
 from articles.images import download_images, store_images
 from articles.storage import article_key, store_content, store_metadata
 from articles.urls import _is_private_hostname, extract_domain
+from utils import now_iso
 from wide_event import current_event
-from wrappers import HttpClient, HttpError, SafeEnv
+from wrappers import HttpError, SafeEnv, http_fetch
 
 # Minimum content length (characters) to consider HTML as "real" content.
 # Below this threshold, the page is likely JS-rendered and needs Browser Rendering.
@@ -194,7 +195,7 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
         # Step 1: Update status to 'processing'
         await (
             db.prepare("UPDATE articles SET status = ?, updated_at = ? WHERE id = ?")
-            .bind("processing", _now(), article_id)
+            .bind("processing", now_iso(), article_id)
             .run()
         )
 
@@ -207,112 +208,109 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
             pre_supplied_html = await raw_obj.text()
 
         # Step 2: Fetch page, following redirects (skipped when content pre-supplied)
-        async with HttpClient() as client:
-            if pre_supplied_html is not None:
-                html = pre_supplied_html
-                final_url = original_url
-                evt = current_event()
-                if evt:
-                    evt.set("content_source", "pre_supplied")
-                    evt.set("content_length", len(html))
-            else:
-                html, final_url = await _fetch_page(client, original_url)
+        if pre_supplied_html is not None:
+            html = pre_supplied_html
+            final_url = original_url
+            evt = current_event()
+            if evt:
+                evt.set("content_source", "pre_supplied")
+                evt.set("content_length", len(html))
+        else:
+            html, final_url = await _fetch_page(original_url)
 
-                # SSRF check: validate the final URL after redirects
-                from urllib.parse import urlparse
+            # SSRF check: validate the final URL after redirects
+            from urllib.parse import urlparse
 
-                parsed_final = urlparse(final_url)
-                if parsed_final.hostname and _is_private_hostname(parsed_final.hostname):
-                    raise ValueError(f"Redirect to private/internal URL blocked: {final_url}")
+            parsed_final = urlparse(final_url)
+            if parsed_final.hostname and _is_private_hostname(parsed_final.hostname):
+                raise ValueError(f"Redirect to private/internal URL blocked: {final_url}")
 
-            # Step 3: If content looks JS-heavy, try Browser Rendering
-            # (skip when content was pre-supplied — the user's browser already
-            # rendered any JS)
-            safe_env = SafeEnv(env)
-            account_id = safe_env.get("CF_ACCOUNT_ID")
-            api_token = safe_env.get("CF_API_TOKEN")
-            has_browser_rendering = bool(account_id and api_token)
+        # Step 3: If content looks JS-heavy, try Browser Rendering
+        # (skip when content was pre-supplied — the user's browser already
+        # rendered any JS)
+        safe_env = SafeEnv(env)
+        account_id = safe_env.get("CF_ACCOUNT_ID")
+        api_token = safe_env.get("CF_API_TOKEN")
+        has_browser_rendering = bool(account_id and api_token)
 
-            if not has_browser_rendering:
-                evt = current_event()
-                if evt:
-                    evt.set("browser_rendering", "not_configured")
+        if not has_browser_rendering:
+            evt = current_event()
+            if evt:
+                evt.set("browser_rendering", "not_configured")
 
-            if has_browser_rendering and pre_supplied_html is None and _is_js_heavy(html):
-                try:
-                    html = await scrape(client, final_url, account_id, api_token)
-                except BrowserRenderingError:
-                    pass  # Fall back to the original HTML
+        if has_browser_rendering and pre_supplied_html is None and _is_js_heavy(html):
+            try:
+                html = await scrape(final_url, account_id, api_token)
+            except BrowserRenderingError:
+                pass  # Fall back to the original HTML
 
-            # Step 4: Extract canonical URL
-            canonical_url = extract_canonical_url(html) or final_url
-            domain = extract_domain(final_url)
+        # Step 4: Extract canonical URL
+        canonical_url = extract_canonical_url(html) or final_url
+        domain = extract_domain(final_url)
 
-            # Step 5: Screenshots via Browser Rendering
-            thumbnail_key = None
-            original_key = None
+        # Step 5: Screenshots via Browser Rendering
+        thumbnail_key = None
+        original_key = None
 
-            # 5a: Thumbnail (above-the-fold crop)
-            if has_browser_rendering:
-                try:
-                    thumb_data = await screenshot(
-                        client,
-                        final_url,
-                        account_id,
-                        api_token,
-                        viewport_width=1200,
-                        viewport_height=630,
-                    )
-                    thumbnail_key = article_key(article_id, "thumbnail.webp")
-                    await r2.put(thumbnail_key, thumb_data)
-                except BrowserRenderingError:
-                    pass  # Per-URL failures are non-fatal
+        # 5a: Thumbnail (above-the-fold crop)
+        if has_browser_rendering:
+            try:
+                thumb_data = await screenshot(
+                    final_url,
+                    account_id,
+                    api_token,
+                    viewport_width=1200,
+                    viewport_height=630,
+                )
+                thumbnail_key = article_key(article_id, "thumbnail.webp")
+                await r2.put(thumbnail_key, thumb_data)
+            except BrowserRenderingError:
+                pass  # Per-URL failures are non-fatal
 
-            # 5b: Full-page archival screenshot
-            if has_browser_rendering:
-                try:
-                    full_data = await screenshot(
-                        client,
-                        final_url,
-                        account_id,
-                        api_token,
-                        viewport_width=1200,
-                        viewport_height=800,
-                        full_page=True,
-                    )
-                    original_key = article_key(article_id, "original.webp")
-                    await r2.put(original_key, full_data)
-                except BrowserRenderingError:
-                    pass  # Per-URL failures are non-fatal
+        # 5b: Full-page archival screenshot
+        if has_browser_rendering:
+            try:
+                full_data = await screenshot(
+                    final_url,
+                    account_id,
+                    api_token,
+                    viewport_width=1200,
+                    viewport_height=800,
+                    full_page=True,
+                )
+                original_key = article_key(article_id, "original.webp")
+                await r2.put(original_key, full_data)
+            except BrowserRenderingError:
+                pass  # Per-URL failures are non-fatal
 
-            # Step 6: Extract article content
-            # Prefer the Readability Service Binding (100% Mozilla fidelity)
-            # with BS4 heuristic fallback when the binding is unavailable.
-            readability = safe_env.READABILITY
-            extraction_method = "bs4"
-            if readability is not None:
-                try:
-                    article = await readability.parse(html, final_url)
-                    if article.get("html"):
-                        extraction_method = "readability"
-                    else:
-                        article = extract_article(html)
-                except Exception as exc:
-                    evt = current_event()
-                    if evt:
-                        evt.set("extraction_fallback", True)
-                        evt.set("extraction_fallback_error", str(exc)[:200])
+        # Step 6: Extract article content
+        # Prefer the Readability Service Binding (100% Mozilla fidelity)
+        # with BS4 heuristic fallback when the binding is unavailable.
+        readability = safe_env.READABILITY
+        extraction_method = "bs4"
+        if readability is not None:
+            try:
+                article = await readability.parse(html, final_url)
+                if article.get("html"):
+                    extraction_method = "readability"
+                else:
                     article = extract_article(html)
-            else:
+            except Exception as exc:
+                evt = current_event()
+                if evt:
+                    evt.set("extraction_fallback", True)
+                    evt.set("extraction_fallback_error", str(exc)[:200])
                 article = extract_article(html)
-            clean_html = article["html"]
-            title = article["title"]
-            excerpt = article["excerpt"]
-            author = article["byline"]
+        else:
+            article = extract_article(html)
+        clean_html = article["html"]
+        title = article["title"]
+        excerpt = article["excerpt"]
+        author = article["byline"]
 
-            # Step 7: Download and store images
-            images = await download_images(client, clean_html)
-            image_map = await store_images(r2, article_id, images)
+        # Step 7: Download and store images
+        images = await download_images(clean_html)
+        image_map = await store_images(r2, article_id, images)
 
         # Preserve user-supplied title if one was provided at creation time
         existing = await (
@@ -342,7 +340,7 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
             article_id,
             {
                 "article_id": article_id,
-                "archived_at": _now(),
+                "archived_at": now_iso(),
                 "original_url": original_url,
                 "final_url": final_url,
                 "canonical_url": canonical_url,
@@ -393,7 +391,7 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
                 len(image_map),
                 markdown,
                 "ready",
-                _now(),
+                now_iso(),
                 article_id,
             )
             .run()
@@ -482,7 +480,7 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
         try:
             await (
                 db.prepare("UPDATE articles SET status = ?, updated_at = ? WHERE id = ?")
-                .bind("failed", _now(), article_id)
+                .bind("failed", now_iso(), article_id)
                 .run()
             )
         except Exception:
@@ -502,7 +500,7 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
         try:
             await (
                 db.prepare("UPDATE articles SET status = ?, updated_at = ? WHERE id = ?")
-                .bind("failed", _now(), article_id)
+                .bind("failed", now_iso(), article_id)
                 .run()
             )
         except Exception:
@@ -512,7 +510,6 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
 
 
 async def _fetch_page(
-    client: HttpClient,
     url: str,
 ) -> tuple[str, str]:
     """Fetch a page with redirect following.
@@ -529,7 +526,7 @@ async def _fetch_page(
     """
     _MAX_CONTENT_LENGTH = 10_485_760  # 10 MB
 
-    resp = await client.get(
+    resp = await http_fetch(
         url,
         timeout=30.0,
         headers={
@@ -555,10 +552,3 @@ async def _fetch_page(
         )
 
     return resp.text, str(resp.url)
-
-
-def _now() -> str:
-    """Return the current UTC timestamp as an ISO 8601 string for D1."""
-    from utils import now_iso
-
-    return now_iso()

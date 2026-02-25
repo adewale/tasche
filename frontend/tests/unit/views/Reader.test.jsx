@@ -82,7 +82,6 @@ vi.mock('../../../src/hooks/useSWMessage.js', () => ({
 
 vi.mock('../../../src/state.js', () => ({
   articles: { value: [] },
-  currentArticle: { value: null },
   addToast: vi.fn(),
 }));
 

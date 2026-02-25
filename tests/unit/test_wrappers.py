@@ -14,7 +14,6 @@ import pytest
 
 from src.wrappers import (
     HAS_PYODIDE,
-    HttpClient,
     HttpError,
     HttpResponse,
     JsException,
@@ -34,7 +33,6 @@ from src.wrappers import (
     get_js_null,
     get_r2_size,
     http_fetch,
-    r2_put,
     stream_r2_body,
     to_py_bytes,
 )
@@ -603,39 +601,6 @@ class TestGetR2Size:
 
 
 # =========================================================================
-# r2_put — centralized R2 write with FFI conversion
-# =========================================================================
-
-
-class TestR2Put:
-    async def test_writes_bytes_to_r2(self) -> None:
-        """Python bytes are written to R2 (converted in Pyodide)."""
-        mock_r2 = AsyncMock()
-        await r2_put(mock_r2, "articles/abc/image.webp", b"image data")
-        mock_r2.put.assert_awaited_once_with("articles/abc/image.webp", b"image data")
-
-    async def test_writes_string_to_r2(self) -> None:
-        """String values pass through without conversion."""
-        mock_r2 = AsyncMock()
-        await r2_put(mock_r2, "articles/abc/content.html", "<html>hello</html>")
-        mock_r2.put.assert_awaited_once_with("articles/abc/content.html", "<html>hello</html>")
-
-    async def test_writes_bytearray_to_r2(self) -> None:
-        mock_r2 = AsyncMock()
-        await r2_put(mock_r2, "key", bytearray(b"data"))
-        mock_r2.put.assert_awaited_once()
-
-    async def test_writes_json_string_to_r2(self) -> None:
-        """JSON strings (from json.dumps) pass through unchanged."""
-        import json
-
-        mock_r2 = AsyncMock()
-        payload = json.dumps({"title": "Test", "word_count": 42})
-        await r2_put(mock_r2, "articles/abc/metadata.json", payload)
-        mock_r2.put.assert_awaited_once_with("articles/abc/metadata.json", payload)
-
-
-# =========================================================================
 # HttpError
 # =========================================================================
 
@@ -916,163 +881,6 @@ class TestHttpFetch:
         assert resp.status_code == 302
         call_kwargs = mock_cls.call_args.kwargs
         assert call_kwargs["follow_redirects"] is False
-
-
-# =========================================================================
-# HttpClient — async context manager wrapping http_fetch
-# =========================================================================
-
-
-class TestHttpClient:
-    async def test_context_manager_protocol(self) -> None:
-        """HttpClient supports async with."""
-        async with HttpClient() as client:
-            assert isinstance(client, HttpClient)
-
-    async def test_get_delegates_to_http_fetch(self) -> None:
-        expected = HttpResponse(status_code=200, _body=b"ok")
-        with patch(
-            "src.wrappers.http_fetch",
-            new_callable=AsyncMock,
-            return_value=expected,
-        ) as mock:
-            async with HttpClient() as client:
-                resp = await client.get("https://example.com/")
-        assert resp is expected
-        mock.assert_awaited_once_with(
-            "https://example.com/",
-            method="GET",
-            headers=None,
-            timeout=10.0,
-            follow_redirects=True,
-        )
-
-    async def test_get_with_custom_headers(self) -> None:
-        expected = HttpResponse(status_code=200, _body=b"")
-        with patch(
-            "src.wrappers.http_fetch",
-            new_callable=AsyncMock,
-            return_value=expected,
-        ) as mock:
-            async with HttpClient() as client:
-                await client.get(
-                    "https://example.com/",
-                    headers={"User-Agent": "Tasche/1.0"},
-                    timeout=30.0,
-                )
-        mock.assert_awaited_once_with(
-            "https://example.com/",
-            method="GET",
-            headers={"User-Agent": "Tasche/1.0"},
-            timeout=30.0,
-            follow_redirects=True,
-        )
-
-    async def test_post_with_json(self) -> None:
-        expected = HttpResponse(status_code=201, _body=b'{"id":"new"}')
-        with patch(
-            "src.wrappers.http_fetch",
-            new_callable=AsyncMock,
-            return_value=expected,
-        ) as mock:
-            async with HttpClient() as client:
-                resp = await client.post(
-                    "https://api.example.com/items",
-                    json={"title": "Test"},
-                )
-        assert resp.status_code == 201
-        mock.assert_awaited_once_with(
-            "https://api.example.com/items",
-            method="POST",
-            headers=None,
-            json_data={"title": "Test"},
-            form_data=None,
-            body=None,
-            timeout=10.0,
-        )
-
-    async def test_post_with_form_data(self) -> None:
-        expected = HttpResponse(status_code=200, _body=b"ok")
-        with patch(
-            "src.wrappers.http_fetch",
-            new_callable=AsyncMock,
-            return_value=expected,
-        ) as mock:
-            async with HttpClient() as client:
-                await client.post(
-                    "https://example.com/token",
-                    data={"grant_type": "authorization_code"},
-                )
-        mock.assert_awaited_once_with(
-            "https://example.com/token",
-            method="POST",
-            headers=None,
-            json_data=None,
-            form_data={"grant_type": "authorization_code"},
-            body=None,
-            timeout=10.0,
-        )
-
-    async def test_post_with_string_body(self) -> None:
-        expected = HttpResponse(status_code=200, _body=b"ok")
-        with patch(
-            "src.wrappers.http_fetch",
-            new_callable=AsyncMock,
-            return_value=expected,
-        ) as mock:
-            async with HttpClient() as client:
-                await client.post(
-                    "https://example.com/raw",
-                    data="raw body string",
-                )
-        mock.assert_awaited_once_with(
-            "https://example.com/raw",
-            method="POST",
-            headers=None,
-            json_data=None,
-            form_data=None,
-            body="raw body string",
-            timeout=10.0,
-        )
-
-    async def test_head_request(self) -> None:
-        expected = HttpResponse(status_code=200, _body=b"")
-        with patch(
-            "src.wrappers.http_fetch",
-            new_callable=AsyncMock,
-            return_value=expected,
-        ) as mock:
-            async with HttpClient() as client:
-                resp = await client.head("https://example.com/page")
-        assert resp.status_code == 200
-        mock.assert_awaited_once_with(
-            "https://example.com/page",
-            method="HEAD",
-            headers=None,
-            timeout=10.0,
-            follow_redirects=True,
-        )
-
-    async def test_head_no_follow_redirects(self) -> None:
-        expected = HttpResponse(status_code=301, _body=b"")
-        with patch(
-            "src.wrappers.http_fetch",
-            new_callable=AsyncMock,
-            return_value=expected,
-        ) as mock:
-            async with HttpClient() as client:
-                resp = await client.head(
-                    "https://example.com/old",
-                    follow_redirects=False,
-                )
-        assert resp.status_code == 301
-        mock.assert_awaited_once_with(
-            "https://example.com/old",
-            method="HEAD",
-            headers=None,
-            timeout=10.0,
-            follow_redirects=False,
-        )
 
 
 # =========================================================================

@@ -1,8 +1,8 @@
 test:
 	uv run pytest tests/unit -x -q
 
-test-all:
-	uv run pytest tests/ -x -q
+test-e2e:
+	RUN_E2E_TESTS=1 uv run pytest tests/e2e/ -x -q
 
 lint:
 	uv run ruff check src/ tests/

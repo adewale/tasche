@@ -4,9 +4,16 @@ import { Tags } from '../../../src/views/Tags.jsx';
 
 vi.mock('../../../src/api.js', () => ({
   listTags: vi.fn(() => Promise.resolve([])),
-  createTag: vi.fn(() => Promise.resolve({ id: 'tag-new', name: 'NewTag', article_count: 0 })),
+  createTag: vi.fn(() =>
+    Promise.resolve({
+      id: 'tag-new',
+      user_id: 'u1',
+      name: 'NewTag',
+      created_at: '2025-01-01T00:00:00Z',
+    }),
+  ),
   deleteTag: vi.fn(() => Promise.resolve()),
-  renameTag: vi.fn(() => Promise.resolve({ id: 'tag-1', name: 'Renamed' })),
+  renameTag: vi.fn(() => Promise.resolve({ id: 'tag-1', user_id: 'u1', name: 'Renamed' })),
   getTagRules: vi.fn(() => Promise.resolve([])),
   createTagRule: vi.fn(() =>
     Promise.resolve({

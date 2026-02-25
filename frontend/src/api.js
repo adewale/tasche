@@ -105,15 +105,22 @@ export function batchDeleteArticles(articleIds) {
   });
 }
 
+// Authenticated fetch with shared 401 handling (returns raw Response)
+function authenticatedFetch(path) {
+  return fetch(path, { credentials: 'include' }).then(function (resp) {
+    if (resp.status === 401) {
+      user.value = null;
+      navigateToLogin();
+      throw new Error('Unauthorized');
+    }
+    return resp;
+  });
+}
+
 // Fetch text content (returns null on error/404)
 function fetchText(path) {
-  return fetch(path, { credentials: 'include' })
+  return authenticatedFetch(path)
     .then(function (resp) {
-      if (resp.status === 401) {
-        user.value = null;
-        navigateToLogin();
-        return null;
-      }
       if (!resp.ok) return null;
       return resp.text();
     })
@@ -124,12 +131,7 @@ function fetchText(path) {
 
 // Download a file as a blob with auto-detected filename
 function downloadFile(path, defaultName) {
-  return fetch(path, { credentials: 'include' }).then(function (resp) {
-    if (resp.status === 401) {
-      user.value = null;
-      navigateToLogin();
-      throw new Error('Unauthorized');
-    }
+  return authenticatedFetch(path).then(function (resp) {
     if (!resp.ok) {
       throw new Error('Download failed');
     }
@@ -241,56 +243,48 @@ export function exportData(format) {
   );
 }
 
+// Service worker messaging helper
+function sendToSW(message) {
+  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+    navigator.serviceWorker.controller.postMessage(message);
+  }
+}
+
 // Offline mutation queue
 export function queueOfflineMutation(url, method, body) {
-  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-    navigator.serviceWorker.controller.postMessage({
-      type: 'QUEUE_REQUEST',
-      request: {
-        url: url,
-        method: method,
-        headers: { 'Content-Type': 'application/json' },
-        body: body ? JSON.stringify(body) : undefined,
-      },
-    });
-    if ('SyncManager' in window) {
-      navigator.serviceWorker.ready
-        .then(function (reg) {
-          return reg.sync.register('tasche-sync');
-        })
-        .catch(function () {});
-    }
+  sendToSW({
+    type: 'QUEUE_REQUEST',
+    request: {
+      url: url,
+      method: method,
+      headers: { 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+    },
+  });
+  if ('SyncManager' in window) {
+    navigator.serviceWorker.ready
+      .then(function (reg) {
+        return reg.sync.register('tasche-sync');
+      })
+      .catch(function () {});
   }
 }
 
 // Cache articles for offline reading
 export function cacheArticlesForOffline(articleIds) {
-  if ('serviceWorker' in navigator && navigator.serviceWorker.controller && articleIds.length > 0) {
-    navigator.serviceWorker.controller.postMessage({
-      type: 'CACHE_ARTICLES',
-      articleIds: articleIds,
-    });
+  if (articleIds.length > 0) {
+    sendToSW({ type: 'CACHE_ARTICLES', articleIds: articleIds });
   }
 }
 
 // Save a single article for offline reading (explicit user action)
 export function saveForOffline(articleId) {
-  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-    navigator.serviceWorker.controller.postMessage({
-      type: 'SAVE_FOR_OFFLINE',
-      articleId: articleId,
-    });
-  }
+  sendToSW({ type: 'SAVE_FOR_OFFLINE', articleId: articleId });
 }
 
 // Save article audio for offline listening (explicit user action)
 export function saveAudioOffline(articleId) {
-  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-    navigator.serviceWorker.controller.postMessage({
-      type: 'SAVE_AUDIO_OFFLINE',
-      articleId: articleId,
-    });
-  }
+  sendToSW({ type: 'SAVE_AUDIO_OFFLINE', articleId: articleId });
 }
 
 // Check if an article is cached for offline reading
@@ -333,12 +327,7 @@ export function isOfflineCached(articleId) {
 
 // Trigger auto-precaching of recent unread articles
 export function triggerAutoPrecache(limit) {
-  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-    navigator.serviceWorker.controller.postMessage({
-      type: 'AUTO_PRECACHE',
-      limit: limit || 20,
-    });
-  }
+  sendToSW({ type: 'AUTO_PRECACHE', limit: limit || 20 });
 }
 
 // Request cache stats from the service worker
@@ -375,22 +364,15 @@ export function getCacheStats() {
 
 // Trigger sync queue replay
 export function triggerSync() {
-  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-    if ('SyncManager' in window) {
-      navigator.serviceWorker.ready
-        .then(function (reg) {
-          return reg.sync.register('tasche-sync');
-        })
-        .catch(function () {
-          // Fallback: send message directly
-          navigator.serviceWorker.controller.postMessage({
-            type: 'REPLAY_QUEUE',
-          });
-        });
-    } else {
-      navigator.serviceWorker.controller.postMessage({
-        type: 'REPLAY_QUEUE',
+  if ('SyncManager' in window && 'serviceWorker' in navigator) {
+    navigator.serviceWorker.ready
+      .then(function (reg) {
+        return reg.sync.register('tasche-sync');
+      })
+      .catch(function () {
+        sendToSW({ type: 'REPLAY_QUEUE' });
       });
-    }
+  } else {
+    sendToSW({ type: 'REPLAY_QUEUE' });
   }
 }

@@ -13,10 +13,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from starlette.responses import Response
 
-from articles.routes import _get_user_article
+from articles.routes import _enqueue_or_fail, _get_user_article
 from articles.storage import article_key, get_content
 from auth.dependencies import get_current_user
-from wrappers import get_r2_size
 
 router = APIRouter()
 
@@ -74,25 +73,18 @@ async def listen_later(
     )
 
     # Enqueue TTS generation job
-    try:
-        await env.ARTICLE_QUEUE.send(
-            {
-                "type": "tts_generation",
-                "article_id": article_id,
-                "user_id": user_id,
-            }
-        )
-    except Exception:
-        # Roll back D1 status on queue failure
-        await (
-            db.prepare(
-                "UPDATE articles SET audio_status = NULL, updated_at = ? "
-                "WHERE id = ? AND user_id = ?"
-            )
-            .bind(now, article_id, user_id)
-            .run()
-        )
-        raise HTTPException(status_code=503, detail="Failed to enqueue TTS job")
+    await _enqueue_or_fail(
+        env,
+        db,
+        {
+            "type": "tts_generation",
+            "article_id": article_id,
+            "user_id": user_id,
+        },
+        article_id,
+        status_field="audio_status",
+        rollback_value=None,
+    )
 
     return {"id": article_id, "audio_status": "pending"}
 
@@ -216,235 +208,3 @@ async def get_audio_timing(
         content=_json.loads(content),
         headers={"Cache-Control": "public, max-age=86400, immutable"},
     )
-
-
-@router.get("/{article_id}/tts-diagnostics")
-async def get_tts_diagnostics(
-    request: Request,
-    article_id: str,
-    user: dict[str, Any] = Depends(get_current_user),
-) -> JSONResponse:
-    """Return stored TTS diagnostics from R2 (written during TTS processing)."""
-    import json as _json
-
-    env = request.scope["env"]
-    db = env.DB
-    r2 = env.CONTENT
-    user_id = user["user_id"]
-
-    await _get_user_article(db, article_id, user_id, fields="id")
-
-    diag_key = article_key(article_id, "tts-diagnostics.json")
-    content = await get_content(r2, diag_key)
-    if content is None:
-        from fastapi import HTTPException as _HTTPException
-
-        raise _HTTPException(
-            status_code=404,
-            detail="No TTS diagnostics available (article may predate diagnostic logging)",
-        )
-    # Also check actual audio file size for diagnostic comparison
-    audio_key_str = article_key(article_id, "audio.mp3")
-    audio_obj = await r2.get(audio_key_str)
-    audio_size = get_r2_size(audio_obj) if audio_obj is not None else None
-
-    diag_data = _json.loads(content)
-    diag_data["_live_audio_r2_size"] = audio_size
-
-    return JSONResponse(content=diag_data)
-
-
-@router.post("/{article_id}/tts-probe")
-async def tts_probe(
-    request: Request,
-    article_id: str,
-    user: dict[str, Any] = Depends(get_current_user),
-) -> dict[str, Any]:
-    """Single-call TTS diagnostic probe.
-
-    Makes ONE Workers AI TTS call with short text and reports detailed
-    type information about the response and byte conversion at each stage.
-    Fast enough to complete within the request timeout.
-    """
-    import traceback
-
-    from wrappers import consume_readable_stream, to_py_bytes
-
-    env = request.scope["env"]
-    db = env.DB
-    user_id = user["user_id"]
-
-    await _get_user_article(db, article_id, user_id, fields="id")
-
-    try:
-        ai = env.AI
-        test_text = "Hello world. This is a diagnostic probe for text to speech audio generation."
-
-        # Call Workers AI directly (through SafeAI wrapper)
-        raw_result = await ai.run("@cf/deepgram/aura-2-en", {"text": test_text})
-
-        diag: dict[str, Any] = {
-            "text_len": len(test_text),
-            "ai_result_type": type(raw_result).__name__,
-            "ai_result_repr": repr(raw_result)[:300],
-        }
-
-        # Probe available attributes
-        probe_attrs = [
-            "getReader",
-            "arrayBuffer",
-            "body",
-            "to_py",
-            "to_bytes",
-            "byteLength",
-            "buffer",
-            "locked",
-            "tee",
-            "pipeTo",
-            "text",
-            "json",
-            "blob",
-            "ok",
-            "status",
-            "headers",
-        ]
-        diag["attrs"] = [a for a in probe_attrs if hasattr(raw_result, a)]
-
-        # Try getReader path
-        if hasattr(raw_result, "getReader"):
-            try:
-                reader = raw_result.getReader()
-                diag["reader_type"] = type(reader).__name__
-
-                chunks_info = []
-                reader_parts = []
-                chunk_idx = 0
-                while True:
-                    read_result = await reader.read()
-                    done = getattr(read_result, "done", True)
-                    value = getattr(read_result, "value", None)
-                    chunk_info = {
-                        "index": chunk_idx,
-                        "done": bool(done),
-                        "value_type": type(value).__name__ if value is not None else "None",
-                    }
-                    if value is not None:
-                        if hasattr(value, "byteLength"):
-                            chunk_info["js_byteLength"] = int(value.byteLength)
-                        py_bytes = to_py_bytes(value)
-                        chunk_info["py_bytes_len"] = len(py_bytes)
-                        reader_parts.append(py_bytes)
-                    chunks_info.append(chunk_info)
-                    chunk_idx += 1
-                    if done:
-                        break
-
-                reader.releaseLock()
-                diag["reader_chunks"] = chunks_info
-                diag["reader_total_bytes"] = sum(len(p) for p in reader_parts)
-            except Exception as exc:
-                diag["reader_error"] = f"{type(exc).__name__}: {exc}"
-
-        # Test SEQUENTIAL AI calls (simulating multi-chunk TTS)
-        sequential_results = []
-        test_sentences = [
-            "Hello world. This is the first chunk of text for speech.",
-            "Here is the second chunk with different words entirely.",
-            "And a third chunk to check for rate limiting or degradation.",
-        ]
-        for idx, sentence in enumerate(test_sentences):
-            raw = await ai.run("@cf/deepgram/aura-2-en", {"text": sentence})
-            consumed_chunk = await consume_readable_stream(raw)
-            sequential_results.append(
-                {
-                    "index": idx,
-                    "text_len": len(sentence),
-                    "audio_bytes": len(consumed_chunk),
-                }
-            )
-        diag["sequential_calls"] = sequential_results
-        diag["sequential_total"] = sum(r["audio_bytes"] for r in sequential_results)
-
-        # Use the last call's consumed bytes for R2 round-trip
-        consumed = consumed_chunk
-
-        # R2 round-trip test: write consumed bytes, read back, compare
-        r2 = env.CONTENT
-        probe_key = article_key(article_id, "probe-audio.bin")
-        try:
-            await r2.put(probe_key, consumed)
-            diag["r2_write_input_len"] = len(consumed)
-            diag["r2_write_input_type"] = type(consumed).__name__
-
-            # Read back
-            r2_obj = await r2.get(probe_key)
-            if r2_obj is not None:
-                diag["r2_obj_size"] = get_r2_size(r2_obj)
-
-                readback = await consume_readable_stream(r2_obj)
-                diag["r2_readback_len"] = len(readback)
-                diag["r2_roundtrip_match"] = len(readback) == len(consumed)
-            else:
-                diag["r2_read_result"] = "None (key not found)"
-
-            # Clean up probe file
-            await r2.delete(probe_key)
-        except Exception as exc:
-            diag["r2_roundtrip_error"] = f"{type(exc).__name__}: {exc}"
-
-        return {"result": "ok", "diagnostics": diag}
-
-    except Exception as exc:
-        return {
-            "result": "error",
-            "error": str(exc),
-            "traceback": traceback.format_exc(),
-        }
-
-
-@router.post("/{article_id}/tts-now")
-async def tts_now(
-    request: Request,
-    article_id: str,
-    user: dict[str, Any] = Depends(get_current_user),
-) -> dict[str, Any]:
-    """Process TTS inline (bypasses queue) for debugging.
-
-    Runs the full TTS pipeline in the request handler so errors
-    are returned directly instead of being lost in queue handler logs.
-    """
-    import traceback
-
-    from tts.processing import process_tts
-
-    env = request.scope["env"]
-    db = env.DB
-    user_id = user["user_id"]
-
-    await _get_user_article(db, article_id, user_id, fields="id")
-
-    try:
-        diag = await process_tts(article_id, env, user_id=user_id, raise_on_error=True)
-        article = await _get_user_article(
-            db,
-            article_id,
-            user_id,
-            fields="id, audio_status, audio_key, audio_duration_seconds",
-        )
-        actual_status = article.get("audio_status", "unknown")
-        result = "success" if actual_status == "ready" else "error"
-        resp: dict[str, Any] = {
-            "id": article_id,
-            "result": result,
-            "article": article,
-        }
-        if diag:
-            resp["diagnostics"] = diag
-        return resp
-    except Exception as exc:
-        return {
-            "id": article_id,
-            "result": "error",
-            "error": str(exc),
-            "traceback": traceback.format_exc(),
-        }

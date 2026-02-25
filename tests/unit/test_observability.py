@@ -1,27 +1,22 @@
-"""Tests for Phase 8 — Observability (wide events middleware, tail sampling).
+"""Tests for Phase 8 — Observability (wide events middleware).
 
 Covers:
 - Wide event includes all required fields
 - Successful request has outcome="success"
 - Error request has outcome="error" and error fields
 - User ID is included when authenticated
-- Tail sampling: errors always emitted, slow requests always emitted
-- Tail sampling: successful fast requests only emitted ~5-10% of time
 """
 
 from __future__ import annotations
 
 import json
-import random
 from typing import Any
-from unittest.mock import patch
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
 
 from src.auth.session import COOKIE_NAME, create_session
 from src.observability import ObservabilityMiddleware
-from src.wide_event import _SUCCESS_SAMPLE_RATE, _should_sample
 from tests.conftest import MockEnv
 
 # ---------------------------------------------------------------------------
@@ -71,9 +66,7 @@ def _make_app(env: Any | None = None) -> FastAPI:
 
 def _capture_events(capsys, client: TestClient, method: str, path: str, **kwargs) -> list[dict]:
     """Make a request and return all JSON events printed to stdout."""
-    # Always sample so we capture the event
-    with patch("wide_event._should_sample", return_value=True):
-        getattr(client, method)(path, **kwargs)
+    getattr(client, method)(path, **kwargs)
     captured = capsys.readouterr()
     events = []
     for line in captured.out.strip().split("\n"):
@@ -291,103 +284,19 @@ class TestUserIdExtraction:
 
 
 # =========================================================================
-# Tail sampling logic (_should_sample)
-# =========================================================================
-
-
-class TestTailSampling:
-    """Verify tail sampling rules."""
-
-    def test_server_error_always_sampled(self) -> None:
-        """Status >= 500 is always sampled."""
-        event = {"status_code": 500, "duration_ms": 10, "outcome": "error"}
-        # Run multiple times to ensure it is always True
-        for _ in range(100):
-            assert _should_sample(event) is True
-
-    def test_client_error_always_sampled(self) -> None:
-        """outcome='error' (e.g. 404) is always sampled."""
-        event = {"status_code": 404, "duration_ms": 10, "outcome": "error"}
-        for _ in range(100):
-            assert _should_sample(event) is True
-
-    def test_slow_request_always_sampled(self) -> None:
-        """Requests with duration_ms > 2000 are always sampled."""
-        event = {"status_code": 200, "duration_ms": 2500, "outcome": "success"}
-        for _ in range(100):
-            assert _should_sample(event) is True
-
-    def test_slow_request_at_boundary_not_always_sampled(self) -> None:
-        """Requests with duration_ms == 2000 are not considered slow (> 2000)."""
-        # Seed random for deterministic behavior
-        random.seed(123)
-        event = {"status_code": 200, "duration_ms": 2000, "outcome": "success"}
-        # At exactly 2000ms, the slow check does NOT trigger (> not >=),
-        # so it falls through to random sampling.  With a 5% sample rate,
-        # at least some of 200 runs should be False.
-        results = [_should_sample(event) for _ in range(200)]
-        assert False in results, "At boundary, some calls should be unsampled"
-
-    def test_success_fast_request_sampled_at_low_rate(self) -> None:
-        """Successful fast requests are sampled at ~5% (not all, not none)."""
-        # Seed random for deterministic behavior
-        random.seed(42)
-        event = {"status_code": 200, "duration_ms": 50, "outcome": "success"}
-        results = [_should_sample(event) for _ in range(2000)]
-        sampled_count = sum(results)
-
-        # With 5% rate and 2000 trials, expect ~100 sampled.
-        # Use a generous range: between 1% and 20% to avoid flaky tests.
-        assert sampled_count > 0, "At least some successful requests should be sampled"
-        assert sampled_count < 2000, "Not all successful requests should be sampled"
-
-        # More precise: the rate should be roughly around _SUCCESS_SAMPLE_RATE
-        observed_rate = sampled_count / 2000
-        assert 0.01 < observed_rate < 0.20, (
-            f"Observed sample rate {observed_rate:.3f} outside expected range "
-            f"for _SUCCESS_SAMPLE_RATE={_SUCCESS_SAMPLE_RATE}"
-        )
-
-    def test_missing_fields_do_not_crash(self) -> None:
-        """_should_sample handles events with missing fields gracefully."""
-        event: dict = {}
-        # Should not raise — falls through to random sampling
-        result = _should_sample(event)
-        assert isinstance(result, bool)
-
-
-# =========================================================================
-# Integration: middleware actually emits events
+# Integration: middleware emits events
 # =========================================================================
 
 
 class TestMiddlewareEmission:
     """Verify the middleware actually prints JSON to stdout."""
 
-    def test_event_not_emitted_when_sampling_rejects(self, capsys) -> None:
-        """When tail sampling says no, no event is printed."""
+    def test_event_emitted_for_request(self, capsys) -> None:
+        """Every request emits exactly one event."""
         app = _make_app()
         client = TestClient(app, raise_server_exceptions=False)
 
-        with patch("wide_event._should_sample", return_value=False):
-            client.get("/ok")
-
-        captured = capsys.readouterr()
-        # No JSON event lines should be present
-        json_lines = [
-            line
-            for line in captured.out.strip().split("\n")
-            if line.strip() and _is_json(line.strip())
-        ]
-        assert len(json_lines) == 0
-
-    def test_event_emitted_when_sampling_accepts(self, capsys) -> None:
-        """When tail sampling says yes, exactly one event is printed."""
-        app = _make_app()
-        client = TestClient(app, raise_server_exceptions=False)
-
-        with patch("wide_event._should_sample", return_value=True):
-            client.get("/ok")
+        client.get("/ok")
 
         captured = capsys.readouterr()
         json_lines = [

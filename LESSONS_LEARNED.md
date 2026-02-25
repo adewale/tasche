@@ -8,7 +8,7 @@ Each phase was implemented by a sub-agent, then audited by a separate sub-agent.
 - **Iterations:** 2 (implement → audit → fix → re-audit → PASS)
 - **Files:** `wrangler.jsonc`, `pyproject.toml`, `Makefile`, `src/wrappers.py`, `src/entry.py`, `migrations/0001_initial.sql`, `tests/conftest.py`, `.gitignore`
 - **Audit issues:** Minor issues with FFI boundary layer and mock completeness
-- **Key fix:** Ensured `_to_py_safe`, `_to_js_value`, `_is_js_undefined`, `JS_NULL` were all implemented in `wrappers.py`
+- **Key fix:** Ensured `_to_py_safe`, `_to_js_value`, `_is_js_undefined`, `get_js_null()` were all implemented in `wrappers.py`
 
 ### Phase 2: Authentication
 - **Iterations:** 2 (implement → audit → fix → re-audit → PASS)
@@ -18,7 +18,7 @@ Each phase was implemented by a sub-agent, then audited by a separate sub-agent.
 
 ### Phase 3: Article CRUD API
 - **Iterations:** 2 (implement → audit → fix → re-audit → PASS)
-- **Files:** `src/articles/models.py`, `src/articles/routes.py`, `src/articles/storage.py`, `src/articles/urls.py`, `tests/unit/test_articles.py`, `tests/unit/test_urls.py`
+- **Files:** `src/articles/routes.py`, `src/articles/storage.py`, `src/articles/urls.py`, `tests/unit/test_articles.py`, `tests/unit/test_urls.py` (note: `src/articles/models.py` was later deleted — Pydantic models were inlined into routes)
 - **Audit issues:** URL validation and duplicate detection across 3 URL fields
 - **Key fix:** Duplicate detection checking `original_url`, `final_url`, and `canonical_url`
 
@@ -30,7 +30,7 @@ Each phase was implemented by a sub-agent, then audited by a separate sub-agent.
 
 ### Phase 5: Search, Tags, Organization
 - **Iterations:** 2 (implement → audit → fix → re-audit → PASS)
-- **Files:** `src/search/routes.py`, `src/tags/routes.py`, `src/tags/models.py`, `tests/unit/test_search.py`, `tests/unit/test_tags.py`
+- **Files:** `src/search/routes.py`, `src/tags/routes.py`, `tests/unit/test_search.py`, `tests/unit/test_tags.py` (note: `src/tags/models.py` was later deleted — Pydantic models were inlined into routes)
 - **Audit found 4 MEDIUM issues:**
   1. Search not ordered by FTS5 relevance — used `ORDER BY created_at DESC` instead of `rank`
   2. `reading_status` enum mismatch — Python had `"finished"` not in DB CHECK constraint
@@ -82,7 +82,7 @@ Each phase was implemented by a sub-agent, then audited by a separate sub-agent.
 
 ### Phase 8: Observability
 - **Iterations:** 1 (implement → audit → PASS)
-- **Files:** `src/observability.py`, `tests/unit/test_observability.py`
+- **Files:** `src/observability.py` (ASGI middleware), `src/wide_event.py` (event accumulator), `tests/unit/test_observability.py`, `tests/unit/test_wide_event.py`
 - **Audit: PASS on first review** (5 LOW issues only)
 - This was the cleanest phase — the wide events middleware pattern is well-defined and self-contained
 
@@ -103,7 +103,7 @@ Each phase was implemented by a sub-agent, then audited by a separate sub-agent.
 
 ## Final Stats
 
-- **Total test count:** 280 tests passing
+- **Total test count:** 877 unit tests + 32 integration tests passing (909 total)
 - **Lint:** `ruff check src/ tests/` — all clean
 - **Total audit iterations:** 17 (9 initial audits + 8 re-audits after fixes)
 - **Phases 8 and 9 passed audit on first attempt** — all others required one fix cycle
@@ -150,7 +150,7 @@ Missing icon files, `share_target`, and `scope` in the manifest are easy to over
 **Lesson:** Use the PWA checklist: manifest (name, icons, display, scope, share_target), service worker (install, activate, fetch strategies), and app shell (meta tags, manifest link).
 
 ### 8. The Audit Loop Catches What Tests Don't
-All 203 tests passed throughout, yet the audit found significant issues (XSS, wrong status strings, missing features, broken bookmarklet). Unit tests verify behavior; audits verify intent and completeness against the spec.
+All tests passed throughout (at the time of each audit), yet the audit found significant issues (XSS, wrong status strings, missing features, broken bookmarklet). Unit tests verify behavior; audits verify intent and completeness against the spec.
 
 **Lesson:** Tests and audits serve different purposes. Tests catch regressions; audits catch design mistakes, missing features, and spec deviations.
 
@@ -256,7 +256,7 @@ The original spec defined features by component ("Articles table has these field
 
 **Better structure:** Each milestone should have a user journey sentence: *"I open Tasche, see article cards with thumbnails, tap one, and read it."* If the user can't perform this journey end-to-end, the milestone isn't done — regardless of how many tests pass.
 
-**Lesson:** Acceptance criteria should be user journeys, not technical checklists. "239 tests passing" is not the same as "a user can save and read an article."
+**Lesson:** Acceptance criteria should be user journeys, not technical checklists. "all tests passing" is not the same as "a user can save and read an article."
 
 ### 21. Specify the Frontend Stack with the Same Precision as the Backend
 
@@ -311,7 +311,7 @@ The session cookie was set with `secure: True` unconditionally, which means brow
 
 ### 27. 480 Tests Passing, Core Workflow Broken: The Runtime Gap
 
-Three separate bugs prevented the fundamental user journey ("save a URL and read it later") from ever working in production, despite 480 unit tests, 32 integration tests, and 15 Playwright smoke tests all passing:
+Three separate bugs prevented the fundamental user journey ("save a URL and read it later") from ever working in production, despite hundreds of unit tests, integration tests, and Playwright smoke tests all passing:
 
 1. **Queue handler signature mismatch** — Workers passes `(batch, env, ctx)` to the queue handler, but the code only accepted `(self, batch)`. Result: `TypeError: takes 2 positional arguments but 4 were given`. The queue consumer silently crashed on every message.
 
@@ -364,11 +364,11 @@ This bug affected every binary write: image storage, screenshot storage, and TTS
 | `float` | JS number | N/A | OK | N/A |
 | `bool` | JS boolean | N/A | OK | N/A |
 | `None` | JS `undefined` | N/A | **FAILS** (use `d1_null()`) | N/A |
-| `bytes` | PyProxy | **FAILS** (use `to_js()`) | N/A | **FAILS** (use `to_js()`) |
+| `bytes` | PyProxy | **FAILS** (use `to_js_bytes()`) | N/A | **FAILS** (use `to_js_bytes()`) |
 | `dict` | PyProxy/Map | **FAILS** (use `_to_js_value()`) | N/A | N/A |
 | `list` | PyProxy | **FAILS** (use `_to_js_value()`) | N/A | N/A |
 
-**Lesson:** Every Python type that isn't a primitive (`str`, `int`, `float`, `bool`) needs explicit conversion before passing to a Cloudflare binding. Centralise all writes through wrapper helpers (`r2_put()`, `d1_null()`, `_to_js_value()`) so the conversion happens in exactly one place. Mock-based tests cannot catch these failures — only a live smoke test can.
+**Lesson:** Every Python type that isn't a primitive (`str`, `int`, `float`, `bool`) needs explicit conversion before passing to a Cloudflare binding. Centralise all writes through Safe* wrappers (`SafeR2.put()`, `SafeD1Statement.bind()` with `d1_null()`, `SafeQueue.send()` with `_to_js_value()`) so the conversion happens in exactly one place. Mock-based tests cannot catch these failures — only a live smoke test can.
 
 ### 30. The FFI Boundary Is a Write Problem, Not Just a Read Problem
 
@@ -378,7 +378,7 @@ Earlier lessons (1, 10, 27) focused on the JS→Python direction: converting D1 
 - `bytes` → PyProxy (not `Uint8Array`) breaks R2 `.put()`
 - `dict` → Map (not Object) breaks queue `.send()`
 
-The centralised boundary layer (`wrappers.py`) must handle **both directions**. Every wrapper helper should be named for its purpose, not its mechanism: `d1_null()` (not `get_js_null()`), `r2_put()` (not `to_js_bytes()`), `stream_r2_body()` (not `getReader()`).
+The centralised boundary layer (`wrappers.py`) must handle **both directions**. The Safe* wrapper classes (`SafeD1`, `SafeR2`, `SafeKV`, `SafeQueue`, `SafeAI`, `SafeReadability`) encapsulate both read and write conversions. Low-level helpers like `d1_null()`, `to_js_bytes()`, and `_to_js_value()` handle specific type conversions, while the Safe* wrappers compose them into a seamless interface.
 
 **Lesson:** Design the FFI boundary layer as a bidirectional gateway. For each Cloudflare binding, there should be wrapper helpers for both reading (JS→Python) and writing (Python→JS). If you only wrap reads, writes will eventually break in production.
 
@@ -410,7 +410,7 @@ The only Pyodide-safe options found: BoilerPy3 (zero deps, but text-only output 
 
 ### 34. Commit History Reveals the Testing-Simulation Gap
 
-Across 25 commits over 8 days, 11 were corrective (fix-to-feature ratio nearly 1:1). The core user journey was broken for 7 of 8 days while test counts climbed from 203 to 480+. Three fatal runtime bugs hid behind CPython tests with mock Cloudflare bindings that accepted wrong types.
+Across 25 commits over 8 days, 11 were corrective (fix-to-feature ratio nearly 1:1). The core user journey was broken for 7 of 8 days while test counts kept climbing. Three fatal runtime bugs hid behind CPython tests with mock Cloudflare bindings that accepted wrong types.
 
 The most damning statistic: the primary user journey ("save a URL, read it later") didn't work until commit 20 of 25.
 
@@ -440,12 +440,12 @@ The `_is_js_null_or_undefined()` helper existed in `wrappers.py` but was never c
 
 ## Commit History Analysis — Patterns of Rework
 
-An analysis of 49 commits over 9 days (2026-02-15 to 2026-02-24) reveals systematic patterns of rework that could be prevented with better tooling and processes.
+An analysis of 53 commits over 11 days (2026-02-15 to 2026-02-25) reveals systematic patterns of rework that could be prevented with better tooling and processes.
 
 ### Rework Statistics
 
-- **49 total commits**, of which **17 are corrective** (fix-to-feature ratio: 1:1.9)
-- **Top 5 most modified files** (changes across last 50 commits):
+- **53 total commits**, of which **17 are corrective** (fix-to-feature ratio: 1:2.1)
+- **Top 5 most modified files** (changes across all commits):
   1. `src/articles/routes.py` — 21 modifications
   2. `src/articles/processing.py` — 20 modifications
   3. `tests/unit/test_articles.py` — 13 modifications
@@ -464,7 +464,7 @@ The FFI boundary layer (`wrappers.py`) was touched in 10 separate commits, with 
 4. `a28bc2d` — Route all R2 writes through r2_put() boundary helper
 5. `ea08511` — Centralize FFI boundary and update all callers
 6. `63e6c41` — Fix FFI boundary gaps and implement wide events
-7. `f47953c` — Add FFI boundary checker script (later removed during cleanup)
+7. `f47953c` — Add FFI boundary checker script (still in `scripts/agent-tools/`)
 
 The first three happened on consecutive days (Feb 20-22), with each commit discovering a new category of FFI leaks that the previous commit missed. The root cause: the boundary was designed incrementally (reads first, then writes, then null handling) instead of comprehensively from the start.
 
@@ -505,7 +505,7 @@ UI-related commits cluster after major feature additions:
 
 ### Diagnostic Tools Created
 
-Based on these patterns, three diagnostic scripts were created in `scripts/agent-tools/`:
+Based on these patterns, four diagnostic scripts were created in `scripts/agent-tools/`:
 
 1. **`check_ffi_boundary.py`** — Validates that all FFI operations go through Safe* wrappers; detects raw JsProxy usage, direct `.to_py()` calls, and unsafe null handling outside the boundary layer.
 
@@ -513,9 +513,11 @@ Based on these patterns, three diagnostic scripts were created in `scripts/agent
 
 3. **`check_handler_consistency.py`** — Audits API route handlers for structural consistency: verifies env access patterns, authentication dependencies, error handling, and response format consistency across all route files.
 
+4. **`trace_tts_pipeline.py`** — Traces the TTS audio generation pipeline end-to-end for debugging truncation and FFI issues.
+
 ### 37. Unit Tests That Only Exercise the Fallback Path Give False Confidence
 
-All 134 `test_wrappers.py` tests ran with `HAS_PYODIDE = False`, exercising only the CPython fallback code path. The actual production code — the `if HAS_PYODIDE:` branches that convert JsProxy→dict, detect JsNull, convert None→null, and transform bytes→Uint8Array — had zero test coverage. Every historical FFI production bug (JsNull leak, None→undefined in D1, bytes→PyProxy in R2) lived in these untested branches.
+All 100 `test_wrappers.py` tests ran with `HAS_PYODIDE = False`, exercising only the CPython fallback code path. The actual production code — the `if HAS_PYODIDE:` branches that convert JsProxy→dict, detect JsNull, convert None→null, and transform bytes→Uint8Array — had zero test coverage. Every historical FFI production bug (JsNull leak, None→undefined in D1, bytes→PyProxy in R2) lived in these untested branches.
 
 The core issue: the module uses a feature flag (`HAS_PYODIDE`) to switch between two completely different implementations. Testing only one side of the flag is equivalent to testing a different program than the one that runs in production.
 
@@ -525,7 +527,7 @@ The core issue: the module uses a feature flag (`HAS_PYODIDE`) to switch between
 
 ### 38. E2E Tests Against Real Infrastructure Catch What Three Tiers of Mocks Cannot
 
-Adding 10 E2E smoke tests against the live staging Worker (real D1, real R2, real Pyodide FFI) immediately caught two issues that 893 unit tests missed:
+Adding 10 E2E smoke tests against the live staging Worker (real D1, real R2, real Pyodide FFI) immediately caught two issues that hundreds of unit tests missed:
 
 1. **Wrong search endpoint path.** Unit tests used `/api/articles/search` — which always returned a mock-backed 200. The real endpoint is `/api/search`. The unit test mocks never validated the route prefix because the mock router accepted any path the test called. On real infrastructure, this is a 404.
 
@@ -549,7 +551,7 @@ Comparing to planet_cf's three-tier strategy (unit→integration→E2E against r
 
 TTS-generated audio served as 3.4KB (0.57 seconds) when it should have been 1.4–2.6MB (minutes long). Investigation revealed **two independent bugs** at different pipeline stages.
 
-**Bug 1 (defensive fix): `to_js(bytes)` Wasm memory views.** `pyodide.ffi.to_js(bytes)` creates a `Uint8Array` *view* into Wasm linear memory — not a copy. If Wasm memory grows while an async JS API (e.g., `r2.put()`) is in flight, the underlying `ArrayBuffer` can become detached. **Fix:** Add `.slice()` after `to_js()` in `to_js_bytes()` to create an owned copy in JS heap memory.
+**Bug 1 (theory disproved): `to_js(bytes)` Wasm memory views.** `pyodide.ffi.to_js(bytes)` creates a `Uint8Array` *view* into Wasm linear memory — not a copy. In theory, `memory.grow()` could detach the backing `ArrayBuffer` during async JS APIs like `r2.put()`. A `.slice()` after `to_js()` was added as a defensive fix. **However, empirical testing on staging (2026-02-25) disproved this:** removing `.slice()` and stress-testing with 5 articles + TTS produced zero corruption. The reason: Python yields to JS during `await`, so no Python allocations (and thus no `memory.grow()`) occur while JS APIs are in flight. The `.slice()` was removed.
 
 **Bug 2 (actual serving root cause): Cloudflare Workers ASGI adapter truncates StreamingResponse.** The ASGI adapter for Python Workers only consumes the **first yielded chunk** from async generators used in `StreamingResponse`. The audio endpoint used `StreamingResponse(stream_r2_body(...))` which yielded R2 body chunks (first chunk: 3,417 bytes, then 4KB chunks). The adapter consumed only the first 3,417-byte chunk and closed the response. **Fix:** Replace `StreamingResponse` with `Response` — read all body chunks via `body.getReader()` into memory, join them, and return as a single `Response`.
 
@@ -562,7 +564,7 @@ TTS-generated audio served as 3.4KB (0.57 seconds) when it should have been 1.4�
 
 **Key diagnostic: `X-R2-Size` header.** Adding `X-R2-Size: {r2_size}` to the response revealed R2 had 2,684,016 bytes but `Content-Length` was 3,417. The write was correct; only serving was broken.
 
-**Lesson 1:** In Pyodide, always `.slice()` binary data from `to_js()` before passing to async JS APIs.
+**Lesson 1:** In Pyodide, `to_js(bytes)` views do NOT need `.slice()` — Python yields to JS during `await`, preventing `memory.grow()` from firing mid-operation. Don't add defensive copies without empirical evidence of corruption.
 
 **Lesson 2:** Never use `StreamingResponse` with async generators in Cloudflare Python Workers — the ASGI adapter silently truncates to the first yielded chunk. Use `Response` with the full body instead.
 
@@ -663,3 +665,76 @@ Similarly, running `eslint --fix` can introduce changes that Prettier disagrees 
 5. Verify with `prettier --check && eslint`
 
 **Lesson:** Format and lint are not one-shot operations during setup. Every time new files are created, both must run again. In a Makefile/CI pipeline, always run format-check before lint so formatting failures are caught first.
+
+---
+
+## Codebase Audit & Cleanup — Patterns Discovered
+
+### 46. Dead Code Accumulates Across Feature Addition Cycles
+
+After 16 competitive features were added in a single commit (`8d05ec2`), three subsequent cleanup commits were needed to remove dead code:
+- `22d0c11` — Remove dead email ingestion code (never wired to any UI)
+- `8b882ed` — Remove dead Newsletter Ingestion section from Settings
+- `def6c02` — Remove Highlights, Feeds, and Review features (added but never finished)
+
+Dead code comes in three forms: (1) features added then abandoned before completion, (2) backward-compatibility aliases kept "just in case" that nothing ever imports, (3) helper functions extracted during refactoring whose callers were later deleted. Each form requires a different detection method: unused imports for type 1, grep for type 2, coverage analysis for type 3.
+
+**Lesson:** After any large feature addition, run a dedicated dead code audit before moving on. The cost of removing dead code grows as other code starts depending on its presence (even accidentally). The `4e6615d` cleanup commit ("Eliminate codebase duplication and remove backward-compat aliases") was straightforward precisely because it happened within days of the additions.
+
+### 47. Safe* Wrappers Supersede Standalone FFI Helpers
+
+The FFI boundary evolved through three stages:
+1. **Standalone helpers** (`JS_NULL` constant, `r2_put()` function, `get_js_null()`) — each function handled one conversion.
+2. **Centralized module** — all helpers in `wrappers.py`, but callers still needed to know which helper to call for each binding.
+3. **Safe* wrapper classes** (`SafeD1`, `SafeR2`, `SafeKV`, `SafeQueue`, `SafeAI`, `SafeReadability`) wrapped at construction time by `SafeEnv` — callers use the same API as raw bindings but get automatic conversion.
+
+The standalone helpers (`JS_NULL`, `r2_put()`) were removed because the Safe* wrappers made them unnecessary at the call site. Lower-level helpers that the Safe* wrappers compose internally (`d1_null()`, `to_js_bytes()`, `_to_js_value()`) still exist. `get_js_null()` still exists as the underlying mechanism for `d1_null()`.
+
+**Lesson:** FFI boundary layers should evolve toward construction-time wrapping. When the wrapper is applied once at init, callers cannot accidentally bypass it. Standalone conversion helpers are a stepping stone — they force every call site to remember the right helper, which is error-prone across a growing codebase.
+
+### 48. Test Helper Factories Reduce Boilerplate Without Hiding Intent
+
+Test files originally duplicated `_make_app()` and `_authenticated_client()` helper functions, each slightly different. The `make_test_helpers(*routers)` factory in `conftest.py` generates these helpers from a router specification, so each test file declares its routers once:
+
+```python
+_make_app, _authenticated_client = make_test_helpers(
+    (router, "/api/articles"),
+)
+```
+
+This replaced ~15 lines of boilerplate per test file while keeping test intent visible — the router configuration is right at the top.
+
+**Lesson:** When test boilerplate is duplicated across files with only the router/resource varying, extract a factory that takes the variable part as a parameter. But keep the factory call at the top of each test file so readers can see which routes are under test without jumping to conftest.py.
+
+### 49. Documentation Lessons File Itself Needs Periodic Auditing (see also Lesson 50)
+
+This file (`LESSONS_LEARNED.md`) accumulated stale references over time:
+- Test counts (280, 480, 893) all went stale as tests were added/removed
+- References to `JS_NULL` constant, `r2_put()` standalone function, and `_now()` helper persisted after those were removed
+- `src/articles/models.py` and `src/tags/models.py` were listed in phase summaries after being deleted
+- The FFI boundary checker script was described as "later removed during cleanup" when it still exists
+- Commit counts didn't reflect new commits added after the analysis was written
+
+**Lesson:** A lessons-learned document is code documentation — it rots at the same rate as code comments. Any claim that references a specific count, function name, or file path will become stale. Prefer describing patterns and principles over citing specific numbers. When numbers are included, mark them as "as of [date]" so future readers know to verify.
+
+---
+
+## Test Architecture
+
+### 50. Integration Tests That Mock Their Integration Points Are Unit Tests in Disguise
+
+`tests/integration/test_processing_pipeline.py` patched `http_fetch` with canned HTML in 6 of 7 tests. The intent was to test "the full pipeline end-to-end," but with HTTP mocked, the tests never exercised real content extraction, real image downloading, or real redirect handling — the exact areas where production bugs appeared (example.com 404s, Readability service failures).
+
+`tests/integration/test_api_flow.py` contained a 334-line `StatefulMockD1` class reimplementing D1's SQL routing in Python. Every CRUD test exercised business logic against a hand-rolled in-memory database, not real D1. This meant FTS5 behavior, constraint enforcement, and transaction ordering were all simulated, not tested.
+
+**Audit results (2026-02-25):**
+- 7 pipeline tests: 6 already had equivalent unit tests, 1 promoted to E2E
+- 24 API flow tests: 16 already covered by E2E staging tests, 8 promoted to E2E
+- `tests/integration/` directory deleted entirely
+- Net test movement: 0 tests lost, 9 new E2E tests against real staging infrastructure
+
+**Lesson 1:** If an integration test patches the very dependency it's supposed to integrate with, it's a unit test with extra steps. Either test against real infrastructure or admit it's a unit test and put it in the unit test directory.
+
+**Lesson 2:** Before writing new integration tests, audit whether the behavior is already covered at another tier. In this project, every integration test was duplicated in either unit tests (error injection) or E2E tests (happy paths). The integration tier added no unique coverage — it was a maintenance burden providing false confidence.
+
+**Lesson 3:** A 334-line hand-rolled database mock is a code smell. If you need that much simulation to test something, you're either testing at the wrong tier or your code needs restructuring to be testable with simpler mocks.

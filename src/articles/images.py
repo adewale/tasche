@@ -11,12 +11,12 @@ conversion requires testing in the actual Pyodide environment.
 from __future__ import annotations
 
 import hashlib
-from typing import Any
 from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 
 from articles.urls import _is_private_hostname
+from wrappers import http_fetch
 
 # Mapping of MIME types to file extensions for stored images
 _MIME_TO_EXT: dict[str, str] = {
@@ -28,7 +28,6 @@ _MIME_TO_EXT: dict[str, str] = {
 
 
 async def download_images(
-    client: Any,
     html: str,
     *,
     max_per_image: int = 2_000_000,
@@ -42,8 +41,6 @@ async def download_images(
 
     Parameters
     ----------
-    client:
-        An HTTP client with an async ``.get()`` method (e.g. ``HttpClient``).
     html:
         HTML string containing ``<img>`` tags.
     max_per_image:
@@ -86,7 +83,7 @@ async def download_images(
             continue
 
         try:
-            resp = await client.get(url, timeout=15.0, follow_redirects=True)
+            resp = await http_fetch(url, timeout=15.0, follow_redirects=True)
             if resp.status_code != 200:
                 continue
 

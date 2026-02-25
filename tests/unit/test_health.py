@@ -26,27 +26,16 @@ from tests.conftest import (
     MockR2,
     TrackingD1,
     _browser_env,
-    _make_mock_client,
-    _make_test_app,
+    _make_mock_http_fetch,
     _noop_screenshot,
-)
-from tests.conftest import (
-    _authenticated_client as _authenticated_client_base,
+    make_test_helpers,
 )
 
 # =========================================================================
 # Helpers
 # =========================================================================
 
-_ROUTERS = ((router, "/api/articles"),)
-
-
-def _make_app(env):
-    return _make_test_app(env, *_ROUTERS)
-
-
-async def _authenticated_client(env: MockEnv) -> tuple[TestClient, str]:
-    return await _authenticated_client_base(env, *_ROUTERS)
+_make_app, _authenticated_client = make_test_helpers((router, "/api/articles"))
 
 
 # =========================================================================
@@ -63,12 +52,7 @@ class TestCheckOriginalUrl:
         mock_response.status_code = 200
         mock_response.url = "https://example.com/article"
 
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.head = AsyncMock(return_value=mock_response)
-
-        with patch("articles.health.HttpClient", return_value=mock_client):
+        with patch("articles.health.http_fetch", AsyncMock(return_value=mock_response)):
             from articles.health import check_original_url
 
             result = await check_original_url("https://example.com/article")
@@ -81,12 +65,7 @@ class TestCheckOriginalUrl:
         mock_response.status_code = 200
         mock_response.url = "https://www.example.com/article"
 
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.head = AsyncMock(return_value=mock_response)
-
-        with patch("articles.health.HttpClient", return_value=mock_client):
+        with patch("articles.health.http_fetch", AsyncMock(return_value=mock_response)):
             from articles.health import check_original_url
 
             result = await check_original_url("https://example.com/article")
@@ -99,12 +78,7 @@ class TestCheckOriginalUrl:
         mock_response.status_code = 403
         mock_response.url = "https://example.com/article"
 
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.head = AsyncMock(return_value=mock_response)
-
-        with patch("articles.health.HttpClient", return_value=mock_client):
+        with patch("articles.health.http_fetch", AsyncMock(return_value=mock_response)):
             from articles.health import check_original_url
 
             result = await check_original_url("https://example.com/article")
@@ -117,12 +91,7 @@ class TestCheckOriginalUrl:
         mock_response.status_code = 401
         mock_response.url = "https://example.com/article"
 
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.head = AsyncMock(return_value=mock_response)
-
-        with patch("articles.health.HttpClient", return_value=mock_client):
+        with patch("articles.health.http_fetch", AsyncMock(return_value=mock_response)):
             from articles.health import check_original_url
 
             result = await check_original_url("https://example.com/article")
@@ -135,12 +104,7 @@ class TestCheckOriginalUrl:
         mock_response.status_code = 404
         mock_response.url = "https://example.com/article"
 
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.head = AsyncMock(return_value=mock_response)
-
-        with patch("articles.health.HttpClient", return_value=mock_client):
+        with patch("articles.health.http_fetch", AsyncMock(return_value=mock_response)):
             from articles.health import check_original_url
 
             result = await check_original_url("https://example.com/article")
@@ -153,12 +117,7 @@ class TestCheckOriginalUrl:
         mock_response.status_code = 410
         mock_response.url = "https://example.com/article"
 
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.head = AsyncMock(return_value=mock_response)
-
-        with patch("articles.health.HttpClient", return_value=mock_client):
+        with patch("articles.health.http_fetch", AsyncMock(return_value=mock_response)):
             from articles.health import check_original_url
 
             result = await check_original_url("https://example.com/article")
@@ -167,12 +126,8 @@ class TestCheckOriginalUrl:
 
     async def test_connect_error_returns_domain_dead(self) -> None:
         """Connection error (DNS failure etc.) maps to 'domain_dead'."""
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.head = AsyncMock(side_effect=ConnectionError("DNS lookup failed"))
-
-        with patch("articles.health.HttpClient", return_value=mock_client):
+        mock_fetch = AsyncMock(side_effect=ConnectionError("DNS lookup failed"))
+        with patch("articles.health.http_fetch", mock_fetch):
             from articles.health import check_original_url
 
             result = await check_original_url("https://dead-domain.example")
@@ -181,12 +136,7 @@ class TestCheckOriginalUrl:
 
     async def test_connect_timeout_returns_domain_dead(self) -> None:
         """Connection timeout maps to 'domain_dead'."""
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.head = AsyncMock(side_effect=TimeoutError("Timed out"))
-
-        with patch("articles.health.HttpClient", return_value=mock_client):
+        with patch("articles.health.http_fetch", AsyncMock(side_effect=TimeoutError("Timed out"))):
             from articles.health import check_original_url
 
             result = await check_original_url("https://slow-domain.example")
@@ -199,12 +149,7 @@ class TestCheckOriginalUrl:
         mock_response.status_code = 500
         mock_response.url = "https://example.com/article"
 
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.head = AsyncMock(return_value=mock_response)
-
-        with patch("articles.health.HttpClient", return_value=mock_client):
+        with patch("articles.health.http_fetch", AsyncMock(return_value=mock_response)):
             from articles.health import check_original_url
 
             result = await check_original_url("https://example.com/article")
@@ -268,12 +213,7 @@ class TestCheckOriginalUrlSsrf:
         mock_response.status_code = 200
         mock_response.url = "http://127.0.0.1/internal"
 
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.head = AsyncMock(return_value=mock_response)
-
-        with patch("articles.health.HttpClient", return_value=mock_client):
+        with patch("articles.health.http_fetch", AsyncMock(return_value=mock_response)):
             from articles.health import check_original_url
 
             result = await check_original_url("https://redirect.example.com/to-local")
@@ -436,10 +376,11 @@ class TestMetadataJsonEnhanced:
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
-        mock_client = _make_mock_client()
+        mock_client = _make_mock_http_fetch()
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -459,10 +400,11 @@ class TestMetadataJsonEnhanced:
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
-        mock_client = _make_mock_client()
+        mock_client = _make_mock_http_fetch()
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -480,10 +422,11 @@ class TestMetadataJsonEnhanced:
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
-        mock_client = _make_mock_client()
+        mock_client = _make_mock_http_fetch()
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -503,10 +446,11 @@ class TestMetadataJsonEnhanced:
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
-        mock_client = _make_mock_client()
+        mock_client = _make_mock_http_fetch()
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -546,12 +490,8 @@ class TestCheckOriginalUrlOsError:
 
     async def test_oserror_returns_domain_dead(self) -> None:
         """OSError (socket-level failure) maps to 'domain_dead'."""
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.head = AsyncMock(side_effect=OSError("Network is unreachable"))
-
-        with patch("articles.health.HttpClient", return_value=mock_client):
+        mock_fetch = AsyncMock(side_effect=OSError("Network is unreachable"))
+        with patch("articles.health.http_fetch", mock_fetch):
             from articles.health import check_original_url
 
             result = await check_original_url("https://unreachable.example.com/page")

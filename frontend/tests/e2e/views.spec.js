@@ -1126,7 +1126,7 @@ test.describe('Keyboard shortcuts', () => {
 
     // Press j to select first article
     await page.keyboard.press('j');
-    await expect(page.locator('.article-card--selected')).toBeVisible({ timeout: 3000 });
+    await expect(page.locator('.article-card--checked')).toBeVisible({ timeout: 3000 });
 
     // Press j again to move to next
     await page.keyboard.press('j');
@@ -1135,7 +1135,7 @@ test.describe('Keyboard shortcuts', () => {
     await page.keyboard.press('k');
 
     // Should still have a selected card
-    await expect(page.locator('.article-card--selected')).toBeVisible({ timeout: 3000 });
+    await expect(page.locator('.article-card--checked')).toBeVisible({ timeout: 3000 });
 
     expect(errors).toEqual([]);
   });

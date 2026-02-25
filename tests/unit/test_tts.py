@@ -21,25 +21,14 @@ from tests.conftest import (
     MockQueue,
     MockR2,
     TrackingD1,
-    _make_test_app,
-)
-from tests.conftest import (
-    _authenticated_client as _authenticated_client_base,
+    make_test_helpers,
 )
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-_ROUTERS = ((router, "/api/articles"),)
-
-
-def _make_app(env):
-    return _make_test_app(env, *_ROUTERS)
-
-
-async def _authenticated_client(env: MockEnv) -> tuple[TestClient, str]:
-    return await _authenticated_client_base(env, *_ROUTERS)
+_make_app, _authenticated_client = make_test_helpers((router, "/api/articles"))
 
 
 # ---------------------------------------------------------------------------
@@ -1099,11 +1088,11 @@ class TestEnqueueFailureRollback:
 
         assert resp.status_code == 503
 
-        # Verify audio_status was rolled back to NULL
+        # Verify audio_status was rolled back to NULL (via parameterized query)
         rollback_updates = [
             (sql, params)
             for sql, params in db.executed
-            if sql.startswith("UPDATE") and "audio_status = NULL" in sql
+            if sql.startswith("UPDATE") and "audio_status = ?" in sql and None in params
         ]
         assert len(rollback_updates) >= 1
 
@@ -1123,14 +1112,6 @@ class TestTTSAuthRequired:
         app = _make_app(env)
         client = TestClient(app, raise_server_exceptions=False)
         resp = client.get("/api/articles/some_id/audio")
-        assert resp.status_code == 401
-
-    def test_tts_now_returns_401_without_auth(self) -> None:
-        """POST tts-now returns 401 without a session cookie."""
-        env = MockEnv()
-        app = _make_app(env)
-        client = TestClient(app, raise_server_exceptions=False)
-        resp = client.post("/api/articles/some_id/tts-now")
         assert resp.status_code == 401
 
 
@@ -1197,35 +1178,6 @@ class TestMultiChunkTTS:
         assert len(result["chunk_sizes"]) == len(ai.calls)
         assert all(s > 0 for s in result["chunk_sizes"])
         assert result["total_bytes"] == len(expected)
-
-    async def test_chunk_diagnostics_includes_per_chunk_detail(self) -> None:
-        """process_tts returns chunk_diagnostics with text_len and audio_bytes."""
-        long_text = "A moderately long sentence for testing purposes here. " * 60
-        article = ArticleFactory.create(
-            id="art_diag1",
-            user_id="user_001",
-            markdown_content=long_text,
-        )
-
-        db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
-        r2 = MockR2()
-        ai = MockAI(response=b"\xff\xfb\x90\x00" + b"\x00" * 100)
-        env = MockEnv(db=db, content=r2, ai=ai)
-
-        from tts.processing import process_tts
-
-        result = await process_tts("art_diag1", env, user_id="user_001")
-
-        assert result is not None
-        assert "chunk_diagnostics" in result
-        diag = result["chunk_diagnostics"]
-        assert len(diag) > 0
-        for entry in diag:
-            assert "index" in entry
-            assert "text_len" in entry
-            assert "audio_bytes" in entry
-            assert entry["text_len"] > 0
-            assert entry["audio_bytes"] > 0
 
     async def test_empty_chunk_audio_is_skipped_not_crash(self) -> None:
         """If one AI chunk returns empty bytes, it's skipped gracefully."""
@@ -1371,96 +1323,3 @@ class TestConsumeReadableStream:
 
         result = await consume_readable_stream(MockArrayBufferOnly())
         assert result == b"from-buffer"
-
-
-class TestTTSNow:
-    """Tests for POST /api/articles/{article_id}/tts-now (sync TTS bypass)."""
-
-    async def test_tts_now_success(self) -> None:
-        """POST tts-now processes TTS synchronously and returns success."""
-        article = ArticleFactory.create(
-            id="art_now1",
-            user_id="user_001",
-            markdown_content="Hello world, this is a test article.",
-        )
-        ready_article = dict(article)
-        ready_article["audio_status"] = "ready"
-        ready_article["audio_key"] = "articles/art_now1/audio.mp3"
-        ready_article["audio_duration_seconds"] = 5
-
-        call_count = {"n": 0}
-
-        def execute(sql: str, params: list) -> list:
-            if sql.startswith("SELECT") and "id = ?" in sql:
-                call_count["n"] += 1
-                # First SELECT: verify ownership. Last SELECT: return updated article.
-                if call_count["n"] >= 3:
-                    return [ready_article]
-                return [article]
-            return []
-
-        db = TrackingD1(result_fn=execute)
-        ai = MockAI(response=b"fake-audio-bytes")
-        r2 = MockR2()
-        env = MockEnv(db=db, ai=ai, content=r2)
-
-        client, session_id = await _authenticated_client(env)
-        resp = client.post(
-            "/api/articles/art_now1/tts-now",
-            cookies={COOKIE_NAME: session_id},
-        )
-
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["result"] == "success"
-        assert data["article"]["audio_status"] == "ready"
-
-    async def test_tts_now_returns_error_on_failure(self) -> None:
-        """POST tts-now returns error when TTS fails (no markdown content)."""
-        article = ArticleFactory.create(
-            id="art_now2",
-            user_id="user_001",
-            markdown_content=None,  # No content = will fail
-        )
-        failed_article = dict(article)
-        failed_article["audio_status"] = "failed"
-
-        call_count = {"n": 0}
-
-        def execute(sql: str, params: list) -> list:
-            if sql.startswith("SELECT") and "id = ?" in sql:
-                call_count["n"] += 1
-                # Last SELECT after processing returns failed status
-                if call_count["n"] >= 3:
-                    return [failed_article]
-                return [article]
-            return []
-
-        db = TrackingD1(result_fn=execute)
-        ai = MockAI(response=b"fake-audio")
-        r2 = MockR2()
-        env = MockEnv(db=db, ai=ai, content=r2)
-
-        client, session_id = await _authenticated_client(env)
-        resp = client.post(
-            "/api/articles/art_now2/tts-now",
-            cookies={COOKIE_NAME: session_id},
-        )
-
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["result"] == "error"
-        assert "traceback" in data
-
-    async def test_tts_now_returns_404_for_missing_article(self) -> None:
-        """POST tts-now returns 404 when article does not exist."""
-        db = MockD1(execute=lambda sql, params: [])
-        env = MockEnv(db=db)
-
-        client, session_id = await _authenticated_client(env)
-        resp = client.post(
-            "/api/articles/nonexistent/tts-now",
-            cookies={COOKIE_NAME: session_id},
-        )
-
-        assert resp.status_code == 404

@@ -165,7 +165,7 @@ export function Library({ tag }) {
   // Scroll selected card into view
   useEffect(() => {
     if (selectedIndex < 0) return;
-    var el = document.querySelector('.article-card--selected');
+    var el = document.querySelector('.article-card--checked');
     if (el) {
       el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }

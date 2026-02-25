@@ -62,7 +62,7 @@ vi.mock('../../../src/hooks/useKeyboardShortcuts.js', () => ({
 
 vi.mock('../../../src/state.js', () => ({
   articles: { value: [] },
-  filter: { value: 'all' },
+  filter: { value: 'unread' },
   offset: { value: 0 },
   hasMore: { value: true },
   loading: { value: false },

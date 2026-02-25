@@ -119,6 +119,7 @@ export function Search() {
               </div>
               <div class="article-card-meta">
                 {a.domain && <span>{a.domain}</span>}
+                {a.reading_time_minutes > 0 && <span>{a.reading_time_minutes} min read</span>}
                 <span>{formatDate(a.created_at)}</span>
               </div>
               {a.excerpt && (

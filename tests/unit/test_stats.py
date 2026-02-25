@@ -14,25 +14,14 @@ from src.stats.routes import router
 from tests.conftest import (
     MockD1,
     MockEnv,
-    _make_test_app,
-)
-from tests.conftest import (
-    _authenticated_client as _authenticated_client_base,
+    make_test_helpers,
 )
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-_ROUTERS = ((router, "/api/stats"),)
-
-
-def _make_app(env):
-    return _make_test_app(env, *_ROUTERS)
-
-
-async def _authenticated_client(env: MockEnv) -> tuple[TestClient, str]:
-    return await _authenticated_client_base(env, *_ROUTERS)
+_make_app, _authenticated_client = make_test_helpers((router, "/api/stats"))
 
 
 # ---------------------------------------------------------------------------

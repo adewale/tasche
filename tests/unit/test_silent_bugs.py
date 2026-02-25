@@ -40,6 +40,7 @@ from tests.conftest import (
     MockEnv,
     MockR2,
     _make_test_app,
+    make_test_helpers,
 )
 from tests.conftest import (
     _authenticated_client as _authenticated_client_base,
@@ -49,11 +50,10 @@ from tests.conftest import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-_ARTICLE_ROUTERS = ((articles_router, "/api/articles"),)
-_TTS_ROUTERS = ((tts_router, "/api/articles"),)
+_make_app, _authenticated_client = make_test_helpers((articles_router, "/api/articles"))
 
 
-async def _authenticated_client(env: MockEnv, routers=_ARTICLE_ROUTERS):
+async def _authenticated_client_with(env: MockEnv, *routers):
     return await _authenticated_client_base(env, *routers)
 
 
@@ -303,7 +303,7 @@ class TestAudioTimingEndpoint:
 
         # Also mount the TTS router which has the audio-timing endpoint
         routers = ((tts_router, "/api/articles"),)
-        client, session_id = await _authenticated_client(env, routers=routers)
+        client, session_id = await _authenticated_client_with(env, *routers)
 
         resp = client.get(
             "/api/articles/timing_test/audio-timing",
@@ -384,7 +384,7 @@ class TestExportReturnsProperErrors:
         env = MockEnv(db=db)
 
         routers = ((export_router, "/api/export"),)
-        client, session_id = await _authenticated_client(env, routers=routers)
+        client, session_id = await _authenticated_client_with(env, *routers)
 
         resp = client.get(
             "/api/export/json",
@@ -654,7 +654,7 @@ class TestListenLaterAlreadyReady:
         env = MockEnv(db=db)
 
         routers = ((tts_router, "/api/articles"),)
-        client, session_id = await _authenticated_client(env, routers=routers)
+        client, session_id = await _authenticated_client_with(env, *routers)
 
         resp = client.post(
             "/api/articles/ready_audio/listen-later",
@@ -707,7 +707,7 @@ class TestTagRuleDeletionEdgeCase:
         env = MockEnv(db=db)
 
         routers = ((tag_rules_router, "/api/tag-rules"),)
-        client, session_id = await _authenticated_client(env, routers=routers)
+        client, session_id = await _authenticated_client_with(env, *routers)
 
         resp = client.delete(
             "/api/tag-rules/nonexistent_rule",

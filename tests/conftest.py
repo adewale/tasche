@@ -425,6 +425,7 @@ class ArticleFactory:
             "audio_status": None,
             "html_key": f"articles/{article_id}/content.html",
             "thumbnail_key": f"articles/{article_id}/thumbnail.webp",
+            "original_key": None,
             "markdown_content": f"# Test Article {n}\n\nThis is the markdown content.",
             "original_status": "unknown",
             "scroll_position": 0.0,
@@ -633,7 +634,7 @@ def _make_mock_response(
     return resp
 
 
-async def _noop_screenshot(client, url, account_id, api_token, **kwargs):
+async def _noop_screenshot(url, account_id, api_token, **kwargs):
     """Mock screenshot that returns fake image data."""
     return b"FAKE_SCREENSHOT"
 
@@ -645,11 +646,15 @@ def _browser_env(env: MockEnv) -> MockEnv:
     return env
 
 
-def _make_mock_client(
+def _make_mock_http_fetch(
     page_response: MagicMock | None = None,
     image_response: MagicMock | None = None,
 ) -> AsyncMock:
-    """Create a mock HttpClient context manager."""
+    """Create a mock http_fetch function.
+
+    The first call returns *page_response* (the HTML page), subsequent
+    calls return *image_response* (downloaded images).
+    """
     if page_response is None:
         page_response = _make_mock_response()
     if image_response is None:
@@ -658,13 +663,9 @@ def _make_mock_client(
             headers={"content-type": "image/jpeg"},
         )
 
-    mock_client = AsyncMock()
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
-
     call_count = 0
 
-    async def _get(url, **kwargs):
+    async def _mock_fetch(url, **kwargs):
         nonlocal call_count
         call_count += 1
         # First call is the page fetch, subsequent calls are image downloads
@@ -672,8 +673,11 @@ def _make_mock_client(
             return page_response
         return image_response
 
-    mock_client.get = AsyncMock(side_effect=_get)
-    return mock_client
+    return AsyncMock(side_effect=_mock_fetch)
+
+
+# Keep backward-compatible alias
+_make_mock_client = _make_mock_http_fetch
 
 
 # ---------------------------------------------------------------------------
@@ -694,21 +698,9 @@ def mock_db() -> MockD1:
 
 
 @pytest.fixture
-def mock_kv() -> MockKV:
-    """Return a standalone ``MockKV`` instance."""
-    return MockKV()
-
-
-@pytest.fixture
 def mock_r2() -> MockR2:
     """Return a standalone ``MockR2`` instance."""
     return MockR2()
-
-
-@pytest.fixture
-def mock_queue() -> MockQueue:
-    """Return a standalone ``MockQueue`` instance."""
-    return MockQueue()
 
 
 @pytest.fixture(autouse=True)
@@ -717,7 +709,28 @@ def _reset_article_factory() -> None:
     ArticleFactory._counter = 0
 
 
-@pytest.fixture
-def article_factory() -> type[ArticleFactory]:
-    """Return the ``ArticleFactory`` class for use in tests."""
-    return ArticleFactory
+# ---------------------------------------------------------------------------
+# Test helper factory
+# ---------------------------------------------------------------------------
+
+
+def make_test_helpers(*routers: tuple[Any, str]):
+    """Create ``_make_app`` and ``_authenticated_client`` helpers for a set of routers.
+
+    Usage in test files::
+
+        _make_app, _authenticated_client = make_test_helpers(
+            (router, "/api/articles"),
+        )
+    """
+
+    def _make_app(env: Any) -> FastAPI:
+        return _make_test_app(env, *routers)
+
+    async def _auth_client(
+        env: MockEnv,
+        user_data: dict[str, Any] | None = None,
+    ) -> tuple[TestClient, str]:
+        return await _authenticated_client(env, *routers, user_data=user_data)
+
+    return _make_app, _auth_client

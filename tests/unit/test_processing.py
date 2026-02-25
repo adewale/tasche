@@ -16,7 +16,7 @@ from tests.conftest import (
     MockReadability,
     TrackingD1,
     _browser_env,
-    _make_mock_client,
+    _make_mock_http_fetch,
     _make_mock_response,
     _noop_screenshot,
     parse_update_params,
@@ -34,10 +34,11 @@ class TestProcessArticleHappyPath:
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
-        mock_client = _make_mock_client()
+        mock_client = _make_mock_http_fetch()
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -60,10 +61,11 @@ class TestProcessArticleHappyPath:
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
-        mock_client = _make_mock_client()
+        mock_client = _make_mock_http_fetch()
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -78,10 +80,11 @@ class TestProcessArticleHappyPath:
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
-        mock_client = _make_mock_client()
+        mock_client = _make_mock_http_fetch()
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -96,10 +99,11 @@ class TestProcessArticleHappyPath:
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
-        mock_client = _make_mock_client()
+        mock_client = _make_mock_http_fetch()
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -131,20 +135,21 @@ class TestProcessArticleScreenshot:
         env.CF_ACCOUNT_ID = "test-account"
         env.CF_API_TOKEN = "test-token"
 
-        mock_client = _make_mock_client()
+        mock_client = _make_mock_http_fetch()
         # Mock the screenshot function to return fake image data
         fake_thumb = b"THUMB_DATA"
         fake_fullpage = b"FULLPAGE_DATA"
         call_count = {"n": 0}
 
-        async def _mock_screenshot(client, url, account_id, api_token, **kwargs):
+        async def _mock_screenshot(url, account_id, api_token, **kwargs):
             call_count["n"] += 1
             if kwargs.get("full_page"):
                 return fake_fullpage
             return fake_thumb
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
             patch("articles.processing.screenshot", side_effect=_mock_screenshot),
         ):
             from articles.processing import process_article
@@ -165,13 +170,14 @@ class TestProcessArticleScreenshot:
         env.CF_ACCOUNT_ID = "test-account"
         env.CF_API_TOKEN = "test-token"
 
-        mock_client = _make_mock_client()
+        mock_client = _make_mock_http_fetch()
 
-        async def _mock_screenshot(client, url, account_id, api_token, **kwargs):
+        async def _mock_screenshot(url, account_id, api_token, **kwargs):
             return b"SCREENSHOT_DATA"
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
             patch("articles.processing.screenshot", side_effect=_mock_screenshot),
         ):
             from articles.processing import process_article
@@ -197,9 +203,12 @@ class TestProcessArticleScreenshot:
         env = MockEnv(db=db, content=r2)
         # No CF_ACCOUNT_ID or CF_API_TOKEN set
 
-        mock_client = _make_mock_client()
+        mock_client = _make_mock_http_fetch()
 
-        with patch("articles.processing.HttpClient", return_value=mock_client):
+        with (
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
+        ):
             from articles.processing import process_article
 
             await process_article("art_noss", "https://example.com/article", env)
@@ -220,17 +229,18 @@ class TestProcessArticleScreenshot:
         env.CF_ACCOUNT_ID = "test-account"
         env.CF_API_TOKEN = "test-token"
 
-        mock_client = _make_mock_client()
+        mock_client = _make_mock_http_fetch()
 
         from articles.browser_rendering import BrowserRenderingError
 
-        async def _mock_screenshot(client, url, account_id, api_token, **kwargs):
+        async def _mock_screenshot(url, account_id, api_token, **kwargs):
             if kwargs.get("full_page"):
                 raise BrowserRenderingError("Timeout on full-page")
             return b"THUMB_DATA"
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
             patch("articles.processing.screenshot", side_effect=_mock_screenshot),
         ):
             from articles.processing import process_article
@@ -263,9 +273,12 @@ class TestProcessArticleFailure:
         env = MockEnv(db=db, content=r2)
 
         error_response = _make_mock_response(status_code=404)
-        mock_client = _make_mock_client(page_response=error_response)
+        mock_client = _make_mock_http_fetch(page_response=error_response)
 
-        with patch("articles.processing.HttpClient", return_value=mock_client):
+        with (
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
+        ):
             from articles.processing import process_article
 
             await process_article("art_fail", "https://example.com/missing", env)
@@ -284,12 +297,12 @@ class TestProcessArticleFailure:
         r2 = MockR2()
         env = MockEnv(db=db, content=r2)
 
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.get = AsyncMock(side_effect=Exception("Network error"))
+        mock_fetch = AsyncMock(side_effect=Exception("Network error"))
 
-        with patch("articles.processing.HttpClient", return_value=mock_client):
+        with (
+            patch("articles.processing.http_fetch", mock_fetch),
+            patch("articles.images.http_fetch", mock_fetch),
+        ):
             from articles.processing import process_article
 
             await process_article("art_err", "https://example.com/error", env)
@@ -314,10 +327,11 @@ class TestProcessArticleD1Updates:
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
-        mock_client = _make_mock_client()
+        mock_client = _make_mock_http_fetch()
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -359,10 +373,11 @@ class TestProcessArticleD1Updates:
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
-        mock_client = _make_mock_client()
+        mock_client = _make_mock_http_fetch()
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -391,10 +406,11 @@ class TestProcessArticleContentValidation:
         json_response = _make_mock_response(
             headers={"content-type": "application/json"},
         )
-        mock_client = _make_mock_client(page_response=json_response)
+        mock_client = _make_mock_http_fetch(page_response=json_response)
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -423,10 +439,11 @@ class TestProcessArticleContentValidation:
                 "content-length": "20000000",  # 20 MB
             },
         )
-        mock_client = _make_mock_client(page_response=oversized_response)
+        mock_client = _make_mock_http_fetch(page_response=oversized_response)
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -461,10 +478,11 @@ class TestProcessArticleImageRewriting:
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
-        mock_client = _make_mock_client()
+        mock_client = _make_mock_http_fetch()
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -495,10 +513,11 @@ class TestProcessArticleImageRewriting:
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
-        mock_client = _make_mock_client()
+        mock_client = _make_mock_http_fetch()
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -561,10 +580,11 @@ class TestProcessArticleImageRewriting:
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
-        mock_client = _make_mock_client()
+        mock_client = _make_mock_http_fetch()
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -613,10 +633,11 @@ class TestProcessArticleImageRewriting:
         </html>
         """
         page_response = _make_mock_response(text=minimal_html)
-        mock_client = _make_mock_client(page_response=page_response)
+        mock_client = _make_mock_http_fetch(page_response=page_response)
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -650,10 +671,11 @@ class TestProcessArticleUserTitle:
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
-        mock_client = _make_mock_client()
+        mock_client = _make_mock_http_fetch()
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -702,10 +724,11 @@ class TestProcessArticleWithNoCanonical:
             text=html_no_canonical,
             url="https://example.com/final-destination",
         )
-        mock_client = _make_mock_client(page_response=page_response)
+        mock_client = _make_mock_http_fetch(page_response=page_response)
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -758,16 +781,10 @@ class TestProcessArticleRelativeImages:
         """
         page_response = _make_mock_response(text=html_with_relative_imgs)
 
-        # Mock client that fails on relative URLs but succeeds on the page fetch
-        from unittest.mock import AsyncMock
-
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
+        # Mock http_fetch that fails on relative URLs but succeeds on the page fetch
         call_count = 0
 
-        async def _get(url, **kwargs):
+        async def _mock_fetch(url, **kwargs):
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -780,10 +797,11 @@ class TestProcessArticleRelativeImages:
                 headers={"content-type": "image/jpeg"},
             )
 
-        mock_client.get = AsyncMock(side_effect=_get)
+        mock_fetch = AsyncMock(side_effect=_mock_fetch)
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_fetch),
+            patch("articles.images.http_fetch", mock_fetch),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -811,10 +829,11 @@ class TestProcessArticleSQLParamCounts:
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
-        mock_client = _make_mock_client()
+        mock_client = _make_mock_http_fetch()
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -843,10 +862,11 @@ class TestProcessArticleSSRF:
         redirect_response = _make_mock_response(
             url="http://127.0.0.1:8080/secret",
         )
-        mock_client = _make_mock_client(page_response=redirect_response)
+        mock_client = _make_mock_http_fetch(page_response=redirect_response)
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -871,10 +891,11 @@ class TestProcessArticleExactAssertions:
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))
 
-        mock_client = _make_mock_client()
+        mock_client = _make_mock_http_fetch()
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -900,9 +921,12 @@ class TestProcessArticleExactAssertions:
         env = MockEnv(db=db, content=r2)
 
         error_response = _make_mock_response(status_code=404)
-        mock_client = _make_mock_client(page_response=error_response)
+        mock_client = _make_mock_http_fetch(page_response=error_response)
 
-        with patch("articles.processing.HttpClient", return_value=mock_client):
+        with (
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
+        ):
             from articles.processing import process_article
 
             await process_article("art_fidx", "https://example.com/missing", env)
@@ -939,10 +963,11 @@ class TestProcessArticleReadability:
         )
         env = _browser_env(MockEnv(db=db, content=r2, readability=readability))
 
-        mock_client = _make_mock_client()
+        mock_client = _make_mock_http_fetch()
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -965,10 +990,11 @@ class TestProcessArticleReadability:
         r2 = MockR2()
         env = _browser_env(MockEnv(db=db, content=r2))  # No readability
 
-        mock_client = _make_mock_client()
+        mock_client = _make_mock_http_fetch()
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -989,10 +1015,11 @@ class TestProcessArticleReadability:
         readability.parse = AsyncMock(side_effect=RuntimeError("Service unavailable"))
         env = _browser_env(MockEnv(db=db, content=r2, readability=readability))
 
-        mock_client = _make_mock_client()
+        mock_client = _make_mock_http_fetch()
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -1027,10 +1054,11 @@ class TestProcessArticleReadability:
         )
         env = _browser_env(MockEnv(db=db, content=r2, readability=readability))
 
-        mock_client = _make_mock_client()
+        mock_client = _make_mock_http_fetch()
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -1065,10 +1093,11 @@ class TestProcessArticleAutoTTS:
         queue = MockQueue()
         env = _browser_env(MockEnv(db=db, content=r2, article_queue=queue))
 
-        mock_client = _make_mock_client()
+        mock_client = _make_mock_http_fetch()
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -1094,10 +1123,11 @@ class TestProcessArticleAutoTTS:
         queue = MockQueue()
         env = _browser_env(MockEnv(db=db, content=r2, article_queue=queue))
 
-        mock_client = _make_mock_client()
+        mock_client = _make_mock_http_fetch()
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -1143,27 +1173,22 @@ class TestProcessArticlePreSuppliedContent:
         """
         await r2.put("articles/art_presupplied/raw.html", pre_supplied_html)
 
-        # Create a mock client that should NOT be called for the page fetch
-        # (but needs to exist for the context manager and image downloads)
-        from unittest.mock import AsyncMock
-
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        # Track whether get() is called for page fetch
+        # Create a mock http_fetch that should NOT be called for the page fetch
+        # (only for image downloads since content is pre-supplied)
         fetch_calls = []
 
-        async def _get(url, **kwargs):
+        async def _mock_fetch(url, **kwargs):
             fetch_calls.append(url)
             return _make_mock_response(
                 content=b"fake-image-bytes",
                 headers={"content-type": "image/jpeg"},
             )
 
-        mock_client.get = AsyncMock(side_effect=_get)
+        mock_fetch = AsyncMock(side_effect=_mock_fetch)
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_fetch),
+            patch("articles.images.http_fetch", mock_fetch),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -1217,10 +1242,11 @@ class TestProcessArticlePreSuppliedContent:
         """
         await r2.put("articles/art_premium/raw.html", pre_supplied_html)
 
-        mock_client = _make_mock_client()
+        mock_client = _make_mock_http_fetch()
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
@@ -1248,10 +1274,11 @@ class TestProcessArticlePreSuppliedContent:
         env = _browser_env(MockEnv(db=db, content=r2))
 
         # No raw.html pre-stored in R2
-        mock_client = _make_mock_client()
+        mock_client = _make_mock_http_fetch()
 
         with (
-            patch("articles.processing.HttpClient", return_value=mock_client),
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
             patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article

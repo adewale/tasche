@@ -25,14 +25,9 @@ from __future__ import annotations
 
 import contextvars
 import json
-import random
 import time
 from datetime import UTC, datetime
 from typing import Any
-
-# Tail sampling thresholds
-_SLOW_REQUEST_MS = 2000
-_SUCCESS_SAMPLE_RATE = 0.05  # 5%
 
 # The contextvar holding the current WideEvent for this async context.
 _current_event: contextvars.ContextVar[WideEvent | None] = contextvars.ContextVar(
@@ -206,31 +201,14 @@ def begin_event(pipeline: str, **initial_fields: Any) -> WideEvent:
     return evt
 
 
-def emit_event(event: WideEvent, *, force: bool = False) -> None:
-    """Finalize and print the event as JSON, subject to tail sampling.
+def emit_event(event: WideEvent) -> None:
+    """Finalize and print the event as JSON.
 
     Parameters
     ----------
     event:
         The WideEvent to emit.
-    force:
-        If ``True``, bypass tail sampling and always emit.
     """
     data = event.finalize()
-    if force or _should_sample(data):
-        print(json.dumps(data))
+    print(json.dumps(data))
     _current_event.set(None)
-
-
-def _should_sample(event: dict) -> bool:
-    """Tail sampling: always emit errors/slow, sample successes at 5%."""
-    if event.get("status_code", 0) >= 500:
-        return True
-    if event.get("duration_ms", 0) > _SLOW_REQUEST_MS:
-        return True
-    if event.get("outcome") == "error":
-        return True
-    # Queue/scheduled pipelines: always emit
-    if event.get("pipeline") in ("queue", "scheduled"):
-        return True
-    return random.random() < _SUCCESS_SAMPLE_RATE

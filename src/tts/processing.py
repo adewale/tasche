@@ -20,6 +20,7 @@ import re
 import traceback
 
 from articles.storage import article_key
+from utils import now_iso
 from wide_event import current_event
 from wrappers import consume_readable_stream
 
@@ -297,13 +298,6 @@ def strip_markdown(text: str) -> str:
     return text
 
 
-def _now() -> str:
-    """Return the current UTC timestamp as an ISO 8601 string."""
-    from utils import now_iso
-
-    return now_iso()
-
-
 async def process_tts(
     article_id: str, env: object, *, user_id: str, raise_on_error: bool = False
 ) -> dict | None:
@@ -346,7 +340,7 @@ async def process_tts(
             db.prepare(
                 "UPDATE articles SET audio_status = ?, updated_at = ? WHERE id = ? AND user_id = ?"
             )
-            .bind("generating", _now(), article_id, user_id)
+            .bind("generating", now_iso(), article_id, user_id)
             .run()
         )
 
@@ -383,74 +377,17 @@ async def process_tts(
             evt.set("tts_chunks", len(chunks))
 
         audio_parts: list[bytes] = []
-        chunk_diagnostics: list[dict] = []
-        ai_type = "unknown"
-        ai_attrs: list[str] = []
-
-        # Pre-AI diagnostic: confirm we reached the chunking stage
-        pre_diag = {
-            "stage": "pre_ai_loop",
-            "chunks_total": len(chunks),
-            "chunk_text_lengths": [len(c) for c in chunks],
-            "tts_text_length": len(tts_text),
-        }
-        pre_diag_key = article_key(article_id, "tts-diagnostics.json")
-        await r2.put(pre_diag_key, json.dumps(pre_diag))
 
         for i, chunk in enumerate(chunks):
             chunk_audio = await ai.run(_TTS_MODEL, {"text": chunk})
 
-            # Diagnostic: inspect AI response type on first chunk only
-            if i == 0:
-                ai_type = type(chunk_audio).__name__
-                for attr in (
-                    "getReader",
-                    "arrayBuffer",
-                    "body",
-                    "to_py",
-                    "to_bytes",
-                    "byteLength",
-                    "buffer",
-                ):
-                    if hasattr(chunk_audio, attr):
-                        ai_attrs.append(attr)
-                evt = current_event()
-                if evt:
-                    evt.set("ai_response_type", ai_type)
-                    evt.set("ai_response_attrs", ",".join(ai_attrs))
-
             chunk_bytes = await consume_readable_stream(chunk_audio)
-            chunk_len = 0
             if chunk_bytes:
                 as_bytes = chunk_bytes if isinstance(chunk_bytes, bytes) else bytes(chunk_bytes)
-                chunk_len = len(as_bytes)
                 audio_parts.append(as_bytes)
 
-            chunk_diagnostics.append(
-                {
-                    "index": i,
-                    "text_len": len(chunk),
-                    "audio_bytes": chunk_len,
-                }
-            )
-
-            # Write incremental diagnostics to R2 after each chunk
-            # so we can inspect even if the queue consumer times out
-            incremental_diag = {
-                "ai_response_type": ai_type,
-                "ai_response_attrs": ai_attrs,
-                "chunks_total": len(chunks),
-                "chunks_completed": i + 1,
-                "chunk_diagnostics": chunk_diagnostics,
-                "audio_parts_so_far": len(audio_parts),
-                "audio_bytes_so_far": sum(len(p) for p in audio_parts),
-            }
-            diag_key = article_key(article_id, "tts-diagnostics.json")
-            await r2.put(diag_key, json.dumps(incremental_diag))
-
         if not audio_parts:
-            diag = f"type={ai_type} attrs={','.join(ai_attrs)}"
-            raise ValueError(f"Workers AI returned empty audio data ({diag})")
+            raise ValueError("Workers AI returned empty audio data")
 
         audio_data = b"".join(audio_parts)
 
@@ -458,7 +395,6 @@ async def process_tts(
         if evt:
             evt.set("tts_chunk_sizes", [len(p) for p in audio_parts])
             evt.set("tts_total_audio_bytes", len(audio_data))
-            evt.set("tts_chunk_diagnostics", chunk_diagnostics)
 
         # Step 5: Store audio in R2
         audio_r2_key = article_key(article_id, "audio.mp3")
@@ -489,22 +425,6 @@ async def process_tts(
                 )
             )
 
-        # Step 5a: Store TTS diagnostics in R2 for debugging
-        tts_diag = {
-            "ai_response_type": ai_type,
-            "ai_response_attrs": ai_attrs,
-            "text_chunks": len(chunks),
-            "chunk_text_lengths": [len(c) for c in chunks],
-            "audio_parts": len(audio_parts),
-            "audio_part_sizes": [len(p) for p in audio_parts],
-            "total_audio_bytes": audio_data_len,
-            "r2_verify_size": verify_size,
-            "r2_write_verified": r2_write_verified,
-            "chunk_diagnostics": chunk_diagnostics,
-        }
-        diag_r2_key = article_key(article_id, "tts-diagnostics.json")
-        await r2.put(diag_r2_key, json.dumps(tts_diag))
-
         # Step 5b: Generate and store sentence timing map for highlight sync
         timing_data = generate_sentence_timing(tts_text)
         timing_r2_key = article_key(article_id, "audio-timing.json")
@@ -518,7 +438,7 @@ async def process_tts(
                 "UPDATE articles SET audio_key = ?, audio_duration_seconds = ?, "
                 "audio_status = ?, updated_at = ? WHERE id = ? AND user_id = ?"
             )
-            .bind(audio_r2_key, duration, "ready", _now(), article_id, user_id)
+            .bind(audio_r2_key, duration, "ready", now_iso(), article_id, user_id)
             .run()
         )
 
@@ -536,7 +456,6 @@ async def process_tts(
             "chunks": len(audio_parts),
             "chunk_sizes": [len(p) for p in audio_parts],
             "total_bytes": len(audio_data),
-            "chunk_diagnostics": chunk_diagnostics,
         }
 
     except ValueError:
@@ -550,7 +469,7 @@ async def process_tts(
                     "UPDATE articles SET audio_status = ?, updated_at = ?"
                     " WHERE id = ? AND user_id = ?"
                 )
-                .bind("failed", _now(), article_id, user_id)
+                .bind("failed", now_iso(), article_id, user_id)
                 .run()
             )
         except Exception:

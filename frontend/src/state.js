@@ -9,7 +9,6 @@ export const user = signal(null);
 
 // Articles
 export const articles = signal([]);
-export const currentArticle = signal(null);
 
 // Tags
 export const tags = signal([]);

@@ -16,7 +16,7 @@ from __future__ import annotations
 from urllib.parse import urlparse
 
 from articles.urls import _is_private_hostname
-from wrappers import HttpClient
+from wrappers import http_fetch
 
 # Timeout for health check requests (seconds).
 _HEALTH_CHECK_TIMEOUT = 10.0
@@ -55,29 +55,29 @@ async def check_original_url(url: str) -> str:
         return "unknown"
 
     try:
-        async with HttpClient() as client:
-            resp = await client.head(
-                url,
-                headers={"User-Agent": _USER_AGENT},
-                timeout=_HEALTH_CHECK_TIMEOUT,
-            )
+        resp = await http_fetch(
+            url,
+            method="HEAD",
+            headers={"User-Agent": _USER_AGENT},
+            timeout=_HEALTH_CHECK_TIMEOUT,
+        )
 
-            # SSRF check: validate the final URL after redirects
-            final_hostname = urlparse(resp.url).hostname if resp.url else None
-            if final_hostname and _is_private_hostname(final_hostname):
-                return "unknown"
-
-            status = resp.status_code
-
-            if 200 <= status <= 299:
-                return "available"
-            if status in (401, 403):
-                return "paywalled"
-            if status in (404, 410):
-                return "gone"
-
-            # Other HTTP errors (5xx, etc.) — treat as unknown
+        # SSRF check: validate the final URL after redirects
+        final_hostname = urlparse(resp.url).hostname if resp.url else None
+        if final_hostname and _is_private_hostname(final_hostname):
             return "unknown"
+
+        status = resp.status_code
+
+        if 200 <= status <= 299:
+            return "available"
+        if status in (401, 403):
+            return "paywalled"
+        if status in (404, 410):
+            return "gone"
+
+        # Other HTTP errors (5xx, etc.) — treat as unknown
+        return "unknown"
 
     except (ConnectionError, OSError):
         # DNS failure, connection refused

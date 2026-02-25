@@ -10,7 +10,7 @@ See spec section 2.5 for details on the REST API endpoints.
 
 from __future__ import annotations
 
-from typing import Any
+from wrappers import http_fetch
 
 BROWSER_API_BASE = "https://api.cloudflare.com/client/v4/accounts/{account_id}/browser-rendering"
 
@@ -20,7 +20,6 @@ class BrowserRenderingError(Exception):
 
 
 async def screenshot(
-    client: Any,
     url: str,
     account_id: str,
     api_token: str,
@@ -33,8 +32,6 @@ async def screenshot(
 
     Parameters
     ----------
-    client:
-        An HTTP client with async ``.post()`` method (e.g. ``HttpClient``).
     url:
         The page URL to screenshot.
     account_id:
@@ -69,7 +66,9 @@ async def screenshot(
         "Content-Type": "application/json",
     }
 
-    resp = await client.post(endpoint, json=payload, headers=headers, timeout=30.0)
+    resp = await http_fetch(
+        endpoint, method="POST", json_data=payload, headers=headers, timeout=30.0
+    )
     if resp.status_code != 200:
         raise BrowserRenderingError(
             f"Screenshot failed: HTTP {resp.status_code} — {resp.text[:500]}"
@@ -78,7 +77,6 @@ async def screenshot(
 
 
 async def scrape(
-    client: Any,
     url: str,
     account_id: str,
     api_token: str,
@@ -89,8 +87,6 @@ async def scrape(
 
     Parameters
     ----------
-    client:
-        An HTTP client with async ``.post()`` method (e.g. ``HttpClient``).
     url:
         The page URL to scrape.
     account_id:
@@ -115,7 +111,9 @@ async def scrape(
         "Content-Type": "application/json",
     }
 
-    resp = await client.post(endpoint, json=payload, headers=headers, timeout=30.0)
+    resp = await http_fetch(
+        endpoint, method="POST", json_data=payload, headers=headers, timeout=30.0
+    )
     if resp.status_code != 200:
         raise BrowserRenderingError(f"Scrape failed: HTTP {resp.status_code} — {resp.text[:500]}")
 
