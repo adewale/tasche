@@ -11,6 +11,8 @@ export function TagPicker({ articleId }) {
   const [articleTags, setArticleTags] = useState([]);
   const [showPicker, setShowPicker] = useState(false);
   const [selectedTagId, setSelectedTagId] = useState('');
+  const [addingTag, setAddingTag] = useState(false);
+  const [removingTagId, setRemovingTagId] = useState(null);
 
   useEffect(() => {
     if (!articleId) return;
@@ -20,10 +22,12 @@ export function TagPicker({ articleId }) {
   }, [articleId]);
 
   async function handleAddTag() {
+    if (addingTag) return;
     if (!selectedTagId) {
       addToast('Select a tag', 'error');
       return;
     }
+    setAddingTag(true);
     try {
       await addArticleTag(articleId, selectedTagId);
       const tagName = tagsSignal.value.find((t) => t.id === selectedTagId);
@@ -36,16 +40,22 @@ export function TagPicker({ articleId }) {
       setSelectedTagId('');
     } catch (e) {
       addToast(e.message, 'error');
+    } finally {
+      setAddingTag(false);
     }
   }
 
   async function handleRemoveTag(tagId) {
+    if (removingTagId) return;
+    setRemovingTagId(tagId);
     try {
       await removeArticleTag(articleId, tagId);
       setArticleTags(articleTags.filter((t) => t.id !== tagId));
       addToast('Tag removed', 'success');
     } catch (e) {
       addToast(e.message, 'error');
+    } finally {
+      setRemovingTagId(null);
     }
   }
 
@@ -65,10 +75,14 @@ export function TagPicker({ articleId }) {
     <div>
       <div class="flex-wrap-gap mt-4">
         {articleTags.map((t) => (
-          <span class="tag-chip" key={t.id}>
+          <span class={'tag-chip' + (removingTagId === t.id ? ' tag-chip--removing' : '')} key={t.id}>
             {t.name}
-            <span class="tag-chip-remove" onClick={() => handleRemoveTag(t.id)}>
-              {'\u00D7'}
+            <span
+              class="tag-chip-remove"
+              onClick={() => { if (!removingTagId) handleRemoveTag(t.id); }}
+              style={removingTagId ? { opacity: 0.5, pointerEvents: 'none' } : {}}
+            >
+              {removingTagId === t.id ? '...' : '\u00D7'}
             </span>
           </span>
         ))}
@@ -94,8 +108,8 @@ export function TagPicker({ articleId }) {
               </option>
             ))}
           </select>
-          <button class="btn btn-sm btn-primary" onClick={handleAddTag}>
-            Add
+          <button class="btn btn-sm btn-primary" onClick={handleAddTag} disabled={addingTag}>
+            {addingTag ? 'Adding...' : 'Add'}
           </button>
           <button
             class="btn btn-sm btn-secondary"

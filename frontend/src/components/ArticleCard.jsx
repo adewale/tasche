@@ -20,6 +20,7 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
   const [cardTags, setCardTags] = useState([]);
   const [thumbError, setThumbError] = useState(false);
   const [offlineSaved, setOfflineSaved] = useState(false);
+  const [audioLoading, setAudioLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -68,6 +69,8 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
 
   async function handleListenLater(e) {
     e.stopPropagation();
+    if (audioLoading) return;
+    setAudioLoading(true);
     try {
       await apiListenLater(a.id);
       articles.value = articles.value.map(function (art) {
@@ -80,6 +83,8 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
       } else {
         addToast(err.message, 'error');
       }
+    } finally {
+      setAudioLoading(false);
     }
   }
 
@@ -199,8 +204,8 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
             </button>
           )}
           {canRequestAudio && (
-            <button title="Listen later" onClick={handleListenLater}>
-              <IconHeadphones />
+            <button title="Listen later" onClick={handleListenLater} disabled={audioLoading}>
+              {audioLoading ? <IconClock /> : <IconHeadphones />}
             </button>
           )}
           <button

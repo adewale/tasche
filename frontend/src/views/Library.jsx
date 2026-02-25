@@ -60,6 +60,8 @@ function getSavedSort() {
 export function Library({ tag }) {
   const [saveUrl, setSaveUrl] = useState('');
   const [listenLater, setListenLater] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [bulkActing, setBulkActing] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   var showHelp = showShortcuts.value;
   const [currentSort, setCurrentSort] = useState(getSavedSort);
@@ -192,12 +194,14 @@ export function Library({ tag }) {
   }
 
   async function handleSave() {
+    if (saving) return;
     const url = saveUrl.trim();
     if (!url) {
       addToast('Please enter a URL', 'error');
       return;
     }
 
+    setSaving(true);
     try {
       var result = await apiCreateArticle(url, null, listenLater);
       if (result && result.updated) {
@@ -220,6 +224,8 @@ export function Library({ tag }) {
       } else {
         addToast(e.message, 'error');
       }
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -273,7 +279,8 @@ export function Library({ tag }) {
   }
 
   async function handleBulkArchive() {
-    if (selected.size === 0) return;
+    if (selected.size === 0 || bulkActing) return;
+    setBulkActing(true);
     var ids = Array.from(selected);
     try {
       await batchUpdateArticles(ids, { reading_status: 'archived' });
@@ -285,13 +292,16 @@ export function Library({ tag }) {
       setSelected(new Set());
     } catch (err) {
       addToast('Bulk archive failed: ' + err.message, 'error');
+    } finally {
+      setBulkActing(false);
     }
   }
 
   async function handleBulkDelete() {
-    if (selected.size === 0) return;
+    if (selected.size === 0 || bulkActing) return;
     var count = selected.size;
     if (!confirm('Delete ' + count + ' article' + (count === 1 ? '' : 's') + '?')) return;
+    setBulkActing(true);
     var ids = Array.from(selected);
     try {
       await batchDeleteArticles(ids);
@@ -303,6 +313,8 @@ export function Library({ tag }) {
       setSelected(new Set());
     } catch (err) {
       addToast('Bulk delete failed: ' + err.message, 'error');
+    } finally {
+      setBulkActing(false);
     }
   }
 
@@ -354,8 +366,8 @@ export function Library({ tag }) {
                 >
                   <IconHeadphones size={16} />
                 </button>
-                <button class="btn btn-primary" onClick={handleSave}>
-                  Save
+                <button class="btn btn-primary" onClick={handleSave} disabled={saving}>
+                  {saving ? 'Saving...' : 'Save'}
                 </button>
               </div>
             </div>
@@ -409,13 +421,13 @@ export function Library({ tag }) {
             <button class="btn btn-sm btn-secondary" onClick={handleClearSelection} disabled={selected.size === 0}>
               Clear
             </button>
-            <button class="btn btn-sm btn-secondary" onClick={handleBulkArchive} disabled={selected.size === 0}>
+            <button class="btn btn-sm btn-secondary" onClick={handleBulkArchive} disabled={selected.size === 0 || bulkActing}>
               <IconArchive size={14} />
-              Archive
+              {bulkActing ? 'Archiving...' : 'Archive'}
             </button>
-            <button class="btn btn-sm btn-danger" onClick={handleBulkDelete} disabled={selected.size === 0}>
+            <button class="btn btn-sm btn-danger" onClick={handleBulkDelete} disabled={selected.size === 0 || bulkActing}>
               <IconTrash size={14} />
-              Delete
+              {bulkActing ? 'Deleting...' : 'Delete'}
             </button>
             <button class="btn btn-sm btn-secondary bulk-action-bar-close" onClick={toggleSelectMode} title="Exit select mode">
               <IconX size={14} />

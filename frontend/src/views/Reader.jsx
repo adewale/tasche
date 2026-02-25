@@ -128,6 +128,8 @@ export function Reader({ id }) {
   const [contentHtml, setContentHtml] = useState('');
   const [loadError, setLoadError] = useState(null);
   const [audioRequested, setAudioRequested] = useState(false);
+  const [listeningLoading, setListeningLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [checkingOriginal, setCheckingOriginal] = useState(false);
   const [offlineStatus, setOfflineStatus] = useState({ cached: false, hasContent: false, hasAudio: false });
@@ -406,6 +408,7 @@ export function Reader({ id }) {
       const updated = { ...article, is_favorite: newFav ? 1 : 0 };
       setArticle(updated);
       articles.value = articles.value.map((a) => a.id === id ? { ...a, is_favorite: updated.is_favorite } : a);
+      addToast(newFav ? 'Added to favourites' : 'Removed from favourites', 'success');
     } catch (e) {
       addToast(e.message, 'error');
     }
@@ -424,6 +427,8 @@ export function Reader({ id }) {
   }
 
   async function handleListenLater() {
+    if (listeningLoading) return;
+    setListeningLoading(true);
     try {
       await apiListenLater(id);
       addToast('Audio generation queued', 'success');
@@ -434,6 +439,8 @@ export function Reader({ id }) {
       } else {
         addToast(e.message, 'error');
       }
+    } finally {
+      setListeningLoading(false);
     }
   }
 
@@ -442,13 +449,17 @@ export function Reader({ id }) {
   }
 
   async function handleDelete() {
+    if (deleting) return;
     if (!confirm('Delete this article?')) return;
+    setDeleting(true);
     try {
       await apiDeleteArticle(id);
       addToast('Article deleted', 'success');
       nav.library();
     } catch (e) {
       addToast(e.message, 'error');
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -648,8 +659,8 @@ export function Reader({ id }) {
               </button>
             )}
             {canRequestAudio && (
-              <button class="btn btn-sm btn-secondary" onClick={handleListenLater}>
-                <IconHeadphones size={14} /> Listen Later
+              <button class="btn btn-sm btn-secondary" onClick={handleListenLater} disabled={listeningLoading}>
+                {listeningLoading ? <><IconClock size={14} /> Requesting...</> : <><IconHeadphones size={14} /> Listen Later</>}
               </button>
             )}
             {audioPending && (
@@ -678,8 +689,8 @@ export function Reader({ id }) {
             <button class="btn btn-sm btn-secondary" onClick={handleRetry} disabled={retrying}>
               <IconRefresh size={14} /> {retrying ? 'Retrying...' : 'Retry'}
             </button>
-            <button class="btn btn-sm btn-danger" onClick={handleDelete}>
-              Delete
+            <button class="btn btn-sm btn-danger" onClick={handleDelete} disabled={deleting}>
+              {deleting ? 'Deleting...' : 'Delete'}
             </button>
           </div>
         </div>

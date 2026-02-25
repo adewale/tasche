@@ -22,6 +22,11 @@ var MATCH_TYPE_LABELS = {
 export function Tags() {
   var [tagName, setTagName] = useState('');
   var [isLoading, setIsLoading] = useState(true);
+  var [creatingTag, setCreatingTag] = useState(false);
+  var [deletingTagId, setDeletingTagId] = useState(null);
+  var [renamingTagId, setRenamingTagId] = useState(null);
+  var [creatingRule, setCreatingRule] = useState(false);
+  var [deletingRuleId, setDeletingRuleId] = useState(null);
   var [editingTagId, setEditingTagId] = useState(null);
   var [editName, setEditName] = useState('');
   var editInputRef = useRef(null);
@@ -70,11 +75,13 @@ export function Tags() {
   }
 
   async function handleCreateTag() {
+    if (creatingTag) return;
     var name = tagName.trim();
     if (!name) {
       addToast('Enter a tag name', 'error');
       return;
     }
+    setCreatingTag(true);
     try {
       var tag = await apiCreateTag(name);
       var newTags = [...tagsSignal.value, tag];
@@ -84,11 +91,15 @@ export function Tags() {
       addToast('Tag created', 'success');
     } catch (e) {
       addToast(e.message, 'error');
+    } finally {
+      setCreatingTag(false);
     }
   }
 
   async function handleDeleteTag(tagId) {
+    if (deletingTagId) return;
     if (!confirm('Delete this tag?')) return;
+    setDeletingTagId(tagId);
     try {
       await apiDeleteTag(tagId);
       tagsSignal.value = tagsSignal.value.filter(function (t) { return t.id !== tagId; });
@@ -97,6 +108,8 @@ export function Tags() {
       addToast('Tag deleted', 'success');
     } catch (e) {
       addToast(e.message, 'error');
+    } finally {
+      setDeletingTagId(null);
     }
   }
 
@@ -111,6 +124,7 @@ export function Tags() {
   }
 
   async function saveRename(tagId) {
+    if (renamingTagId) return;
     var trimmed = editName.trim();
     if (!trimmed) {
       addToast('Tag name cannot be empty', 'error');
@@ -121,6 +135,7 @@ export function Tags() {
       cancelRename();
       return;
     }
+    setRenamingTagId(tagId);
     try {
       var updated = await apiRenameTag(tagId, trimmed);
       var newTags = tagsSignal.value.map(function (t) {
@@ -136,6 +151,8 @@ export function Tags() {
       addToast('Tag renamed', 'success');
     } catch (e) {
       addToast(e.message, 'error');
+    } finally {
+      setRenamingTagId(null);
     }
   }
 
@@ -153,6 +170,7 @@ export function Tags() {
   }
 
   async function handleCreateRule() {
+    if (creatingRule) return;
     if (!ruleTagId) {
       addToast('Select a tag', 'error');
       return;
@@ -162,6 +180,7 @@ export function Tags() {
       addToast('Enter a pattern', 'error');
       return;
     }
+    setCreatingRule(true);
     try {
       var rule = await apiCreateTagRule({
         tag_id: ruleTagId,
@@ -173,16 +192,22 @@ export function Tags() {
       addToast('Rule created', 'success');
     } catch (e) {
       addToast(e.message, 'error');
+    } finally {
+      setCreatingRule(false);
     }
   }
 
   async function handleDeleteRule(ruleId) {
+    if (deletingRuleId) return;
+    setDeletingRuleId(ruleId);
     try {
       await apiDeleteTagRule(ruleId);
       setRules(rules.filter(function (r) { return r.id !== ruleId; }));
       addToast('Rule deleted', 'success');
     } catch (e) {
       addToast(e.message, 'error');
+    } finally {
+      setDeletingRuleId(null);
     }
   }
 
@@ -204,8 +229,8 @@ export function Tags() {
             onInput={function (e) { setTagName(e.target.value); }}
             onKeyDown={handleKeyDown}
           />
-          <button class="btn btn-primary" onClick={handleCreateTag}>
-            Create Tag
+          <button class="btn btn-primary" onClick={handleCreateTag} disabled={creatingTag}>
+            {creatingTag ? 'Creating...' : 'Create Tag'}
           </button>
         </div>
 
@@ -250,8 +275,9 @@ export function Tags() {
                       <button
                         class="btn btn-sm btn-primary"
                         onMouseDown={function (e) { e.preventDefault(); saveRename(t.id); }}
+                        disabled={renamingTagId === t.id}
                       >
-                        Save
+                        {renamingTagId === t.id ? 'Saving...' : 'Save'}
                       </button>
                       <button
                         class="btn btn-sm btn-secondary"
@@ -272,8 +298,9 @@ export function Tags() {
                       <button
                         class="btn btn-sm btn-danger"
                         onClick={function () { handleDeleteTag(t.id); }}
+                        disabled={deletingTagId === t.id}
                       >
-                        Delete
+                        {deletingTagId === t.id ? 'Deleting...' : 'Delete'}
                       </button>
                     </>
                   )}
@@ -318,8 +345,8 @@ export function Tags() {
               onInput={function (e) { setRulePattern(e.target.value); }}
               onKeyDown={handleRuleKeyDown}
             />
-            <button class="btn btn-primary" onClick={handleCreateRule}>
-              Add Rule
+            <button class="btn btn-primary" onClick={handleCreateRule} disabled={creatingRule}>
+              {creatingRule ? 'Adding...' : 'Add Rule'}
             </button>
           </div>
         )}
@@ -346,8 +373,9 @@ export function Tags() {
                   <button
                     class="btn btn-sm btn-danger"
                     onClick={function () { handleDeleteRule(r.id); }}
+                    disabled={deletingRuleId === r.id}
                   >
-                    Delete
+                    {deletingRuleId === r.id ? 'Deleting...' : 'Delete'}
                   </button>
                 </div>
               </div>
