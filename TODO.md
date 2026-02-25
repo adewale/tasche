@@ -1,5 +1,14 @@
 # Tasche TODO
 
+## Header Navigation Redesign
+
+The header nav (Search | Stats | Tags | Settings | Help) needs rethinking:
+
+- **Reorder by usage frequency**: swap Stats and Tags — Tags is a core workflow, Stats is occasional
+- **Remove Help dropdown**: move theme toggle to Settings, make keyboard shortcuts accessible via `?` hotkey
+- **Add active-tab indicator**: no icon currently shows which view you're on (no `aria-current`, no highlight)
+- **Mobile bottom nav**: on small screens, move primary navigation (Library, Search, Tags, Settings) to a bottom bar for thumb reachability — top header is the hardest zone to reach one-handed
+
 ## Kindle Integration
 
 Ideas for getting articles onto Kindle devices and into the Kindle reading experience.

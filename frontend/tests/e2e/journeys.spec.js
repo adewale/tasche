@@ -380,7 +380,7 @@ test.describe('Library — filter tabs', () => {
     // Click "Favorites" tab
     const favTab = page
       .locator('.filter-tabs button, .filter-tabs a')
-      .filter({ hasText: 'Favorites' });
+      .filter({ hasText: 'Favourites' });
     if (await favTab.isVisible()) {
       await favTab.click();
       await expect(page.locator('.article-card, .empty-state').first()).toBeVisible({

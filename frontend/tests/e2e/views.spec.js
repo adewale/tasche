@@ -589,42 +589,6 @@ test.describe('Card rendering', () => {
 
     expect(errors).toEqual([]);
   });
-
-  test('reading status shows left border instead of badge', async ({ page, request }) => {
-    const { id } = await createArticle(
-      request,
-      'https://example.com/status-border-test',
-      'Status Border Test',
-    );
-
-    // Set to "reading" status
-    await request.patch(`/api/articles/${id}`, {
-      data: { reading_status: 'reading' },
-    });
-
-    const errors = setupErrorListener(page);
-
-    // Navigate to library with "Reading" filter
-    await page.goto('/');
-    await expect(page.locator('.save-form')).toBeVisible({ timeout: 10000 });
-
-    const readingTab = page
-      .locator('.filter-tabs button, .filter-tabs a')
-      .filter({ hasText: 'Reading' });
-    if (await readingTab.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await readingTab.click();
-      await expect(page.locator('.article-card').first()).toBeVisible({ timeout: 10000 });
-
-      // Cards with "reading" status should have the --reading modifier
-      const card = page.locator('.article-card--reading').first();
-      if (await card.isVisible({ timeout: 3000 }).catch(() => false)) {
-        // Should NOT have a reading-status-badge
-        await expect(card.locator('.reading-status-badge')).not.toBeVisible();
-      }
-    }
-
-    expect(errors).toEqual([]);
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -731,44 +695,12 @@ test.describe('Library — filter tabs', () => {
     });
   });
 
-  test('All tab shows all articles', async ({ page }) => {
+  test('Unread tab is the default active tab', async ({ page }) => {
     const errors = setupErrorListener(page);
     await page.goto('/');
     await expect(page.locator('.article-card').first()).toBeVisible({ timeout: 15000 });
 
-    await page.locator('.filter-tab').filter({ hasText: 'All' }).click();
-    await expect(page.locator('.article-card').first()).toBeVisible({ timeout: 10000 });
-
-    // All tab should show more articles than Unread tab
-    const allCount = await page.locator('.article-card').count();
-    expect(allCount).toBeGreaterThanOrEqual(3);
-
-    expect(errors).toEqual([]);
-  });
-
-  test('Unread tab filters to unread articles only', async ({ page }) => {
-    const errors = setupErrorListener(page);
-    await page.goto('/');
-    await expect(page.locator('.article-card').first()).toBeVisible({ timeout: 15000 });
-
-    await page.locator('.filter-tab').filter({ hasText: 'Unread' }).click();
     await expect(page.locator('.filter-tab.active')).toHaveText('Unread');
-
-    expect(errors).toEqual([]);
-  });
-
-  test('Reading tab filters to reading articles', async ({ page }) => {
-    const errors = setupErrorListener(page);
-    await page.goto('/');
-    await expect(page.locator('.save-form')).toBeVisible({ timeout: 10000 });
-
-    await page.locator('.filter-tab').filter({ hasText: 'Reading' }).click();
-    await expect(page.locator('.filter-tab.active')).toHaveText('Reading');
-
-    // Should show reading articles or empty state
-    await expect(page.locator('.article-card, .empty-state').first()).toBeVisible({
-      timeout: 10000,
-    });
 
     expect(errors).toEqual([]);
   });
@@ -809,7 +741,7 @@ test.describe('Library — filter tabs', () => {
     await expect(page.locator('.article-card').first()).toBeVisible({ timeout: 15000 });
 
     // Switch through multiple tabs — page should not crash
-    for (const tab of ['All', 'Reading', 'Archived', 'Favourites', 'Unread']) {
+    for (const tab of ['Audio', 'Favourites', 'Archived', 'Unread']) {
       await page.locator('.filter-tab').filter({ hasText: tab }).click();
       // Wait for either articles or empty state
       await expect(page.locator('.article-card, .empty-state').first()).toBeVisible({

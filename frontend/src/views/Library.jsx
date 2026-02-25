@@ -36,12 +36,10 @@ import {
 import { formatDate } from '../utils.js';
 
 const FILTERS = [
-  { key: 'all', label: 'All' },
   { key: 'unread', label: 'Unread' },
-  { key: 'reading', label: 'Reading' },
-  { key: 'archived', label: 'Archived' },
-  { key: 'favorites', label: 'Favourites' },
   { key: 'listen', label: 'Audio' },
+  { key: 'favorites', label: 'Favourites' },
+  { key: 'archived', label: 'Archived' },
 ];
 
 const SORT_OPTIONS = [
@@ -186,8 +184,6 @@ export function Library({ tag }) {
         params.tag = tag;
       } else if (currentFilter === 'unread') {
         params.reading_status = 'unread';
-      } else if (currentFilter === 'reading') {
-        params.reading_status = 'reading';
       } else if (currentFilter === 'archived') {
         params.reading_status = 'archived';
       } else if (currentFilter === 'favorites') {

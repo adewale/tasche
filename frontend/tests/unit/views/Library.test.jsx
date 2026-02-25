@@ -163,11 +163,10 @@ describe('Library', () => {
 
   it('renders filter tabs', () => {
     render(<Library />);
-    expect(screen.getByText('All')).toBeInTheDocument();
     expect(screen.getByText('Unread')).toBeInTheDocument();
-    expect(screen.getByText('Reading')).toBeInTheDocument();
-    expect(screen.getByText('Archived')).toBeInTheDocument();
     expect(screen.getByText('Audio')).toBeInTheDocument();
+    expect(screen.getByText('Favourites')).toBeInTheDocument();
+    expect(screen.getByText('Archived')).toBeInTheDocument();
   });
 
   it('renders sort select', () => {
