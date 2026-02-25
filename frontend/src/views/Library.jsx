@@ -3,7 +3,14 @@ import { Header } from '../components/Header.jsx';
 import { EmptyState, LoadingSpinner } from '../components/EmptyState.jsx';
 import { ArticleCard } from '../components/ArticleCard.jsx';
 import { Pagination } from '../components/Pagination.jsx';
-import { IconBookOpen, IconHeadphones, IconSelectMode, IconArchive, IconTrash, IconX } from '../components/Icons.jsx';
+import {
+  IconBookOpen,
+  IconHeadphones,
+  IconSelectMode,
+  IconArchive,
+  IconTrash,
+  IconX,
+} from '../components/Icons.jsx';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts.js';
 import { toggleArchive, toggleFavorite, removeArticle } from '../articleActions.js';
 import { nav } from '../nav.js';
@@ -48,10 +55,15 @@ const SORT_OPTIONS = [
 function getSavedSort() {
   try {
     var saved = localStorage.getItem('tasche_sort');
-    if (saved && SORT_OPTIONS.some(function (o) { return o.key === saved; })) {
+    if (
+      saved &&
+      SORT_OPTIONS.some(function (o) {
+        return o.key === saved;
+      })
+    ) {
       return saved;
     }
-  } catch (e) {
+  } catch (_e) {
     // localStorage unavailable
   }
   return 'newest';
@@ -80,6 +92,7 @@ export function Library({ tag }) {
     hasMoreSignal.value = true;
     setSelectedIndex(-1);
     loadArticles(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentFilter, tag, currentSort]);
 
   // Reset selectedIndex when article list changes
@@ -87,57 +100,67 @@ export function Library({ tag }) {
     if (selectedIndex >= articleList.length) {
       setSelectedIndex(articleList.length > 0 ? articleList.length - 1 : -1);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [articleList.length]);
 
   // Keyboard shortcuts
   // Note: '?' is handled globally in App so it works on all screens.
-  useKeyboardShortcuts(showHelp ? {} : {
-    j: function () {
-      var list = articles.value;
-      setSelectedIndex(function (prev) {
-        var next = prev + 1;
-        return next >= list.length ? list.length - 1 : next;
-      });
-    },
-    k: function () {
-      setSelectedIndex(function (prev) {
-        var next = prev - 1;
-        return next < 0 ? 0 : next;
-      });
-    },
-    o: function () {
-      var list = articles.value;
-      if (selectedIndex >= 0 && selectedIndex < list.length) {
-        nav.article(list[selectedIndex].id);
-      }
-    },
-    Enter: function () {
-      var list = articles.value;
-      if (selectedIndex >= 0 && selectedIndex < list.length) {
-        nav.article(list[selectedIndex].id);
-      }
-    },
-    a: function () {
-      var list = articles.value;
-      if (selectedIndex >= 0 && selectedIndex < list.length) {
-        toggleArchive(list[selectedIndex]);
-      }
-    },
-    s: function () {
-      var list = articles.value;
-      if (selectedIndex >= 0 && selectedIndex < list.length) {
-        toggleFavorite(list[selectedIndex]);
-      }
-    },
-    d: function () {
-      var list = articles.value;
-      if (selectedIndex >= 0 && selectedIndex < list.length) {
-        removeArticle(list[selectedIndex].id);
-      }
-    },
-    '/': function () { nav.search(); },
-    n: function () { if (urlInputRef.current) urlInputRef.current.focus(); },
-  }, [selectedIndex, showHelp]);
+  useKeyboardShortcuts(
+    showHelp
+      ? {}
+      : {
+          j: function () {
+            var list = articles.value;
+            setSelectedIndex(function (prev) {
+              var next = prev + 1;
+              return next >= list.length ? list.length - 1 : next;
+            });
+          },
+          k: function () {
+            setSelectedIndex(function (prev) {
+              var next = prev - 1;
+              return next < 0 ? 0 : next;
+            });
+          },
+          o: function () {
+            var list = articles.value;
+            if (selectedIndex >= 0 && selectedIndex < list.length) {
+              nav.article(list[selectedIndex].id);
+            }
+          },
+          Enter: function () {
+            var list = articles.value;
+            if (selectedIndex >= 0 && selectedIndex < list.length) {
+              nav.article(list[selectedIndex].id);
+            }
+          },
+          a: function () {
+            var list = articles.value;
+            if (selectedIndex >= 0 && selectedIndex < list.length) {
+              toggleArchive(list[selectedIndex]);
+            }
+          },
+          s: function () {
+            var list = articles.value;
+            if (selectedIndex >= 0 && selectedIndex < list.length) {
+              toggleFavorite(list[selectedIndex]);
+            }
+          },
+          d: function () {
+            var list = articles.value;
+            if (selectedIndex >= 0 && selectedIndex < list.length) {
+              removeArticle(list[selectedIndex].id);
+            }
+          },
+          '/': function () {
+            nav.search();
+          },
+          n: function () {
+            if (urlInputRef.current) urlInputRef.current.focus();
+          },
+        },
+    [selectedIndex, showHelp],
+  );
 
   // Scroll selected card into view
   useEffect(() => {
@@ -183,8 +206,12 @@ export function Library({ tag }) {
       hasMoreSignal.value = result.length >= limitSignal.value;
 
       const unreadIds = result
-        .filter(function (a) { return a.reading_status === 'unread'; })
-        .map(function (a) { return a.id; });
+        .filter(function (a) {
+          return a.reading_status === 'unread';
+        })
+        .map(function (a) {
+          return a.id;
+        });
       cacheArticlesForOffline(unreadIds);
     } catch (e) {
       addToast('Failed to load articles: ' + e.message, 'error');
@@ -206,9 +233,15 @@ export function Library({ tag }) {
       var result = await apiCreateArticle(url, null, listenLater);
       if (result && result.updated) {
         var date = result.created_at ? formatDate(result.created_at) : '';
-        addToast('Article was already added' + (date ? ' on ' + date : '') + '. Refreshing it now.', 'info');
+        addToast(
+          'Article was already added' + (date ? ' on ' + date : '') + '. Refreshing it now.',
+          'info',
+        );
       } else {
-        addToast(listenLater ? 'Article saved! Audio will be generated.' : 'Article saved!', 'success');
+        addToast(
+          listenLater ? 'Article saved! Audio will be generated.' : 'Article saved!',
+          'success',
+        );
       }
       setSaveUrl('');
       setListenLater(false);
@@ -242,7 +275,7 @@ export function Library({ tag }) {
     setCurrentSort(value);
     try {
       localStorage.setItem('tasche_sort', value);
-    } catch (err) {
+    } catch (_err) {
       // localStorage unavailable
     }
   }
@@ -270,7 +303,11 @@ export function Library({ tag }) {
   }
 
   function handleSelectAll() {
-    var allIds = new Set(articleList.map(function (a) { return a.id; }));
+    var allIds = new Set(
+      articleList.map(function (a) {
+        return a.id;
+      }),
+    );
     setSelected(allIds);
   }
 
@@ -355,13 +392,17 @@ export function Library({ tag }) {
                   placeholder="Paste a URL to save..."
                   autocomplete="off"
                   value={saveUrl}
-                  onInput={function (e) { setSaveUrl(e.target.value); }}
+                  onInput={function (e) {
+                    setSaveUrl(e.target.value);
+                  }}
                   onKeyDown={handleKeyDown}
                 />
                 <button
                   class={'btn listen-toggle' + (listenLater ? ' listen-toggle--active' : '')}
                   title={listenLater ? 'Audio will be generated' : 'Save & generate audio'}
-                  onClick={function () { setListenLater(!listenLater); }}
+                  onClick={function () {
+                    setListenLater(!listenLater);
+                  }}
                   type="button"
                 >
                   <IconHeadphones size={16} />
@@ -378,7 +419,9 @@ export function Library({ tag }) {
                     <button
                       key={f.key}
                       class={'filter-tab' + (currentFilter === f.key ? ' active' : '')}
-                      onClick={function () { setFilter(f.key); }}
+                      onClick={function () {
+                        setFilter(f.key);
+                      }}
                     >
                       {f.label}
                     </button>
@@ -412,24 +455,38 @@ export function Library({ tag }) {
 
         {selectMode && (
           <div class="bulk-action-bar">
-            <span class="bulk-action-bar-count">
-              {selected.size} selected
-            </span>
+            <span class="bulk-action-bar-count">{selected.size} selected</span>
             <button class="btn btn-sm btn-secondary" onClick={handleSelectAll}>
               Select All
             </button>
-            <button class="btn btn-sm btn-secondary" onClick={handleClearSelection} disabled={selected.size === 0}>
+            <button
+              class="btn btn-sm btn-secondary"
+              onClick={handleClearSelection}
+              disabled={selected.size === 0}
+            >
               Clear
             </button>
-            <button class="btn btn-sm btn-secondary" onClick={handleBulkArchive} disabled={selected.size === 0 || bulkActing}>
+            <button
+              class="btn btn-sm btn-secondary"
+              onClick={handleBulkArchive}
+              disabled={selected.size === 0 || bulkActing}
+            >
               <IconArchive size={14} />
               {bulkActing ? 'Archiving...' : 'Archive'}
             </button>
-            <button class="btn btn-sm btn-danger" onClick={handleBulkDelete} disabled={selected.size === 0 || bulkActing}>
+            <button
+              class="btn btn-sm btn-danger"
+              onClick={handleBulkDelete}
+              disabled={selected.size === 0 || bulkActing}
+            >
               <IconTrash size={14} />
               {bulkActing ? 'Deleting...' : 'Delete'}
             </button>
-            <button class="btn btn-sm btn-secondary bulk-action-bar-close" onClick={toggleSelectMode} title="Exit select mode">
+            <button
+              class="btn btn-sm btn-secondary bulk-action-bar-close"
+              onClick={toggleSelectMode}
+              title="Exit select mode"
+            >
               <IconX size={14} />
             </button>
           </div>
@@ -458,14 +515,14 @@ export function Library({ tag }) {
           <div class="article-list">{renderSkeletons()}</div>
         )}
 
-        {isLoading && articleList.length > 0 && (
-          <LoadingSpinner />
-        )}
+        {isLoading && articleList.length > 0 && <LoadingSpinner />}
 
         <Pagination
           hasMore={moreAvailable}
           loading={isLoading}
-          onLoadMore={function () { loadArticles(false); }}
+          onLoadMore={function () {
+            loadArticles(false);
+          }}
         />
       </main>
     </>

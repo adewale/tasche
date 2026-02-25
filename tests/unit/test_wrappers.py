@@ -518,6 +518,7 @@ class TestStreamR2Body:
 
         class R2ObjWithArrayBuffer:
             """R2 object whose body has no getReader — falls back to arrayBuffer."""
+
             body = SimpleNamespace()  # body exists but no getReader
 
             async def arrayBuffer(self):

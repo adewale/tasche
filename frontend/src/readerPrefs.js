@@ -27,7 +27,7 @@ function loadPrefs() {
       var parsed = JSON.parse(stored);
       return Object.assign({}, DEFAULTS, parsed);
     }
-  } catch (e) {
+  } catch (_e) {
     // Corrupted or missing
   }
   return Object.assign({}, DEFAULTS);
@@ -39,7 +39,7 @@ export var readerPrefs = signal(loadPrefs());
 effect(function () {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(readerPrefs.value));
-  } catch (e) {
+  } catch (_e) {
     // Storage full or unavailable
   }
 });
@@ -53,23 +53,26 @@ export function updatePref(key, value) {
 // Maps preference values to CSS custom property values
 var PREF_VALUES = {
   fontSize: {
-    small:  { '--reader-font-size': '1.0625rem', '--reader-font-size-desktop': '1.125rem' },
+    small: { '--reader-font-size': '1.0625rem', '--reader-font-size-desktop': '1.125rem' },
     medium: { '--reader-font-size': '1.1875rem', '--reader-font-size-desktop': '1.25rem' },
-    large:  { '--reader-font-size': '1.375rem', '--reader-font-size-desktop': '1.4375rem' },
+    large: { '--reader-font-size': '1.375rem', '--reader-font-size-desktop': '1.4375rem' },
   },
   lineHeight: {
-    compact:     { '--reader-line-height': '1.6' },
+    compact: { '--reader-line-height': '1.6' },
     comfortable: { '--reader-line-height': '1.8' },
-    spacious:    { '--reader-line-height': '2.0' },
+    spacious: { '--reader-line-height': '2.0' },
   },
   contentWidth: {
     narrow: { '--reader-max-width': '580px' },
     medium: { '--reader-max-width': '680px' },
-    wide:   { '--reader-max-width': '800px' },
+    wide: { '--reader-max-width': '800px' },
   },
   fontFamily: {
-    serif:        { '--reader-font-family': 'Georgia, "Times New Roman", serif' },
-    'sans-serif': { '--reader-font-family': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif' },
+    serif: { '--reader-font-family': 'Georgia, "Times New Roman", serif' },
+    'sans-serif': {
+      '--reader-font-family':
+        '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+    },
   },
 };
 

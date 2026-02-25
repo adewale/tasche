@@ -16,13 +16,20 @@ const createdTagIds = [];
 
 test.afterAll(async ({ request }) => {
   for (const id of createdArticleIds) {
-    try { await request.delete(`/api/articles/${id}`); } catch { /* best effort */ }
+    try {
+      await request.delete(`/api/articles/${id}`);
+    } catch {
+      /* best effort */
+    }
   }
   for (const id of createdTagIds) {
-    try { await request.delete(`/api/tags/${id}`); } catch { /* best effort */ }
+    try {
+      await request.delete(`/api/tags/${id}`);
+    } catch {
+      /* best effort */
+    }
   }
 });
-
 
 test.describe('App loading', () => {
   test('app loads and shows library', async ({ page }) => {
@@ -45,7 +52,6 @@ test.describe('App loading', () => {
     expect(body.status).toBe('ok');
   });
 });
-
 
 test.describe('Article lifecycle', () => {
   test('save article via API and verify it appears in library', async ({ page, request }) => {
@@ -108,7 +114,6 @@ test.describe('Article lifecycle', () => {
   });
 });
 
-
 test.describe('Search', () => {
   test('search page loads', async ({ page }) => {
     await page.goto('/#/search');
@@ -122,12 +127,11 @@ test.describe('Search', () => {
     await page.locator('.search-container .btn-primary').click();
 
     // Wait for search to complete — either results or empty state
-    await expect(
-      page.locator('.article-card, .empty-state').first()
-    ).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('.article-card, .empty-state').first()).toBeVisible({
+      timeout: 10000,
+    });
   });
 });
-
 
 test.describe('Tags', () => {
   test('tags page loads', async ({ page }) => {
@@ -155,7 +159,9 @@ test.describe('Tags', () => {
 
   test('create tag via UI', async ({ page, request }) => {
     await page.goto('/#/tags');
-    await expect(page.locator('input[placeholder="New tag name..."]')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('input[placeholder="New tag name..."]')).toBeVisible({
+      timeout: 10000,
+    });
 
     const tagName = `ui-tag-${Date.now()}`;
     await page.locator('input[placeholder="New tag name..."]').fill(tagName);
@@ -198,7 +204,6 @@ test.describe('Tags', () => {
   });
 });
 
-
 test.describe('Settings', () => {
   test('settings page loads', async ({ page }) => {
     await page.goto('/#/settings');
@@ -206,7 +211,6 @@ test.describe('Settings', () => {
     await expect(page.locator('h2.section-title')).toHaveText('Settings');
   });
 });
-
 
 test.describe('Navigation', () => {
   test('header navigation links work', async ({ page }) => {
@@ -217,10 +221,14 @@ test.describe('Navigation', () => {
     await expect(page.locator('input[type="search"]')).toBeVisible({ timeout: 5000 });
 
     await page.locator('a[href="#/tags"]').click();
-    await expect(page.locator('input[placeholder="New tag name..."]')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('input[placeholder="New tag name..."]')).toBeVisible({
+      timeout: 5000,
+    });
 
     await page.locator('a[href="#/settings"]').click();
-    await expect(page.locator('h2.section-title').first()).toHaveText('Settings', { timeout: 5000 });
+    await expect(page.locator('h2.section-title').first()).toHaveText('Settings', {
+      timeout: 5000,
+    });
 
     await page.locator('.header-logo').click();
     await expect(page.locator('.save-form')).toBeVisible({ timeout: 5000 });

@@ -1,29 +1,42 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
-import { user, isOffline, syncStatus, theme, applyTheme, showShortcuts } from '../state.js';
-import { performLogout } from '../api.js';
-import { IconSearch, IconTag, IconSettings, IconBarChart, IconHelpCircle, IconKeyboard, IconMoon, IconSun } from './Icons.jsx';
+import { isOffline, syncStatus, theme, applyTheme, showShortcuts } from '../state.js';
+import {
+  IconSearch,
+  IconTag,
+  IconSettings,
+  IconBarChart,
+  IconHelpCircle,
+  IconKeyboard,
+  IconMoon,
+  IconSun,
+} from './Icons.jsx';
 
 export function Header() {
-  const u = user.value;
   const offline = isOffline.value;
   const syncing = syncStatus.value;
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
 
-  useEffect(function () {
-    if (!menuOpen) return;
-    function handleClick(e) {
-      if (menuRef.current && !menuRef.current.contains(e.target)) {
-        setMenuOpen(false);
+  useEffect(
+    function () {
+      if (!menuOpen) return;
+      function handleClick(e) {
+        if (menuRef.current && !menuRef.current.contains(e.target)) {
+          setMenuOpen(false);
+        }
       }
-    }
-    document.addEventListener('click', handleClick);
-    return function () { document.removeEventListener('click', handleClick); };
-  }, [menuOpen]);
+      document.addEventListener('click', handleClick);
+      return function () {
+        document.removeEventListener('click', handleClick);
+      };
+    },
+    [menuOpen],
+  );
 
   function toggleTheme() {
     var current = theme.value;
-    var isDark = current === 'dark' ||
+    var isDark =
+      current === 'dark' ||
       (current === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
     applyTheme(isDark ? 'light' : 'dark');
   }
@@ -33,7 +46,8 @@ export function Header() {
     showShortcuts.value = true;
   }
 
-  var isDark = theme.value === 'dark' ||
+  var isDark =
+    theme.value === 'dark' ||
     (theme.value === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
 
   return (
@@ -60,9 +74,7 @@ export function Header() {
             )}
           </a>
           <div class="header-actions">
-            {syncing === 'syncing' && (
-              <span class="sync-status">Syncing...</span>
-            )}
+            {syncing === 'syncing' && <span class="sync-status">Syncing...</span>}
             <a href="#/search" class="btn btn-icon" title="Search">
               <IconSearch />
             </a>
@@ -79,7 +91,9 @@ export function Header() {
               <button
                 class="btn btn-icon"
                 title="Help"
-                onClick={function () { setMenuOpen(!menuOpen); }}
+                onClick={function () {
+                  setMenuOpen(!menuOpen);
+                }}
               >
                 <IconHelpCircle />
               </button>

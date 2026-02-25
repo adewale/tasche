@@ -7,9 +7,14 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node tests/unit/markdown.test.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "test:e2e:local": "E2E_BASE_URL=http://localhost:8787 playwright test"
+    "test:e2e:local": "E2E_BASE_URL=http://localhost:8787 playwright test",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "format": "prettier --write src/ tests/",
+    "format:check": "prettier --check src/ tests/"
   },
   "dependencies": {
     "@preact/signals": "^2.0.0",
@@ -18,9 +23,22 @@
     "preact": "^10.25.4"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.11.1",
+    "@eslint/js": "^9.39.3",
     "@playwright/test": "^1.58.2",
     "@preact/preset-vite": "^2.9.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/preact": "^3.2.4",
+    "@testing-library/user-event": "^14.6.1",
+    "eslint": "^9.39.3",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "globals": "^17.3.0",
     "jsdom": "^28.1.0",
-    "vite": "^6.0.0"
+    "prettier": "^3.8.1",
+    "vite": "^6.0.0",
+    "vitest": "^4.0.18"
   }
 }

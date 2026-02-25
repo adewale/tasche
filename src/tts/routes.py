@@ -291,9 +291,22 @@ async def tts_probe(
 
         # Probe available attributes
         probe_attrs = [
-            "getReader", "arrayBuffer", "body", "to_py", "to_bytes",
-            "byteLength", "buffer", "locked", "tee", "pipeTo",
-            "text", "json", "blob", "ok", "status", "headers",
+            "getReader",
+            "arrayBuffer",
+            "body",
+            "to_py",
+            "to_bytes",
+            "byteLength",
+            "buffer",
+            "locked",
+            "tee",
+            "pipeTo",
+            "text",
+            "json",
+            "blob",
+            "ok",
+            "status",
+            "headers",
         ]
         diag["attrs"] = [a for a in probe_attrs if hasattr(raw_result, a)]
 
@@ -342,11 +355,13 @@ async def tts_probe(
         for idx, sentence in enumerate(test_sentences):
             raw = await ai.run("@cf/deepgram/aura-2-en", {"text": sentence})
             consumed_chunk = await consume_readable_stream(raw)
-            sequential_results.append({
-                "index": idx,
-                "text_len": len(sentence),
-                "audio_bytes": len(consumed_chunk),
-            })
+            sequential_results.append(
+                {
+                    "index": idx,
+                    "text_len": len(sentence),
+                    "audio_bytes": len(consumed_chunk),
+                }
+            )
         diag["sequential_calls"] = sequential_results
         diag["sequential_total"] = sum(r["audio_bytes"] for r in sequential_results)
 
@@ -409,17 +424,19 @@ async def tts_now(
     await _get_user_article(db, article_id, user_id, fields="id")
 
     try:
-        diag = await process_tts(
-            article_id, env, user_id=user_id, raise_on_error=True
-        )
+        diag = await process_tts(article_id, env, user_id=user_id, raise_on_error=True)
         article = await _get_user_article(
-            db, article_id, user_id,
+            db,
+            article_id,
+            user_id,
             fields="id, audio_status, audio_key, audio_duration_seconds",
         )
         actual_status = article.get("audio_status", "unknown")
         result = "success" if actual_status == "ready" else "error"
         resp: dict[str, Any] = {
-            "id": article_id, "result": result, "article": article,
+            "id": article_id,
+            "result": result,
+            "article": article,
         }
         if diag:
             resp["diagnostics"] = diag

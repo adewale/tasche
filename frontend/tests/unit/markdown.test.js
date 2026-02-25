@@ -1,236 +1,175 @@
 /**
  * Unit tests for the markdown rendering module (frontend/src/markdown.js).
  *
- * Run with:
- *   cd frontend && npm test
- *
- * Uses jsdom to provide the DOM APIs that DOMPurify and escapeHtml require.
- * Dynamic import() is used so the DOM environment is set up before the
- * module under test is loaded.
+ * Migrated from hand-rolled assert() calls to vitest describe/it/expect.
+ * The jsdom environment is provided by vitest (configured in vite.config.js).
  */
 
-import { JSDOM } from 'jsdom';
+import { renderMarkdown } from '../../src/markdown.js';
 
-// Set up a minimal DOM environment BEFORE importing modules that need it.
-const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>');
-globalThis.window = dom.window;
-globalThis.document = dom.window.document;
-globalThis.DOMParser = dom.window.DOMParser;
-globalThis.Node = dom.window.Node;
-globalThis.NodeFilter = dom.window.NodeFilter;
-globalThis.HTMLElement = dom.window.HTMLElement;
+describe('renderMarkdown', () => {
+  describe('basic rendering', () => {
+    it('renders h1 heading tag', () => {
+      const result = renderMarkdown('# Hello World');
+      expect(result).toContain('<h1>');
+      expect(result).toContain('Hello World');
+    });
+  });
 
-// Dynamic import so that markdown.js sees the DOM globals above.
-const { renderMarkdown } = await import('../../src/markdown.js');
+  describe('paragraphs and inline formatting', () => {
+    it('renders bold and italic text', () => {
+      const result = renderMarkdown('This is **bold** and *italic* text.');
+      expect(result).toContain('<strong>bold</strong>');
+      expect(result).toContain('<em>italic</em>');
+      expect(result).toContain('<p>');
+    });
+  });
 
-let passed = 0;
-let failed = 0;
+  describe('links open in new tab', () => {
+    it('adds target and rel attributes to links', () => {
+      const result = renderMarkdown('[Example](https://example.com)');
+      expect(result).toContain('target="_blank"');
+      expect(result).toContain('rel="noopener"');
+      expect(result).toContain('href=');
+      expect(result).toContain('example.com');
+      expect(result).toContain('>Example</a>');
+    });
+  });
 
-function assert(condition, message) {
-  if (condition) {
-    passed++;
-    console.log('  PASS: ' + message);
-  } else {
-    failed++;
-    console.error('  FAIL: ' + message);
-  }
-}
+  describe('javascript: URLs are sanitized', () => {
+    it('strips javascript: URL from link', () => {
+      const result = renderMarkdown('[Click me](javascript:alert(1))');
+      expect(result).not.toContain('javascript:');
+      expect(result).toContain('Click me');
+    });
 
-function assertIncludes(haystack, needle, message) {
-  assert(
-    haystack.includes(needle),
-    message + ' (expected to include "' + needle + '")'
-  );
-}
+    it('strips javascript: URL from image', () => {
+      const result = renderMarkdown('![alt text](javascript:alert(1))');
+      expect(result).not.toContain('javascript:');
+    });
+  });
 
-function assertNotIncludes(haystack, needle, message) {
-  assert(
-    !haystack.includes(needle),
-    message + ' (expected NOT to include "' + needle + '")'
-  );
-}
+  describe('images', () => {
+    it('adds lazy loading to images', () => {
+      const result = renderMarkdown('![Photo](https://example.com/photo.jpg)');
+      expect(result).toContain('loading="lazy"');
+      expect(result).toContain('photo.jpg');
+      expect(result).toContain('alt="Photo"');
+    });
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+    it('renders image title attribute', () => {
+      const result = renderMarkdown('![Photo](https://example.com/photo.jpg "A nice photo")');
+      expect(result).toContain('title="A nice photo"');
+    });
+  });
 
-console.log('renderMarkdown: basic rendering');
-{
-  var result = renderMarkdown('# Hello World');
-  assertIncludes(result, '<h1>', 'renders h1 heading tag');
-  assertIncludes(result, 'Hello World', 'preserves heading text');
-}
+  describe('code blocks', () => {
+    it('renders fenced code blocks with language class', () => {
+      const result = renderMarkdown('```js\nconsole.log("hello");\n```');
+      expect(result).toContain('<pre>');
+      expect(result).toContain('<code');
+      expect(result).toContain('language-js');
+    });
 
-console.log('');
-console.log('renderMarkdown: paragraphs and inline formatting');
-{
-  var result = renderMarkdown('This is **bold** and *italic* text.');
-  assertIncludes(result, '<strong>bold</strong>', 'renders bold text');
-  assertIncludes(result, '<em>italic</em>', 'renders italic text');
-  assertIncludes(result, '<p>', 'wraps in paragraph');
-}
+    it('renders inline code', () => {
+      const result = renderMarkdown('Use `npm install` to install.');
+      expect(result).toContain('<code>npm install</code>');
+    });
+  });
 
-console.log('');
-console.log('renderMarkdown: links open in new tab');
-{
-  var result = renderMarkdown('[Example](https://example.com)');
-  assertIncludes(result, 'target="_blank"', 'adds target="_blank" to links');
-  assertIncludes(result, 'rel="noopener"', 'adds rel="noopener" to links');
-  assertIncludes(result, 'href=', 'has href attribute');
-  assertIncludes(result, 'example.com', 'preserves link URL');
-  assertIncludes(result, '>Example</a>', 'preserves link text');
-}
+  describe('lists', () => {
+    it('renders unordered lists', () => {
+      const result = renderMarkdown('- First\n- Second\n- Third');
+      expect(result).toContain('<ul>');
+      expect(result).toContain('<li>');
+    });
 
-console.log('');
-console.log('renderMarkdown: javascript: URLs are sanitized in links');
-{
-  var result = renderMarkdown('[Click me](javascript:alert(1))');
-  assertNotIncludes(result, 'javascript:', 'strips javascript: URL from link');
-  assertIncludes(result, 'Click me', 'preserves link text even when URL is sanitized');
-}
+    it('renders ordered lists', () => {
+      const result = renderMarkdown('1. First\n2. Second\n3. Third');
+      expect(result).toContain('<ol>');
+    });
+  });
 
-console.log('');
-console.log('renderMarkdown: javascript: URLs are sanitized in images');
-{
-  var result = renderMarkdown('![alt text](javascript:alert(1))');
-  assertNotIncludes(result, 'javascript:', 'strips javascript: URL from image');
-}
+  describe('blockquotes', () => {
+    it('renders blockquote', () => {
+      const result = renderMarkdown('> This is a quote');
+      expect(result).toContain('<blockquote>');
+    });
+  });
 
-console.log('');
-console.log('renderMarkdown: images get lazy loading');
-{
-  var result = renderMarkdown('![Photo](https://example.com/photo.jpg)');
-  assertIncludes(result, 'loading="lazy"', 'adds loading="lazy" to images');
-  assertIncludes(result, 'photo.jpg', 'preserves image src');
-  assertIncludes(result, 'alt="Photo"', 'preserves alt text');
-}
+  describe('GFM tables', () => {
+    it('renders table with header and data', () => {
+      const result = renderMarkdown('| Name | Age |\n|------|-----|\n| Alice | 30 |');
+      expect(result).toContain('<table>');
+      expect(result).toContain('<th>');
+      expect(result).toContain('<td>');
+    });
+  });
 
-console.log('');
-console.log('renderMarkdown: images with title');
-{
-  var result = renderMarkdown('![Photo](https://example.com/photo.jpg "A nice photo")');
-  assertIncludes(result, 'title="A nice photo"', 'renders image title attribute');
-}
+  describe('horizontal rule', () => {
+    it('renders horizontal rule', () => {
+      const result = renderMarkdown('---');
+      expect(result).toContain('<hr>');
+    });
+  });
 
-console.log('');
-console.log('renderMarkdown: code blocks');
-{
-  var result = renderMarkdown('```js\nconsole.log("hello");\n```');
-  assertIncludes(result, '<pre>', 'renders pre tag for code block');
-  assertIncludes(result, '<code', 'renders code tag');
-  assertIncludes(result, 'language-js', 'adds language class to code block');
-}
+  describe('empty / falsy input', () => {
+    it('returns empty string for empty input', () => {
+      expect(renderMarkdown('')).toBe('');
+    });
 
-console.log('');
-console.log('renderMarkdown: inline code');
-{
-  var result = renderMarkdown('Use `npm install` to install.');
-  assertIncludes(result, '<code>npm install</code>', 'renders inline code');
-}
+    it('returns empty string for null input', () => {
+      expect(renderMarkdown(null)).toBe('');
+    });
 
-console.log('');
-console.log('renderMarkdown: unordered lists');
-{
-  var result = renderMarkdown('- First\n- Second\n- Third');
-  assertIncludes(result, '<ul>', 'renders unordered list');
-  assertIncludes(result, '<li>', 'renders list items');
-}
+    it('returns empty string for undefined input', () => {
+      expect(renderMarkdown(undefined)).toBe('');
+    });
+  });
 
-console.log('');
-console.log('renderMarkdown: ordered lists');
-{
-  var result = renderMarkdown('1. First\n2. Second\n3. Third');
-  assertIncludes(result, '<ol>', 'renders ordered list');
-}
+  describe('DOMPurify sanitization', () => {
+    it('strips script tags', () => {
+      const result = renderMarkdown('<script>alert("xss")</script>');
+      expect(result).not.toContain('<script>');
+    });
 
-console.log('');
-console.log('renderMarkdown: blockquotes');
-{
-  var result = renderMarkdown('> This is a quote');
-  assertIncludes(result, '<blockquote>', 'renders blockquote');
-}
+    it('strips style attributes', () => {
+      const result = renderMarkdown('<div style="color:red">styled</div>');
+      expect(result).not.toContain('style=');
+    });
+  });
 
-console.log('');
-console.log('renderMarkdown: GFM tables');
-{
-  var result = renderMarkdown('| Name | Age |\n|------|-----|\n| Alice | 30 |');
-  assertIncludes(result, '<table>', 'renders table');
-  assertIncludes(result, '<th>', 'renders table header');
-  assertIncludes(result, '<td>', 'renders table data');
-}
+  describe('complex document with multiple elements', () => {
+    it('renders all element types correctly', () => {
+      const md = [
+        '# Article Title',
+        '',
+        'A paragraph with a [link](https://example.com) and **bold** text.',
+        '',
+        '## Section Two',
+        '',
+        '- Item one',
+        '- Item two',
+        '',
+        '```python',
+        'def hello():',
+        '    print("world")',
+        '```',
+        '',
+        '> A blockquote here.',
+        '',
+        '![Image](https://example.com/img.png "Title")',
+      ].join('\n');
 
-console.log('');
-console.log('renderMarkdown: horizontal rule');
-{
-  var result = renderMarkdown('---');
-  assertIncludes(result, '<hr>', 'renders horizontal rule');
-}
-
-console.log('');
-console.log('renderMarkdown: empty / falsy input');
-{
-  assert(renderMarkdown('') === '', 'returns empty string for empty input');
-  assert(renderMarkdown(null) === '', 'returns empty string for null input');
-  assert(renderMarkdown(undefined) === '', 'returns empty string for undefined input');
-}
-
-console.log('');
-console.log('renderMarkdown: DOMPurify sanitization');
-{
-  var result = renderMarkdown('<script>alert("xss")</script>');
-  assertNotIncludes(result, '<script>', 'strips script tags');
-}
-
-console.log('');
-console.log('renderMarkdown: style tags and attributes are removed');
-{
-  var result = renderMarkdown('<div style="color:red">styled</div>');
-  assertNotIncludes(result, 'style=', 'strips style attributes');
-}
-
-console.log('');
-console.log('renderMarkdown: complex document with multiple elements');
-{
-  var md = [
-    '# Article Title',
-    '',
-    'A paragraph with a [link](https://example.com) and **bold** text.',
-    '',
-    '## Section Two',
-    '',
-    '- Item one',
-    '- Item two',
-    '',
-    '```python',
-    'def hello():',
-    '    print("world")',
-    '```',
-    '',
-    '> A blockquote here.',
-    '',
-    '![Image](https://example.com/img.png "Title")',
-  ].join('\n');
-
-  var result = renderMarkdown(md);
-  assertIncludes(result, '<h1>', 'complex doc: renders h1');
-  assertIncludes(result, '<h2>', 'complex doc: renders h2');
-  assertIncludes(result, 'target="_blank"', 'complex doc: links open in new tab');
-  assertIncludes(result, '<ul>', 'complex doc: renders list');
-  assertIncludes(result, 'language-python', 'complex doc: renders Python code block');
-  assertIncludes(result, '<blockquote>', 'complex doc: renders blockquote');
-  assertIncludes(result, 'loading="lazy"', 'complex doc: images have lazy loading');
-  assert(result.length > 100, 'complex doc: produces substantial HTML output');
-}
-
-// ---------------------------------------------------------------------------
-// Summary
-// ---------------------------------------------------------------------------
-
-console.log('');
-console.log('========================================');
-console.log('Results: ' + passed + ' passed, ' + failed + ' failed');
-console.log('========================================');
-
-if (failed > 0) {
-  process.exit(1);
-}
+      const result = renderMarkdown(md);
+      expect(result).toContain('<h1>');
+      expect(result).toContain('<h2>');
+      expect(result).toContain('target="_blank"');
+      expect(result).toContain('<ul>');
+      expect(result).toContain('language-python');
+      expect(result).toContain('<blockquote>');
+      expect(result).toContain('loading="lazy"');
+      expect(result.length).toBeGreaterThan(100);
+    });
+  });
+});

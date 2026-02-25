@@ -15,13 +15,20 @@ const createdTagIds = [];
 
 test.afterAll(async ({ request }) => {
   for (const id of createdArticleIds) {
-    try { await request.delete(`/api/articles/${id}`); } catch { /* best effort */ }
+    try {
+      await request.delete(`/api/articles/${id}`);
+    } catch {
+      /* best effort */
+    }
   }
   for (const id of createdTagIds) {
-    try { await request.delete(`/api/tags/${id}`); } catch { /* best effort */ }
+    try {
+      await request.delete(`/api/tags/${id}`);
+    } catch {
+      /* best effort */
+    }
   }
 });
-
 
 // ---------------------------------------------------------------------------
 // Helper: create an article via API and track for cleanup
@@ -43,7 +50,6 @@ async function createTag(request, name) {
   createdTagIds.push(body.id);
   return body;
 }
-
 
 // ---------------------------------------------------------------------------
 // Reader view: toggle favorite
@@ -77,7 +83,6 @@ test.describe('Reader — toggle favorite', () => {
   });
 });
 
-
 // ---------------------------------------------------------------------------
 // Reader view: change reading status
 // ---------------------------------------------------------------------------
@@ -110,13 +115,16 @@ test.describe('Reader — change reading status', () => {
   });
 });
 
-
 // ---------------------------------------------------------------------------
 // Reader view: delete article via UI
 // ---------------------------------------------------------------------------
 test.describe('Reader — delete article via UI', () => {
   test('delete button removes article and navigates to library', async ({ page, request }) => {
-    const { id } = await createArticle(request, 'https://example.com/delete-ui-test', 'Delete UI Test');
+    const { id } = await createArticle(
+      request,
+      'https://example.com/delete-ui-test',
+      'Delete UI Test',
+    );
 
     await page.goto(`/#/article/${id}`);
     await expect(page.locator('.reader-header')).toBeVisible({ timeout: 10000 });
@@ -140,7 +148,6 @@ test.describe('Reader — delete article via UI', () => {
     if (idx !== -1) createdArticleIds.splice(idx, 1);
   });
 });
-
 
 // ---------------------------------------------------------------------------
 // Reader view: retry failed article
@@ -168,17 +175,22 @@ test.describe('Reader — retry failed article', () => {
     await retryBtn.click();
 
     // Should show success toast
-    await expect(page.locator('.toast').filter({ hasText: 're-queued' })).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('.toast').filter({ hasText: 're-queued' })).toBeVisible({
+      timeout: 5000,
+    });
   });
 });
-
 
 // ---------------------------------------------------------------------------
 // Reader view: check original URL availability
 // ---------------------------------------------------------------------------
 test.describe('Reader — check original URL', () => {
   test('check now button updates original status', async ({ page, request }) => {
-    const { id } = await createArticle(request, 'https://example.com/check-original-test', 'Check Original');
+    const { id } = await createArticle(
+      request,
+      'https://example.com/check-original-test',
+      'Check Original',
+    );
 
     await page.goto(`/#/article/${id}`);
     await expect(page.locator('.reader-header')).toBeVisible({ timeout: 10000 });
@@ -204,7 +216,6 @@ test.describe('Reader — check original URL', () => {
     }
   });
 });
-
 
 // ---------------------------------------------------------------------------
 // Reader view: add and remove tags via UI
@@ -234,10 +245,14 @@ test.describe('Reader — tag management via UI', () => {
     await page.locator('.tag-picker .btn-primary').click();
 
     // Tag chip should appear with the tag name
-    await expect(page.locator('.tag-chip').filter({ hasText: tagName })).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('.tag-chip').filter({ hasText: tagName })).toBeVisible({
+      timeout: 5000,
+    });
 
     // Toast should confirm
-    await expect(page.locator('.toast').filter({ hasText: 'Tag added' })).toBeVisible({ timeout: 3000 });
+    await expect(page.locator('.toast').filter({ hasText: 'Tag added' })).toBeVisible({
+      timeout: 3000,
+    });
 
     // Verify via API
     const tagsResp = await request.get(`/api/articles/${id}/tags`);
@@ -253,7 +268,9 @@ test.describe('Reader — tag management via UI', () => {
     await expect(tagChip).not.toBeVisible({ timeout: 5000 });
 
     // Toast should confirm removal
-    await expect(page.locator('.toast').filter({ hasText: 'Tag removed' })).toBeVisible({ timeout: 3000 });
+    await expect(page.locator('.toast').filter({ hasText: 'Tag removed' })).toBeVisible({
+      timeout: 3000,
+    });
 
     // Verify via API
     const tagsResp2 = await request.get(`/api/articles/${id}/tags`);
@@ -262,13 +279,16 @@ test.describe('Reader — tag management via UI', () => {
   });
 });
 
-
 // ---------------------------------------------------------------------------
 // Library: favorite toggle from article card
 // ---------------------------------------------------------------------------
 test.describe('Library — card actions', () => {
   test('favorite button on card toggles favorite state', async ({ page, request }) => {
-    const { id } = await createArticle(request, 'https://example.com/card-fav-test', 'Card Fav Test');
+    const { id } = await createArticle(
+      request,
+      'https://example.com/card-fav-test',
+      'Card Fav Test',
+    );
 
     // Process the article so the processing overlay goes away
     await request.post(`/api/articles/${id}/process-now`);
@@ -297,7 +317,11 @@ test.describe('Library — card actions', () => {
   });
 
   test('delete button on card removes article', async ({ page, request }) => {
-    const { id } = await createArticle(request, 'https://example.com/card-delete-test', 'Card Delete Test');
+    const { id } = await createArticle(
+      request,
+      'https://example.com/card-delete-test',
+      'Card Delete Test',
+    );
 
     // Process the article so the processing overlay goes away
     await request.post(`/api/articles/${id}/process-now`);
@@ -327,7 +351,6 @@ test.describe('Library — card actions', () => {
   });
 });
 
-
 // ---------------------------------------------------------------------------
 // Library: filter tabs
 // ---------------------------------------------------------------------------
@@ -343,26 +366,29 @@ test.describe('Library — filter tabs', () => {
     await expect(page.locator('.save-form')).toBeVisible({ timeout: 10000 });
 
     // Click "Archived" tab
-    const archivedTab = page.locator('.filter-tabs button, .filter-tabs a').filter({ hasText: 'Archived' });
+    const archivedTab = page
+      .locator('.filter-tabs button, .filter-tabs a')
+      .filter({ hasText: 'Archived' });
     if (await archivedTab.isVisible()) {
       await archivedTab.click();
       // Should show the archived article or empty state
-      await expect(
-        page.locator('.article-card, .empty-state').first()
-      ).toBeVisible({ timeout: 10000 });
+      await expect(page.locator('.article-card, .empty-state').first()).toBeVisible({
+        timeout: 10000,
+      });
     }
 
     // Click "Favorites" tab
-    const favTab = page.locator('.filter-tabs button, .filter-tabs a').filter({ hasText: 'Favorites' });
+    const favTab = page
+      .locator('.filter-tabs button, .filter-tabs a')
+      .filter({ hasText: 'Favorites' });
     if (await favTab.isVisible()) {
       await favTab.click();
-      await expect(
-        page.locator('.article-card, .empty-state').first()
-      ).toBeVisible({ timeout: 10000 });
+      await expect(page.locator('.article-card, .empty-state').first()).toBeVisible({
+        timeout: 10000,
+      });
     }
   });
 });
-
 
 // ---------------------------------------------------------------------------
 // Reader view: listen later (TTS request)
@@ -381,20 +407,21 @@ test.describe('Reader — listen later', () => {
       await listenBtn.click();
 
       // Should show toast about audio generation
-      await expect(
-        page.locator('.toast').first()
-      ).toBeVisible({ timeout: 5000 });
+      await expect(page.locator('.toast').first()).toBeVisible({ timeout: 5000 });
     }
   });
 });
-
 
 // ---------------------------------------------------------------------------
 // Article processing: process-now endpoint works inline
 // ---------------------------------------------------------------------------
 test.describe('Article processing — inline', () => {
   test('process-now endpoint processes article successfully', async ({ request }) => {
-    const { id } = await createArticle(request, 'https://example.com/process-now-test', 'Process Now Test');
+    const { id } = await createArticle(
+      request,
+      'https://example.com/process-now-test',
+      'Process Now Test',
+    );
 
     const processResp = await request.post(`/api/articles/${id}/process-now`);
     expect(processResp.ok()).toBeTruthy();
@@ -406,7 +433,6 @@ test.describe('Article processing — inline', () => {
     expect(['success', 'error']).toContain(result.result);
   });
 });
-
 
 // ---------------------------------------------------------------------------
 // Batch check originals
@@ -421,20 +447,20 @@ test.describe('Batch operations', () => {
   });
 });
 
-
 // ---------------------------------------------------------------------------
 // Settings: bookmarklet visible
 // ---------------------------------------------------------------------------
 test.describe('Settings — bookmarklet', () => {
   test('bookmarklet link is displayed', async ({ page }) => {
     await page.goto('/#/settings');
-    await expect(page.locator('h2.section-title').first()).toHaveText('Settings', { timeout: 10000 });
+    await expect(page.locator('h2.section-title').first()).toHaveText('Settings', {
+      timeout: 10000,
+    });
 
     // Should show bookmarklet section
     await expect(page.getByRole('heading', { name: 'Bookmarklet' })).toBeVisible({ timeout: 5000 });
   });
 });
-
 
 // ---------------------------------------------------------------------------
 // API: retry endpoint rejects non-retryable articles

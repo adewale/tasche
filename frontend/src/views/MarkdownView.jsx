@@ -13,50 +13,63 @@ export function MarkdownView({ id }) {
   const [copied, setCopied] = useState(false);
   const [viewMode, setViewMode] = useState('rendered');
 
-  const renderedHtml = useMemo(function () {
-    if (!markdown) return '';
-    try {
-      return renderMarkdown(markdown);
-    } catch (e) {
-      console.error('Markdown rendering failed:', e);
-      return '';
-    }
-  }, [markdown]);
-
-  useEffect(function () {
-    let cancelled = false;
-
-    async function load() {
+  const renderedHtml = useMemo(
+    function () {
+      if (!markdown) return '';
       try {
-        const art = await getArticle(id);
-        if (cancelled) return;
-        setArticle(art);
-
-        const md = await getArticleMarkdown(id);
-        if (cancelled) return;
-        if (md) {
-          setMarkdown(md);
-        } else {
-          setLoadError('No markdown content available for this article.');
-        }
+        return renderMarkdown(markdown);
       } catch (e) {
-        if (!cancelled) setLoadError(e.message);
+        console.error('Markdown rendering failed:', e);
+        return '';
       }
-    }
+    },
+    [markdown],
+  );
 
-    load();
-    return function () { cancelled = true; };
-  }, [id]);
+  useEffect(
+    function () {
+      let cancelled = false;
+
+      async function load() {
+        try {
+          const art = await getArticle(id);
+          if (cancelled) return;
+          setArticle(art);
+
+          const md = await getArticleMarkdown(id);
+          if (cancelled) return;
+          if (md) {
+            setMarkdown(md);
+          } else {
+            setLoadError('No markdown content available for this article.');
+          }
+        } catch (e) {
+          if (!cancelled) setLoadError(e.message);
+        }
+      }
+
+      load();
+      return function () {
+        cancelled = true;
+      };
+    },
+    [id],
+  );
 
   function handleCopy() {
     if (!markdown) return;
-    navigator.clipboard.writeText(markdown).then(function () {
-      setCopied(true);
-      addToast('Markdown copied to clipboard', 'success');
-      setTimeout(function () { setCopied(false); }, 2000);
-    }).catch(function () {
-      addToast('Failed to copy to clipboard', 'error');
-    });
+    navigator.clipboard
+      .writeText(markdown)
+      .then(function () {
+        setCopied(true);
+        addToast('Markdown copied to clipboard', 'success');
+        setTimeout(function () {
+          setCopied(false);
+        }, 2000);
+      })
+      .catch(function () {
+        addToast('Failed to copy to clipboard', 'error');
+      });
   }
 
   if (loadError) {
@@ -100,19 +113,31 @@ export function MarkdownView({ id }) {
             <div class="markdown-view-tabs">
               <button
                 class={'btn btn-sm ' + (viewMode === 'rendered' ? 'btn-primary' : 'btn-secondary')}
-                onClick={function () { setViewMode('rendered'); }}
+                onClick={function () {
+                  setViewMode('rendered');
+                }}
               >
                 Rendered
               </button>
               <button
                 class={'btn btn-sm ' + (viewMode === 'source' ? 'btn-primary' : 'btn-secondary')}
-                onClick={function () { setViewMode('source'); }}
+                onClick={function () {
+                  setViewMode('source');
+                }}
               >
                 Source
               </button>
             </div>
             <button class="btn btn-sm btn-secondary" onClick={handleCopy}>
-              {copied ? <><IconCheck size={14} /> Copied</> : <><IconCopy size={14} /> Copy Markdown</>}
+              {copied ? (
+                <>
+                  <IconCheck size={14} /> Copied
+                </>
+              ) : (
+                <>
+                  <IconCopy size={14} /> Copy Markdown
+                </>
+              )}
             </button>
           </div>
         </div>

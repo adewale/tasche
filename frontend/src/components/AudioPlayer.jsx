@@ -30,7 +30,9 @@ export function playAudio(articleId, title) {
     visible: true,
   };
   audio.src = '/api/articles/' + articleId + '/audio';
-  audio.play().catch(function (e) { addToast('Could not play audio: ' + e.message, 'error'); });
+  audio.play().catch(function (e) {
+    addToast('Could not play audio: ' + e.message, 'error');
+  });
   document.body.classList.add('has-audio-player');
 }
 
@@ -52,10 +54,18 @@ export function AudioPlayer() {
       setDuration(audio.duration || 0);
     }
 
-    function onPlay() { setIsPlaying(true); }
-    function onPause() { setIsPlaying(false); }
-    function onEnded() { setIsPlaying(false); }
-    function onError() { addToast('Audio playback error', 'error'); }
+    function onPlay() {
+      setIsPlaying(true);
+    }
+    function onPause() {
+      setIsPlaying(false);
+    }
+    function onEnded() {
+      setIsPlaying(false);
+    }
+    function onError() {
+      addToast('Audio playback error', 'error');
+    }
 
     audio.addEventListener('timeupdate', onTimeUpdate);
     audio.addEventListener('play', onPlay);
@@ -94,6 +104,7 @@ export function AudioPlayer() {
       audio.removeEventListener('ended', onEnded);
       audio.removeEventListener('error', onError);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.visible, state.articleId]);
 
   if (!state.visible) return null;
@@ -154,13 +165,23 @@ export function AudioPlayer() {
           </div>
         </div>
         <div class="audio-player-controls">
-          <button title="Back 15s" onClick={function () { skip(-15); }}>
+          <button
+            title="Back 15s"
+            onClick={function () {
+              skip(-15);
+            }}
+          >
             <IconSkipBack />
           </button>
           <button class="play-btn" title={isPlaying ? 'Pause' : 'Play'} onClick={toggle}>
             {isPlaying ? <IconPause size={18} /> : <IconPlay size={18} />}
           </button>
-          <button title="Forward 15s" onClick={function () { skip(15); }}>
+          <button
+            title="Forward 15s"
+            onClick={function () {
+              skip(15);
+            }}
+          >
             <IconSkipForward />
           </button>
           <button class="audio-speed-btn" title="Playback speed" onClick={cycleSpeed}>
@@ -171,6 +192,7 @@ export function AudioPlayer() {
           </button>
         </div>
       </div>
+      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
       <div class="audio-progress" ref={progressRef} onClick={handleSeek}>
         <div class="audio-progress-bar" style={{ width: progressPct + '%' }} />
       </div>

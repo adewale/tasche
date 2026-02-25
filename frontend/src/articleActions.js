@@ -26,7 +26,7 @@ export function toggleArchive(article) {
   return optimisticUpdate(
     article.id,
     { reading_status: newStatus },
-    newStatus === 'archived' ? 'Archived' : 'Moved to unread'
+    newStatus === 'archived' ? 'Archived' : 'Moved to unread',
   );
 }
 
@@ -39,7 +39,9 @@ export async function removeArticle(articleId) {
   if (!confirm('Delete this article?')) return false;
   try {
     await apiDeleteArticle(articleId);
-    articles.value = articles.value.filter(function (a) { return a.id !== articleId; });
+    articles.value = articles.value.filter(function (a) {
+      return a.id !== articleId;
+    });
     addToast('Article deleted', 'success');
     return true;
   } catch (err) {

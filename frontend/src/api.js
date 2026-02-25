@@ -52,7 +52,7 @@ export function logout() {
 export async function performLogout() {
   try {
     await logout();
-  } catch (e) {
+  } catch (_e) {
     // ignore network errors during logout
   }
   user.value = null;
@@ -124,30 +124,29 @@ function fetchText(path) {
 
 // Download a file as a blob with auto-detected filename
 function downloadFile(path, defaultName) {
-  return fetch(path, { credentials: 'include' })
-    .then(function (resp) {
-      if (resp.status === 401) {
-        user.value = null;
-        navigateToLogin();
-        throw new Error('Unauthorized');
-      }
-      if (!resp.ok) {
-        throw new Error('Download failed');
-      }
-      var disposition = resp.headers.get('content-disposition') || '';
-      var match = disposition.match(/filename="([^"]+)"/);
-      var filename = match ? match[1] : defaultName;
-      return resp.blob().then(function (blob) {
-        var url = URL.createObjectURL(blob);
-        var a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      });
+  return fetch(path, { credentials: 'include' }).then(function (resp) {
+    if (resp.status === 401) {
+      user.value = null;
+      navigateToLogin();
+      throw new Error('Unauthorized');
+    }
+    if (!resp.ok) {
+      throw new Error('Download failed');
+    }
+    var disposition = resp.headers.get('content-disposition') || '';
+    var match = disposition.match(/filename="([^"]+)"/);
+    var filename = match ? match[1] : defaultName;
+    return resp.blob().then(function (blob) {
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     });
+  });
 }
 
 // Article content from R2
@@ -238,7 +237,7 @@ export function getStats() {
 export function exportData(format) {
   return downloadFile(
     '/api/export/' + format,
-    'tasche-export.' + (format === 'json' ? 'json' : 'html')
+    'tasche-export.' + (format === 'json' ? 'json' : 'html'),
   );
 }
 
@@ -266,11 +265,7 @@ export function queueOfflineMutation(url, method, body) {
 
 // Cache articles for offline reading
 export function cacheArticlesForOffline(articleIds) {
-  if (
-    'serviceWorker' in navigator &&
-    navigator.serviceWorker.controller &&
-    articleIds.length > 0
-  ) {
+  if ('serviceWorker' in navigator && navigator.serviceWorker.controller && articleIds.length > 0) {
     navigator.serviceWorker.controller.postMessage({
       type: 'CACHE_ARTICLES',
       articleIds: articleIds,

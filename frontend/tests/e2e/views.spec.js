@@ -16,7 +16,11 @@ const createdArticleIds = [];
 
 test.afterAll(async ({ request }) => {
   for (const id of createdArticleIds) {
-    try { await request.delete(`/api/articles/${id}`); } catch { /* best effort */ }
+    try {
+      await request.delete(`/api/articles/${id}`);
+    } catch {
+      /* best effort */
+    }
   }
 });
 
@@ -30,7 +34,6 @@ async function createArticle(request, url, title) {
   return body;
 }
 
-
 // ---------------------------------------------------------------------------
 // Collect JS errors on every page
 // ---------------------------------------------------------------------------
@@ -40,13 +43,16 @@ function setupErrorListener(page) {
   return errors;
 }
 
-
 // ---------------------------------------------------------------------------
 // Markdown view
 // ---------------------------------------------------------------------------
 test.describe('Markdown view', () => {
   test('markdown view loads without crashing', async ({ page, request }) => {
-    const { id } = await createArticle(request, 'https://example.com/md-view-test', 'Markdown View Test');
+    const { id } = await createArticle(
+      request,
+      'https://example.com/md-view-test',
+      'Markdown View Test',
+    );
 
     // Process the article (example.com may or may not produce markdown)
     await request.post(`/api/articles/${id}/process-now`);
@@ -66,7 +72,7 @@ test.describe('Markdown view', () => {
       await expect(page.locator('button').filter({ hasText: 'Source' })).toBeVisible();
       await expect(page.locator('button').filter({ hasText: 'Copy Markdown' })).toBeVisible();
       await expect(
-        page.locator('.markdown-view-rendered, .markdown-view-content').first()
+        page.locator('.markdown-view-rendered, .markdown-view-content').first(),
       ).toBeVisible({ timeout: 5000 });
     }
 
@@ -75,7 +81,11 @@ test.describe('Markdown view', () => {
   });
 
   test('markdown view source tab works when content exists', async ({ page, request }) => {
-    const { id } = await createArticle(request, 'https://example.com/md-source-test', 'MD Source Test');
+    const { id } = await createArticle(
+      request,
+      'https://example.com/md-source-test',
+      'MD Source Test',
+    );
     await request.post(`/api/articles/${id}/process-now`);
 
     const errors = setupErrorListener(page);
@@ -96,7 +106,11 @@ test.describe('Markdown view', () => {
   });
 
   test('markdown view handles unprocessed article gracefully', async ({ page, request }) => {
-    const { id } = await createArticle(request, 'https://example.com/md-missing-test', 'MD Missing Test');
+    const { id } = await createArticle(
+      request,
+      'https://example.com/md-missing-test',
+      'MD Missing Test',
+    );
 
     // Don't process — article will have no markdown
     const errors = setupErrorListener(page);
@@ -104,9 +118,9 @@ test.describe('Markdown view', () => {
     await page.goto(`/#/article/${id}/markdown`);
 
     // Should show either the markdown view or an error state — but NOT crash
-    await expect(
-      page.locator('.markdown-view-title, .empty-state').first()
-    ).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('.markdown-view-title, .empty-state').first()).toBeVisible({
+      timeout: 10000,
+    });
 
     expect(errors).toEqual([]);
   });
@@ -122,7 +136,10 @@ test.describe('Markdown view', () => {
     await expect(hasContent.or(hasError)).toBeVisible({ timeout: 10000 });
 
     // Click back link (present in both states)
-    const backLink = page.locator('a.reader-back, a.btn-secondary').filter({ hasText: /back/i }).first();
+    const backLink = page
+      .locator('a.reader-back, a.btn-secondary')
+      .filter({ hasText: /back/i })
+      .first();
     await expect(backLink).toBeVisible({ timeout: 5000 });
     await backLink.click();
 
@@ -130,7 +147,6 @@ test.describe('Markdown view', () => {
     await expect(page.locator('.reader-header')).toBeVisible({ timeout: 10000 });
   });
 });
-
 
 // ---------------------------------------------------------------------------
 // Stats view
@@ -142,19 +158,22 @@ test.describe('Stats view', () => {
     await page.goto('/#/stats');
 
     // Should show the stats title
-    await expect(page.locator('h1.section-title')).toHaveText('Reading Statistics', { timeout: 10000 });
+    await expect(page.locator('h1.section-title')).toHaveText('Reading Statistics', {
+      timeout: 10000,
+    });
 
     // Should show stat cards
     await expect(page.locator('.stat-card').first()).toBeVisible({ timeout: 5000 });
 
     // Should have key stats: total articles, words read
-    await expect(page.locator('.stat-card-label').filter({ hasText: 'Total articles' })).toBeVisible();
+    await expect(
+      page.locator('.stat-card-label').filter({ hasText: 'Total articles' }),
+    ).toBeVisible();
     await expect(page.locator('.stat-card-label').filter({ hasText: 'Words read' })).toBeVisible();
 
     expect(errors).toEqual([]);
   });
 });
-
 
 // ---------------------------------------------------------------------------
 // Library: sort and filter
@@ -168,7 +187,7 @@ test.describe('Library — sort options', () => {
   test.beforeAll(async ({ request }) => {
     articleA = await createArticle(request, 'https://example.com/sort-aaa', 'AAA Sort Test');
     // Small delay so created_at differs
-    await new Promise(r => setTimeout(r, 1100));
+    await new Promise((r) => setTimeout(r, 1100));
     articleB = await createArticle(request, 'https://example.com/sort-zzz', 'ZZZ Sort Test');
 
     // Set reading times so shortest/longest sort is testable
@@ -206,8 +225,8 @@ test.describe('Library — sort options', () => {
 
     // Newest first: articleB (created second) should appear before articleA
     const titles = await getCardTitles(page);
-    const idxA = titles.findIndex(t => t.includes('AAA Sort'));
-    const idxB = titles.findIndex(t => t.includes('ZZZ Sort'));
+    const idxA = titles.findIndex((t) => t.includes('AAA Sort'));
+    const idxB = titles.findIndex((t) => t.includes('ZZZ Sort'));
     if (idxA !== -1 && idxB !== -1) {
       expect(idxB).toBeLessThan(idxA);
     }
@@ -229,8 +248,8 @@ test.describe('Library — sort options', () => {
 
     // Oldest first: articleA (created first) should appear before articleB
     const titles = await getCardTitles(page);
-    const idxA = titles.findIndex(t => t.includes('AAA Sort'));
-    const idxB = titles.findIndex(t => t.includes('ZZZ Sort'));
+    const idxA = titles.findIndex((t) => t.includes('AAA Sort'));
+    const idxB = titles.findIndex((t) => t.includes('ZZZ Sort'));
     if (idxA !== -1 && idxB !== -1) {
       expect(idxA).toBeLessThan(idxB);
     }
@@ -251,8 +270,8 @@ test.describe('Library — sort options', () => {
 
     // Shortest first: articleA (2 min) should appear before articleB (30 min)
     const titles = await getCardTitles(page);
-    const idxA = titles.findIndex(t => t.includes('AAA Sort'));
-    const idxB = titles.findIndex(t => t.includes('ZZZ Sort'));
+    const idxA = titles.findIndex((t) => t.includes('AAA Sort'));
+    const idxB = titles.findIndex((t) => t.includes('ZZZ Sort'));
     if (idxA !== -1 && idxB !== -1) {
       expect(idxA).toBeLessThan(idxB);
     }
@@ -273,8 +292,8 @@ test.describe('Library — sort options', () => {
 
     // Longest first: articleB (30 min) should appear before articleA (2 min)
     const titles = await getCardTitles(page);
-    const idxA = titles.findIndex(t => t.includes('AAA Sort'));
-    const idxB = titles.findIndex(t => t.includes('ZZZ Sort'));
+    const idxA = titles.findIndex((t) => t.includes('AAA Sort'));
+    const idxB = titles.findIndex((t) => t.includes('ZZZ Sort'));
     if (idxA !== -1 && idxB !== -1) {
       expect(idxB).toBeLessThan(idxA);
     }
@@ -295,8 +314,8 @@ test.describe('Library — sort options', () => {
 
     // Title A-Z: articleA ("AAA") should appear before articleB ("ZZZ")
     const titles = await getCardTitles(page);
-    const idxA = titles.findIndex(t => t.includes('AAA Sort'));
-    const idxB = titles.findIndex(t => t.includes('ZZZ Sort'));
+    const idxA = titles.findIndex((t) => t.includes('AAA Sort'));
+    const idxB = titles.findIndex((t) => t.includes('ZZZ Sort'));
     if (idxA !== -1 && idxB !== -1) {
       expect(idxA).toBeLessThan(idxB);
     }
@@ -324,7 +343,6 @@ test.describe('Library — sort options', () => {
   });
 });
 
-
 // ---------------------------------------------------------------------------
 // Library: bulk select mode
 // ---------------------------------------------------------------------------
@@ -338,7 +356,10 @@ test.describe('Library — bulk select', () => {
     await expect(page.locator('.article-card').first()).toBeVisible({ timeout: 15000 });
 
     // Look for the select/multi-select button
-    const selectBtn = page.locator('button[title="Select mode"], button').filter({ hasText: /select/i }).first();
+    const selectBtn = page
+      .locator('button[title="Select mode"], button')
+      .filter({ hasText: /select/i })
+      .first();
     if (await selectBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
       await selectBtn.click();
 
@@ -354,7 +375,6 @@ test.describe('Library — bulk select', () => {
   });
 });
 
-
 // ---------------------------------------------------------------------------
 // Reader: theme toggle
 // ---------------------------------------------------------------------------
@@ -368,7 +388,9 @@ test.describe('Reader — theme toggle', () => {
     await expect(page.locator('.reader-header')).toBeVisible({ timeout: 10000 });
 
     // Look for theme toggle button
-    const themeBtn = page.locator('button[title*="theme" i], button[title*="Theme" i], .theme-toggle').first();
+    const themeBtn = page
+      .locator('button[title*="theme" i], button[title*="Theme" i], .theme-toggle')
+      .first();
     if (await themeBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
       await themeBtn.click();
       // Page should not crash
@@ -379,13 +401,16 @@ test.describe('Reader — theme toggle', () => {
   });
 });
 
-
 // ---------------------------------------------------------------------------
 // Reader: view mode toggle (Original / Rendered / Source)
 // ---------------------------------------------------------------------------
 test.describe('Reader — view modes', () => {
   test('reader toolbar shows View segmented control', async ({ page, request }) => {
-    const { id } = await createArticle(request, 'https://example.com/view-mode-test', 'View Mode Test');
+    const { id } = await createArticle(
+      request,
+      'https://example.com/view-mode-test',
+      'View Mode Test',
+    );
     await request.post(`/api/articles/${id}/process-now`);
 
     const errors = setupErrorListener(page);
@@ -405,7 +430,11 @@ test.describe('Reader — view modes', () => {
   });
 
   test('switching to Rendered mode loads markdown', async ({ page, request }) => {
-    const { id } = await createArticle(request, 'https://example.com/rendered-mode-test', 'Rendered Mode Test');
+    const { id } = await createArticle(
+      request,
+      'https://example.com/rendered-mode-test',
+      'Rendered Mode Test',
+    );
     await request.post(`/api/articles/${id}/process-now`);
 
     const errors = setupErrorListener(page);
@@ -418,16 +447,23 @@ test.describe('Reader — view modes', () => {
       await renderedBtn.click();
 
       // Should show either rendered markdown content or a status message
-      await expect(
-        page.locator('.reader-content, .reader-status-message').first()
-      ).toBeVisible({ timeout: 10000 });
+      await expect(page.locator('.reader-content, .reader-status-message').first()).toBeVisible({
+        timeout: 10000,
+      });
     }
 
     expect(errors).toEqual([]);
   });
 
-  test('switching to Source mode shows raw markdown with copy button', async ({ page, request }) => {
-    const { id } = await createArticle(request, 'https://example.com/source-mode-test', 'Source Mode Test');
+  test('switching to Source mode shows raw markdown with copy button', async ({
+    page,
+    request,
+  }) => {
+    const { id } = await createArticle(
+      request,
+      'https://example.com/source-mode-test',
+      'Source Mode Test',
+    );
     await request.post(`/api/articles/${id}/process-now`);
 
     const errors = setupErrorListener(page);
@@ -441,7 +477,7 @@ test.describe('Reader — view modes', () => {
 
       // Should show raw markdown in a <pre> block or a status message
       await expect(
-        page.locator('.markdown-view-content, .reader-status-message, pre').first()
+        page.locator('.markdown-view-content, .reader-status-message, pre').first(),
       ).toBeVisible({ timeout: 10000 });
 
       // If content loaded, Copy Markdown button should be visible
@@ -455,7 +491,6 @@ test.describe('Reader — view modes', () => {
   });
 });
 
-
 // ---------------------------------------------------------------------------
 // Settings: export
 // ---------------------------------------------------------------------------
@@ -464,7 +499,9 @@ test.describe('Settings — export', () => {
     const errors = setupErrorListener(page);
 
     await page.goto('/#/settings');
-    await expect(page.locator('h2.section-title').first()).toHaveText('Settings', { timeout: 10000 });
+    await expect(page.locator('h2.section-title').first()).toHaveText('Settings', {
+      timeout: 10000,
+    });
 
     // Should show Data Export section
     const exportHeading = page.getByRole('heading', { name: /export/i });
@@ -475,7 +512,6 @@ test.describe('Settings — export', () => {
     expect(errors).toEqual([]);
   });
 });
-
 
 // ---------------------------------------------------------------------------
 // Error boundary: invalid article ID
@@ -488,14 +524,14 @@ test.describe('Error handling', () => {
 
     // Should show error state or empty state, not crash
     await expect(
-      page.locator('.reader-header, .empty-state, [class*="error"]').first()
+      page.locator('.reader-header, .empty-state, [class*="error"]').first(),
     ).toBeVisible({ timeout: 10000 });
 
     // The page should still be functional (header visible)
     await expect(page.locator('.header-logo')).toBeVisible();
 
     // Filter out expected 404 errors
-    const unexpectedErrors = errors.filter(e => !e.includes('404') && !e.includes('Not Found'));
+    const unexpectedErrors = errors.filter((e) => !e.includes('404') && !e.includes('Not Found'));
     expect(unexpectedErrors).toEqual([]);
   });
 
@@ -506,16 +542,15 @@ test.describe('Error handling', () => {
 
     // Should show error state, not crash
     await expect(
-      page.locator('.markdown-view-title, .empty-state, [class*="error"]').first()
+      page.locator('.markdown-view-title, .empty-state, [class*="error"]').first(),
     ).toBeVisible({ timeout: 10000 });
 
     await expect(page.locator('.header-logo')).toBeVisible();
 
-    const unexpectedErrors = errors.filter(e => !e.includes('404') && !e.includes('Not Found'));
+    const unexpectedErrors = errors.filter((e) => !e.includes('404') && !e.includes('Not Found'));
     expect(unexpectedErrors).toEqual([]);
   });
 });
-
 
 // ---------------------------------------------------------------------------
 // Card rendering: every card renders without errors
@@ -542,7 +577,12 @@ test.describe('Card rendering', () => {
       await expect(card.locator('.article-card-actions')).toBeVisible();
 
       // Compact cards (no thumbnail) should have favicon container
-      if (await card.locator('.article-card-favicon').isVisible().catch(() => false)) {
+      if (
+        await card
+          .locator('.article-card-favicon')
+          .isVisible()
+          .catch(() => false)
+      ) {
         await expect(card.locator('.favicon-container')).toBeVisible();
       }
     }
@@ -551,7 +591,11 @@ test.describe('Card rendering', () => {
   });
 
   test('reading status shows left border instead of badge', async ({ page, request }) => {
-    const { id } = await createArticle(request, 'https://example.com/status-border-test', 'Status Border Test');
+    const { id } = await createArticle(
+      request,
+      'https://example.com/status-border-test',
+      'Status Border Test',
+    );
 
     // Set to "reading" status
     await request.patch(`/api/articles/${id}`, {
@@ -564,7 +608,9 @@ test.describe('Card rendering', () => {
     await page.goto('/');
     await expect(page.locator('.save-form')).toBeVisible({ timeout: 10000 });
 
-    const readingTab = page.locator('.filter-tabs button, .filter-tabs a').filter({ hasText: 'Reading' });
+    const readingTab = page
+      .locator('.filter-tabs button, .filter-tabs a')
+      .filter({ hasText: 'Reading' });
     if (await readingTab.isVisible({ timeout: 3000 }).catch(() => false)) {
       await readingTab.click();
       await expect(page.locator('.article-card').first()).toBeVisible({ timeout: 10000 });
@@ -581,7 +627,6 @@ test.describe('Card rendering', () => {
   });
 });
 
-
 // ---------------------------------------------------------------------------
 // Save article via UI form
 // ---------------------------------------------------------------------------
@@ -597,7 +642,9 @@ test.describe('Save article — UI form', () => {
     await page.locator('.save-form .btn-primary').click();
 
     // Should show success toast
-    await expect(page.locator('.toast').filter({ hasText: /saved/i })).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('.toast').filter({ hasText: /saved/i })).toBeVisible({
+      timeout: 10000,
+    });
 
     // New article should appear in the list
     await expect(page.locator('.article-card').first()).toBeVisible({ timeout: 10000 });
@@ -622,7 +669,9 @@ test.describe('Save article — UI form', () => {
     await input.fill('https://example.com/e2e-enter-key-test');
     await input.press('Enter');
 
-    await expect(page.locator('.toast').filter({ hasText: /saved/i })).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('.toast').filter({ hasText: /saved/i })).toBeVisible({
+      timeout: 10000,
+    });
 
     const resp = await page.request.get('/api/articles?limit=1');
     const articles = await resp.json();
@@ -648,16 +697,27 @@ test.describe('Save article — UI form', () => {
   });
 });
 
-
 // ---------------------------------------------------------------------------
 // Library: filter tabs
 // ---------------------------------------------------------------------------
 test.describe('Library — filter tabs', () => {
   test.beforeAll(async ({ request }) => {
     // Create articles in different states for filter testing
-    const unread = await createArticle(request, 'https://example.com/filter-unread', 'Filter Unread');
-    const reading = await createArticle(request, 'https://example.com/filter-reading', 'Filter Reading');
-    const archived = await createArticle(request, 'https://example.com/filter-archived', 'Filter Archived');
+    const unread = await createArticle(
+      request,
+      'https://example.com/filter-unread',
+      'Filter Unread',
+    );
+    const reading = await createArticle(
+      request,
+      'https://example.com/filter-reading',
+      'Filter Reading',
+    );
+    const archived = await createArticle(
+      request,
+      'https://example.com/filter-archived',
+      'Filter Archived',
+    );
     const fav = await createArticle(request, 'https://example.com/filter-fav', 'Filter Favourite');
 
     await request.patch(`/api/articles/${reading.id}`, {
@@ -706,9 +766,9 @@ test.describe('Library — filter tabs', () => {
     await expect(page.locator('.filter-tab.active')).toHaveText('Reading');
 
     // Should show reading articles or empty state
-    await expect(
-      page.locator('.article-card, .empty-state').first()
-    ).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('.article-card, .empty-state').first()).toBeVisible({
+      timeout: 10000,
+    });
 
     expect(errors).toEqual([]);
   });
@@ -721,9 +781,9 @@ test.describe('Library — filter tabs', () => {
     await page.locator('.filter-tab').filter({ hasText: 'Archived' }).click();
     await expect(page.locator('.filter-tab.active')).toHaveText('Archived');
 
-    await expect(
-      page.locator('.article-card, .empty-state').first()
-    ).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('.article-card, .empty-state').first()).toBeVisible({
+      timeout: 10000,
+    });
 
     expect(errors).toEqual([]);
   });
@@ -736,9 +796,9 @@ test.describe('Library — filter tabs', () => {
     await page.locator('.filter-tab').filter({ hasText: 'Favourites' }).click();
     await expect(page.locator('.filter-tab.active')).toHaveText('Favourites');
 
-    await expect(
-      page.locator('.article-card, .empty-state').first()
-    ).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('.article-card, .empty-state').first()).toBeVisible({
+      timeout: 10000,
+    });
 
     expect(errors).toEqual([]);
   });
@@ -752,22 +812,25 @@ test.describe('Library — filter tabs', () => {
     for (const tab of ['All', 'Reading', 'Archived', 'Favourites', 'Unread']) {
       await page.locator('.filter-tab').filter({ hasText: tab }).click();
       // Wait for either articles or empty state
-      await expect(
-        page.locator('.article-card, .empty-state').first()
-      ).toBeVisible({ timeout: 10000 });
+      await expect(page.locator('.article-card, .empty-state').first()).toBeVisible({
+        timeout: 10000,
+      });
     }
 
     expect(errors).toEqual([]);
   });
 });
 
-
 // ---------------------------------------------------------------------------
 // Search
 // ---------------------------------------------------------------------------
 test.describe('Search', () => {
   test.beforeAll(async ({ request }) => {
-    const art = await createArticle(request, 'https://example.com/search-target', 'Searchable Unique Title XYZ');
+    const art = await createArticle(
+      request,
+      'https://example.com/search-target',
+      'Searchable Unique Title XYZ',
+    );
     await request.post(`/api/articles/${art.id}/process-now`);
   });
 
@@ -776,7 +839,9 @@ test.describe('Search', () => {
 
     await page.goto('/#/search');
 
-    await expect(page.locator('input[type="search"], input[placeholder*="earch"]').first()).toBeVisible({ timeout: 10000 });
+    await expect(
+      page.locator('input[type="search"], input[placeholder*="earch"]').first(),
+    ).toBeVisible({ timeout: 10000 });
 
     expect(errors).toEqual([]);
   });
@@ -793,7 +858,7 @@ test.describe('Search', () => {
 
     // Should show results or "no results" message — not crash
     await expect(
-      page.locator('.article-card, .search-result, .empty-state, [class*="result"]').first()
+      page.locator('.article-card, .search-result, .empty-state, [class*="result"]').first(),
     ).toBeVisible({ timeout: 10000 });
 
     expect(errors).toEqual([]);
@@ -811,21 +876,26 @@ test.describe('Search', () => {
 
     // Should show empty state or "no results"
     await expect(
-      page.locator('.empty-state, [class*="no-result"]').first()
-        .or(page.locator('text=/no results|no articles/i').first())
+      page
+        .locator('.empty-state, [class*="no-result"]')
+        .first()
+        .or(page.locator('text=/no results|no articles/i').first()),
     ).toBeVisible({ timeout: 10000 });
 
     expect(errors).toEqual([]);
   });
 });
 
-
 // ---------------------------------------------------------------------------
 // Card actions: favourite, archive, delete
 // ---------------------------------------------------------------------------
 test.describe('Card actions', () => {
   test('favourite button toggles on article card', async ({ page, request }) => {
-    const { id } = await createArticle(request, 'https://example.com/fav-btn-test', 'Fav Button Test');
+    const { id } = await createArticle(
+      request,
+      'https://example.com/fav-btn-test',
+      'Fav Button Test',
+    );
     const errors = setupErrorListener(page);
 
     await page.goto('/');
@@ -850,7 +920,11 @@ test.describe('Card actions', () => {
   });
 
   test('archive button archives article from card', async ({ page, request }) => {
-    const { id } = await createArticle(request, 'https://example.com/archive-btn-test', 'Archive Button Test');
+    const { id } = await createArticle(
+      request,
+      'https://example.com/archive-btn-test',
+      'Archive Button Test',
+    );
     const errors = setupErrorListener(page);
 
     await page.goto('/');
@@ -870,7 +944,11 @@ test.describe('Card actions', () => {
   });
 
   test('delete button removes article with confirmation', async ({ page, request }) => {
-    const { id } = await createArticle(request, 'https://example.com/delete-btn-test', 'Delete Button Test');
+    const { id } = await createArticle(
+      request,
+      'https://example.com/delete-btn-test',
+      'Delete Button Test',
+    );
     const errors = setupErrorListener(page);
 
     await page.goto('/');
@@ -880,7 +958,7 @@ test.describe('Card actions', () => {
     await expect(card).toBeVisible({ timeout: 5000 });
 
     // Handle confirm dialog
-    page.on('dialog', dialog => dialog.accept());
+    page.on('dialog', (dialog) => dialog.accept());
 
     // Click delete button
     await card.locator('.delete-btn').click();
@@ -896,13 +974,16 @@ test.describe('Card actions', () => {
   });
 });
 
-
 // ---------------------------------------------------------------------------
 // Reader interactions
 // ---------------------------------------------------------------------------
 test.describe('Reader — interactions', () => {
   test('clicking article card navigates to reader', async ({ page, request }) => {
-    const { id } = await createArticle(request, 'https://example.com/nav-reader-test', 'Nav To Reader Test');
+    const { id } = await createArticle(
+      request,
+      'https://example.com/nav-reader-test',
+      'Nav To Reader Test',
+    );
     const errors = setupErrorListener(page);
 
     await page.goto('/');
@@ -921,7 +1002,11 @@ test.describe('Reader — interactions', () => {
   });
 
   test('reader shows article title and content area', async ({ page, request }) => {
-    const { id } = await createArticle(request, 'https://example.com/reader-content-test', 'Reader Content Test');
+    const { id } = await createArticle(
+      request,
+      'https://example.com/reader-content-test',
+      'Reader Content Test',
+    );
     await request.post(`/api/articles/${id}/process-now`);
 
     const errors = setupErrorListener(page);
@@ -933,15 +1018,19 @@ test.describe('Reader — interactions', () => {
     await expect(page.locator('.reader-title')).toBeVisible({ timeout: 5000 });
 
     // Content area should exist (either reader-content or loading state)
-    await expect(
-      page.locator('.reader-content, .reader-status-message').first()
-    ).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('.reader-content, .reader-status-message').first()).toBeVisible({
+      timeout: 10000,
+    });
 
     expect(errors).toEqual([]);
   });
 
   test('favourite button toggles in reader', async ({ page, request }) => {
-    const { id } = await createArticle(request, 'https://example.com/reader-fav-test', 'Reader Fav Test');
+    const { id } = await createArticle(
+      request,
+      'https://example.com/reader-fav-test',
+      'Reader Fav Test',
+    );
     const errors = setupErrorListener(page);
 
     await page.goto(`/#/article/${id}`);
@@ -957,7 +1046,11 @@ test.describe('Reader — interactions', () => {
   });
 
   test('back navigation from reader returns to library', async ({ page, request }) => {
-    const { id } = await createArticle(request, 'https://example.com/reader-back-test', 'Reader Back Test');
+    const { id } = await createArticle(
+      request,
+      'https://example.com/reader-back-test',
+      'Reader Back Test',
+    );
     const errors = setupErrorListener(page);
 
     await page.goto(`/#/article/${id}`);
@@ -975,14 +1068,21 @@ test.describe('Reader — interactions', () => {
   });
 
   test('reading status dropdown changes status', async ({ page, request }) => {
-    const { id } = await createArticle(request, 'https://example.com/reader-status-test', 'Reader Status Test');
+    const { id } = await createArticle(
+      request,
+      'https://example.com/reader-status-test',
+      'Reader Status Test',
+    );
     const errors = setupErrorListener(page);
 
     await page.goto(`/#/article/${id}`);
     await expect(page.locator('.reader-header')).toBeVisible({ timeout: 10000 });
 
     // Look for status dropdown
-    const statusSelect = page.locator('.reader-actions select, select').filter({ has: page.locator('option') }).first();
+    const statusSelect = page
+      .locator('.reader-actions select, select')
+      .filter({ has: page.locator('option') })
+      .first();
     if (await statusSelect.isVisible({ timeout: 5000 }).catch(() => false)) {
       await statusSelect.selectOption('archived');
       await expect(page.locator('.toast')).toBeVisible({ timeout: 5000 });
@@ -991,7 +1091,6 @@ test.describe('Reader — interactions', () => {
     expect(errors).toEqual([]);
   });
 });
-
 
 // ---------------------------------------------------------------------------
 // Keyboard shortcuts
@@ -1052,7 +1151,7 @@ test.describe('Keyboard shortcuts', () => {
 
     // Should navigate to search view
     await expect(
-      page.locator('input[type="search"], input[placeholder*="earch"]').first()
+      page.locator('input[type="search"], input[placeholder*="earch"]').first(),
     ).toBeVisible({ timeout: 10000 });
 
     expect(errors).toEqual([]);
@@ -1074,7 +1173,6 @@ test.describe('Keyboard shortcuts', () => {
   });
 });
 
-
 // ---------------------------------------------------------------------------
 // Tag management
 // ---------------------------------------------------------------------------
@@ -1083,7 +1181,11 @@ test.describe('Tags', () => {
 
   test.afterAll(async ({ request }) => {
     for (const id of createdTagIds) {
-      try { await request.delete(`/api/tags/${id}`); } catch { /* best effort */ }
+      try {
+        await request.delete(`/api/tags/${id}`);
+      } catch {
+        /* best effort */
+      }
     }
   });
 
@@ -1092,7 +1194,7 @@ test.describe('Tags', () => {
 
     await page.goto('/#/tags');
     await expect(
-      page.locator('h2.section-title, h1.section-title').filter({ hasText: /tags/i }).first()
+      page.locator('h2.section-title, h1.section-title').filter({ hasText: /tags/i }).first(),
     ).toBeVisible({ timeout: 10000 });
 
     expect(errors).toEqual([]);
@@ -1102,19 +1204,26 @@ test.describe('Tags', () => {
     const errors = setupErrorListener(page);
 
     await page.goto('/#/tags');
-    await expect(page.locator('h2.section-title, h1.section-title').first()).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('h2.section-title, h1.section-title').first()).toBeVisible({
+      timeout: 10000,
+    });
 
     const tagInput = page.locator('input[placeholder*="ag" i]').first();
     if (await tagInput.isVisible({ timeout: 5000 }).catch(() => false)) {
       await tagInput.fill('E2E Test Tag');
-      await page.locator('button').filter({ hasText: /create/i }).click();
+      await page
+        .locator('button')
+        .filter({ hasText: /create/i })
+        .click();
 
-      await expect(page.locator('.toast').filter({ hasText: /created/i })).toBeVisible({ timeout: 5000 });
+      await expect(page.locator('.toast').filter({ hasText: /created/i })).toBeVisible({
+        timeout: 5000,
+      });
 
       // Clean up via API
       const resp = await request.get('/api/tags');
       const tags = await resp.json();
-      const newTag = tags.find(t => t.name === 'E2E Test Tag');
+      const newTag = tags.find((t) => t.name === 'E2E Test Tag');
       if (newTag) createdTagIds.push(newTag.id);
     }
 
@@ -1127,7 +1236,11 @@ test.describe('Tags', () => {
     const tag = await tagResp.json();
     createdTagIds.push(tag.id);
 
-    const article = await createArticle(request, 'https://example.com/tag-filter-test', 'Tag Filter Test');
+    const article = await createArticle(
+      request,
+      'https://example.com/tag-filter-test',
+      'Tag Filter Test',
+    );
     await request.post(`/api/articles/${article.id}/tags`, {
       data: { tag_id: tag.id },
     });
@@ -1143,14 +1256,17 @@ test.describe('Tags', () => {
       await tagChip.click();
 
       // Should navigate to tag-filtered view
-      await expect(page.locator('.reader-back, a').filter({ hasText: /back to tags/i }).first())
-        .toBeVisible({ timeout: 10000 });
+      await expect(
+        page
+          .locator('.reader-back, a')
+          .filter({ hasText: /back to tags/i })
+          .first(),
+      ).toBeVisible({ timeout: 10000 });
     }
 
     expect(errors).toEqual([]);
   });
 });
-
 
 // ---------------------------------------------------------------------------
 // Bulk operations
@@ -1166,24 +1282,35 @@ test.describe('Bulk operations', () => {
     await expect(page.locator('.article-card').first()).toBeVisible({ timeout: 15000 });
 
     // Enter select mode
-    const selectBtn = page.locator('button').filter({ hasText: /select/i }).first();
+    const selectBtn = page
+      .locator('button')
+      .filter({ hasText: /select/i })
+      .first();
     await selectBtn.click();
 
     // Wait for bulk action bar
     await expect(page.locator('.bulk-action-bar')).toBeVisible({ timeout: 5000 });
 
     // Click select all
-    await page.locator('.bulk-action-bar button').filter({ hasText: /select all/i }).click();
+    await page
+      .locator('.bulk-action-bar button')
+      .filter({ hasText: /select all/i })
+      .click();
 
     // Verify count shows
     const countText = await page.locator('.bulk-action-bar-count').textContent();
     expect(parseInt(countText)).toBeGreaterThanOrEqual(2);
 
     // Click archive
-    await page.locator('.bulk-action-bar button').filter({ hasText: /archive/i }).click();
+    await page
+      .locator('.bulk-action-bar button')
+      .filter({ hasText: /archive/i })
+      .click();
 
     // Should show success toast
-    await expect(page.locator('.toast').filter({ hasText: /archived/i })).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('.toast').filter({ hasText: /archived/i })).toBeVisible({
+      timeout: 5000,
+    });
 
     expect(errors).toEqual([]);
   });
@@ -1197,26 +1324,31 @@ test.describe('Bulk operations', () => {
     await expect(page.locator('.article-card').first()).toBeVisible({ timeout: 15000 });
 
     // Enter select mode
-    await page.locator('button').filter({ hasText: /select/i }).first().click();
+    await page
+      .locator('button')
+      .filter({ hasText: /select/i })
+      .first()
+      .click();
     await expect(page.locator('.bulk-action-bar')).toBeVisible({ timeout: 5000 });
 
     // Click a card to select it
     await page.locator('.article-card').first().click();
 
     // Handle confirm dialog
-    page.on('dialog', dialog => dialog.accept());
+    page.on('dialog', (dialog) => dialog.accept());
 
     // Click delete
     const deleteBtn = page.locator('.bulk-action-bar .btn-danger');
     if (await deleteBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
       await deleteBtn.click();
-      await expect(page.locator('.toast').filter({ hasText: /deleted/i })).toBeVisible({ timeout: 5000 });
+      await expect(page.locator('.toast').filter({ hasText: /deleted/i })).toBeVisible({
+        timeout: 5000,
+      });
     }
 
     expect(errors).toEqual([]);
   });
 });
-
 
 // ---------------------------------------------------------------------------
 // Settings view
@@ -1245,19 +1377,28 @@ test.describe('Settings', () => {
     await expect(page.locator('.save-form')).toBeVisible({ timeout: 10000 });
 
     // Navigate to search via header
-    const searchLink = page.locator('.header-nav a[href*="search"], .header-nav button').filter({ hasText: /search/i }).first();
+    const searchLink = page
+      .locator('.header-nav a[href*="search"], .header-nav button')
+      .filter({ hasText: /search/i })
+      .first();
     if (await searchLink.isVisible({ timeout: 3000 }).catch(() => false)) {
       await searchLink.click();
-      await expect(page.locator('input[type="search"], input[placeholder*="earch"]').first()).toBeVisible({ timeout: 10000 });
+      await expect(
+        page.locator('input[type="search"], input[placeholder*="earch"]').first(),
+      ).toBeVisible({ timeout: 10000 });
     }
 
     // Navigate to tags
     await page.goto('/#/tags');
-    await expect(page.locator('h2.section-title, h1.section-title').first()).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('h2.section-title, h1.section-title').first()).toBeVisible({
+      timeout: 10000,
+    });
 
     // Navigate to stats
     await page.goto('/#/stats');
-    await expect(page.locator('h1.section-title').filter({ hasText: /statistic/i })).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('h1.section-title').filter({ hasText: /statistic/i })).toBeVisible({
+      timeout: 10000,
+    });
 
     // Navigate to settings
     await page.goto('/#/settings');

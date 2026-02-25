@@ -38,7 +38,15 @@ marked.use({
         return text || '';
       }
       var titleAttr = title ? ' title="' + escapeHtml(title) + '"' : '';
-      return '<img src="' + escapeHtml(href) + '" alt="' + escapeHtml(text || '') + '"' + titleAttr + ' loading="lazy">';
+      return (
+        '<img src="' +
+        escapeHtml(href) +
+        '" alt="' +
+        escapeHtml(text || '') +
+        '"' +
+        titleAttr +
+        ' loading="lazy">'
+      );
     },
   },
 });
@@ -46,5 +54,9 @@ marked.use({
 export function renderMarkdown(md) {
   if (!md) return '';
   var raw = marked.parse(md);
-  return DOMPurify.sanitize(raw, { FORBID_TAGS: ['style'], FORBID_ATTR: ['style'], ADD_ATTR: ['target'] });
+  return DOMPurify.sanitize(raw, {
+    FORBID_TAGS: ['style'],
+    FORBID_ATTR: ['style'],
+    ADD_ATTR: ['target'],
+  });
 }

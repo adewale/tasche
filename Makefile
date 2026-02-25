@@ -20,4 +20,15 @@ deploy-staging:
 deploy-production:
 	uv run pywrangler deploy --env production
 
-check: lint test
+frontend-lint:
+	cd frontend && npm run lint
+
+frontend-format-check:
+	cd frontend && npm run format:check
+
+frontend-test:
+	cd frontend && npm test
+
+frontend-check: frontend-lint frontend-format-check frontend-test
+
+check: lint test frontend-check

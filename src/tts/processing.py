@@ -404,8 +404,13 @@ async def process_tts(
             if i == 0:
                 ai_type = type(chunk_audio).__name__
                 for attr in (
-                    "getReader", "arrayBuffer", "body", "to_py",
-                    "to_bytes", "byteLength", "buffer",
+                    "getReader",
+                    "arrayBuffer",
+                    "body",
+                    "to_py",
+                    "to_bytes",
+                    "byteLength",
+                    "buffer",
                 ):
                     if hasattr(chunk_audio, attr):
                         ai_attrs.append(attr)
@@ -417,18 +422,17 @@ async def process_tts(
             chunk_bytes = await consume_readable_stream(chunk_audio)
             chunk_len = 0
             if chunk_bytes:
-                as_bytes = (
-                    chunk_bytes if isinstance(chunk_bytes, bytes)
-                    else bytes(chunk_bytes)
-                )
+                as_bytes = chunk_bytes if isinstance(chunk_bytes, bytes) else bytes(chunk_bytes)
                 chunk_len = len(as_bytes)
                 audio_parts.append(as_bytes)
 
-            chunk_diagnostics.append({
-                "index": i,
-                "text_len": len(chunk),
-                "audio_bytes": chunk_len,
-            })
+            chunk_diagnostics.append(
+                {
+                    "index": i,
+                    "text_len": len(chunk),
+                    "audio_bytes": chunk_len,
+                }
+            )
 
             # Write incremental diagnostics to R2 after each chunk
             # so we can inspect even if the queue consumer times out
@@ -446,9 +450,7 @@ async def process_tts(
 
         if not audio_parts:
             diag = f"type={ai_type} attrs={','.join(ai_attrs)}"
-            raise ValueError(
-                f"Workers AI returned empty audio data ({diag})"
-            )
+            raise ValueError(f"Workers AI returned empty audio data ({diag})")
 
         audio_data = b"".join(audio_parts)
 
@@ -466,6 +468,7 @@ async def process_tts(
         # Verify the R2 write by reading back the object size
         verify_obj = await r2.get(audio_r2_key)
         from wrappers import get_r2_size
+
         verify_size = get_r2_size(verify_obj) if verify_obj else -1
         r2_write_verified = verify_size == audio_data_len
 
@@ -475,12 +478,16 @@ async def process_tts(
             evt.set("r2_audio_actual_bytes", verify_size)
             evt.set("r2_write_verified", r2_write_verified)
         if not r2_write_verified:
-            print(json.dumps({
-                "event": "r2_audio_write_mismatch",
-                "expected": audio_data_len,
-                "actual": verify_size,
-                "article_id": article_id,
-            }))
+            print(
+                json.dumps(
+                    {
+                        "event": "r2_audio_write_mismatch",
+                        "expected": audio_data_len,
+                        "actual": verify_size,
+                        "article_id": article_id,
+                    }
+                )
+            )
 
         # Step 5a: Store TTS diagnostics in R2 for debugging
         tts_diag = {

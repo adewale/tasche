@@ -109,16 +109,11 @@ export function Search() {
 
         <div class="article-list">
           {results.length === 0 && !isLoading && info && (
-            <EmptyState title="No results found">
-              Try a different search query.
-            </EmptyState>
+            <EmptyState title="No results found">Try a different search query.</EmptyState>
           )}
           {results.map((a) => (
-            <div
-              key={a.id}
-              class="article-card"
-              onClick={() => navigateToArticle(a.id)}
-            >
+            // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
+            <div key={a.id} class="article-card" onClick={() => navigateToArticle(a.id)}>
               <div class="article-card-title">
                 <HighlightedText text={a.title || a.original_url} query={currentQuery} />
               </div>

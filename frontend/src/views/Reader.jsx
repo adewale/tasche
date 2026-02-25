@@ -10,9 +10,16 @@ import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts.js';
 import { useSWMessage } from '../hooks/useSWMessage.js';
 import { nav } from '../nav.js';
 import {
-  IconArrowLeft, IconStar, IconExternalLink, IconPlay,
-  IconHeadphones, IconClock, IconDownload, IconCheck, IconCamera,
-  IconRefresh, IconTrash,
+  IconArrowLeft,
+  IconStar,
+  IconExternalLink,
+  IconPlay,
+  IconHeadphones,
+  IconClock,
+  IconDownload,
+  IconCheck,
+  IconCamera,
+  IconRefresh,
 } from '../components/Icons.jsx';
 import {
   getArticle,
@@ -97,7 +104,7 @@ function wrapSentences(containerEl, sentences) {
         containerEl.insertBefore(wrapper, targetNode);
       }
       wrapper.appendChild(targetNode);
-    } catch (e) {
+    } catch (_e) {
       continue;
     }
 
@@ -122,7 +129,6 @@ function unwrapSentences(containerEl) {
   containerEl.normalize();
 }
 
-
 export function Reader({ id }) {
   const [article, setArticle] = useState(null);
   const [contentHtml, setContentHtml] = useState('');
@@ -132,7 +138,11 @@ export function Reader({ id }) {
   const [deleting, setDeleting] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [checkingOriginal, setCheckingOriginal] = useState(false);
-  const [offlineStatus, setOfflineStatus] = useState({ cached: false, hasContent: false, hasAudio: false });
+  const [offlineStatus, setOfflineStatus] = useState({
+    cached: false,
+    hasContent: false,
+    hasAudio: false,
+  });
   const [savingOffline, setSavingOffline] = useState(false);
   const [savingAudioOffline, setSavingAudioOffline] = useState(false);
   const [markdownHtml, setMarkdownHtml] = useState(null);
@@ -164,7 +174,7 @@ export function Reader({ id }) {
       }, 1000);
     }
 
-    loadArticle(currentId, handleScroll);
+    loadArticle(currentId);
     isOfflineCached(currentId).then(function (status) {
       setOfflineStatus(status);
     });
@@ -181,165 +191,197 @@ export function Reader({ id }) {
   }, [id]);
 
   // Service worker messages for offline save status
-  useSWMessage(useCallback(function (event) {
-    if (!event.data) return;
-    if (event.data.type === 'OFFLINE_SAVED' && event.data.articleId === id) {
-      if (event.data.what === 'content') {
-        setOfflineStatus(function (prev) { return { ...prev, cached: true, hasContent: true }; });
-        setSavingOffline(false);
-        addToast('Article saved for offline reading', 'success');
-      } else if (event.data.what === 'audio') {
-        setOfflineStatus(function (prev) { return { ...prev, cached: true, hasAudio: true }; });
-        setSavingAudioOffline(false);
-        addToast('Audio downloaded for offline listening', 'success');
-      }
-    }
-    if (event.data.type === 'OFFLINE_SAVE_ERROR' && event.data.articleId === id) {
-      if (event.data.what === 'content') {
-        setSavingOffline(false);
-        addToast('Failed to save for offline', 'error');
-      } else if (event.data.what === 'audio') {
-        setSavingAudioOffline(false);
-        addToast('Failed to download audio', 'error');
-      }
-    }
-  }, [id]));
-
-
-  // Keyboard shortcuts for Reader
-  useKeyboardShortcuts({
-    Escape: function () { nav.library(); },
-    h: function () { nav.library(); },
-    a: function () { handleArchiveToggle(); },
-    s: function () { handleFavorite(); },
-    m: function () {
-      var current = readerPrefs.value.contentMode || 'html';
-      var next = current === 'html' ? 'markdown' : current === 'markdown' ? 'source' : 'html';
-      updatePref('contentMode', next);
-    },
-  }, [article]);
-
-  // Lazy-load markdown content when user switches to Rendered or Source mode
-  useEffect(function () {
-    var mode = readerPrefs.value.contentMode;
-    if (mode !== 'markdown' && mode !== 'source') return;
-    if (markdownRaw !== null || markdownLoading) return;
-    if (!article) return;
-
-    setMarkdownLoading(true);
-    getArticleMarkdown(id).then(function (md) {
-      var raw = md || article.markdown_content || '';
-      setMarkdownRaw(raw);
-      if (raw) {
-        setMarkdownHtml(renderMarkdown(raw));
-      } else {
-        setMarkdownHtml(
-          '<p class="reader-status-message">No markdown version available for this article.</p>'
-        );
-      }
-    }).catch(function () {
-      setMarkdownRaw('');
-      setMarkdownHtml(
-        '<p class="reader-status-message">Could not load markdown version.</p>'
-      );
-    }).finally(function () {
-      setMarkdownLoading(false);
-    });
-  }, [readerPrefs.value.contentMode, article, id, markdownRaw, markdownLoading]);
-
-  // Sentence highlighting during TTS audio playback
-  useEffect(function () {
-    var state = audioState.value;
-    // Only activate when this article's audio is playing
-    if (!state.visible || state.articleId !== id) {
-      // Clean up highlights if audio stopped or switched to another article
-      if (sentenceWrappedRef.current && contentRef.current) {
-        unwrapSentences(contentRef.current);
-        sentenceWrappedRef.current = false;
-        prevSentenceRef.current = -1;
-        timingRef.current = null;
-      }
-      return;
-    }
-
-    var cancelled = false;
-
-    // Fetch timing data and wrap sentences
-    getAudioTiming(id).then(function (timing) {
-      if (cancelled || !timing || !timing.sentences || timing.sentences.length === 0) return;
-      timingRef.current = timing;
-
-      // Wrap sentences in the reader content
-      if (contentRef.current && !sentenceWrappedRef.current) {
-        wrapSentences(contentRef.current, timing.sentences);
-        sentenceWrappedRef.current = true;
-      }
-    }).catch(function () {
-      // Timing data not available -- silently skip highlighting
-    });
-
-    var audio = getAudio();
-
-    function onTimeUpdate() {
-      var timing = timingRef.current;
-      if (!timing || !timing.sentences) return;
-
-      var currentTime = audio.currentTime;
-
-      // Find the current sentence — audio.currentTime is always in the
-      // media timeline regardless of playbackRate, so no speed adjustment.
-      var idx = -1;
-      for (var i = 0; i < timing.sentences.length; i++) {
-        var s = timing.sentences[i];
-        if (currentTime >= s.start && currentTime < s.end) {
-          idx = i;
-          break;
-        }
-      }
-
-      if (idx !== prevSentenceRef.current) {
-        // Remove previous highlight
-        if (prevSentenceRef.current >= 0 && contentRef.current) {
-          var prev = contentRef.current.querySelector('[data-sentence-idx="' + prevSentenceRef.current + '"]');
-          if (prev) prev.classList.remove('sentence-active');
-        }
-        // Add new highlight
-        if (idx >= 0 && contentRef.current) {
-          var el = contentRef.current.querySelector('[data-sentence-idx="' + idx + '"]');
-          if (el) {
-            el.classList.add('sentence-active');
-            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  useSWMessage(
+    useCallback(
+      function (event) {
+        if (!event.data) return;
+        if (event.data.type === 'OFFLINE_SAVED' && event.data.articleId === id) {
+          if (event.data.what === 'content') {
+            setOfflineStatus(function (prev) {
+              return { ...prev, cached: true, hasContent: true };
+            });
+            setSavingOffline(false);
+            addToast('Article saved for offline reading', 'success');
+          } else if (event.data.what === 'audio') {
+            setOfflineStatus(function (prev) {
+              return { ...prev, cached: true, hasAudio: true };
+            });
+            setSavingAudioOffline(false);
+            addToast('Audio downloaded for offline listening', 'success');
           }
         }
-        prevSentenceRef.current = idx;
+        if (event.data.type === 'OFFLINE_SAVE_ERROR' && event.data.articleId === id) {
+          if (event.data.what === 'content') {
+            setSavingOffline(false);
+            addToast('Failed to save for offline', 'error');
+          } else if (event.data.what === 'audio') {
+            setSavingAudioOffline(false);
+            addToast('Failed to download audio', 'error');
+          }
+        }
+      },
+      [id],
+    ),
+  );
+
+  // Keyboard shortcuts for Reader
+  useKeyboardShortcuts(
+    {
+      Escape: function () {
+        nav.library();
+      },
+      h: function () {
+        nav.library();
+      },
+      a: function () {
+        handleArchiveToggle();
+      },
+      s: function () {
+        handleFavorite();
+      },
+      m: function () {
+        var current = readerPrefs.value.contentMode || 'html';
+        var next = current === 'html' ? 'markdown' : current === 'markdown' ? 'source' : 'html';
+        updatePref('contentMode', next);
+      },
+    },
+    [article],
+  );
+
+  // Lazy-load markdown content when user switches to Rendered or Source mode
+  useEffect(
+    function () {
+      var mode = readerPrefs.value.contentMode;
+      if (mode !== 'markdown' && mode !== 'source') return;
+      if (markdownRaw !== null || markdownLoading) return;
+      if (!article) return;
+
+      setMarkdownLoading(true);
+      getArticleMarkdown(id)
+        .then(function (md) {
+          var raw = md || article.markdown_content || '';
+          setMarkdownRaw(raw);
+          if (raw) {
+            setMarkdownHtml(renderMarkdown(raw));
+          } else {
+            setMarkdownHtml(
+              '<p class="reader-status-message">No markdown version available for this article.</p>',
+            );
+          }
+        })
+        .catch(function () {
+          setMarkdownRaw('');
+          setMarkdownHtml('<p class="reader-status-message">Could not load markdown version.</p>');
+        })
+        .finally(function () {
+          setMarkdownLoading(false);
+        });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [readerPrefs.value.contentMode, article, id, markdownRaw, markdownLoading],
+  );
+
+  // Sentence highlighting during TTS audio playback
+  useEffect(
+    function () {
+      var state = audioState.value;
+      // Only activate when this article's audio is playing
+      if (!state.visible || state.articleId !== id) {
+        // Clean up highlights if audio stopped or switched to another article
+        if (sentenceWrappedRef.current && contentRef.current) {
+          unwrapSentences(contentRef.current);
+          sentenceWrappedRef.current = false;
+          prevSentenceRef.current = -1;
+          timingRef.current = null;
+        }
+        return;
       }
-    }
 
-    function onEnded() {
-      // Clear all highlights when audio ends
-      if (contentRef.current) {
-        var active = contentRef.current.querySelector('.sentence-active');
-        if (active) active.classList.remove('sentence-active');
+      var cancelled = false;
+
+      // Fetch timing data and wrap sentences
+      getAudioTiming(id)
+        .then(function (timing) {
+          if (cancelled || !timing || !timing.sentences || timing.sentences.length === 0) return;
+          timingRef.current = timing;
+
+          // Wrap sentences in the reader content
+          if (contentRef.current && !sentenceWrappedRef.current) {
+            wrapSentences(contentRef.current, timing.sentences);
+            sentenceWrappedRef.current = true;
+          }
+        })
+        .catch(function () {
+          // Timing data not available -- silently skip highlighting
+        });
+
+      var audio = getAudio();
+
+      function onTimeUpdate() {
+        var timing = timingRef.current;
+        if (!timing || !timing.sentences) return;
+
+        var currentTime = audio.currentTime;
+
+        // Find the current sentence — audio.currentTime is always in the
+        // media timeline regardless of playbackRate, so no speed adjustment.
+        var idx = -1;
+        for (var i = 0; i < timing.sentences.length; i++) {
+          var s = timing.sentences[i];
+          if (currentTime >= s.start && currentTime < s.end) {
+            idx = i;
+            break;
+          }
+        }
+
+        if (idx !== prevSentenceRef.current) {
+          // Remove previous highlight
+          if (prevSentenceRef.current >= 0 && contentRef.current) {
+            var prev = contentRef.current.querySelector(
+              '[data-sentence-idx="' + prevSentenceRef.current + '"]',
+            );
+            if (prev) prev.classList.remove('sentence-active');
+          }
+          // Add new highlight
+          if (idx >= 0 && contentRef.current) {
+            var el = contentRef.current.querySelector('[data-sentence-idx="' + idx + '"]');
+            if (el) {
+              el.classList.add('sentence-active');
+              el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+          }
+          prevSentenceRef.current = idx;
+        }
       }
-      prevSentenceRef.current = -1;
-    }
 
-    audio.addEventListener('timeupdate', onTimeUpdate);
-    audio.addEventListener('ended', onEnded);
-
-    return function () {
-      cancelled = true;
-      audio.removeEventListener('timeupdate', onTimeUpdate);
-      audio.removeEventListener('ended', onEnded);
-      // Clean up highlights on unmount
-      if (sentenceWrappedRef.current && contentRef.current) {
-        unwrapSentences(contentRef.current);
-        sentenceWrappedRef.current = false;
+      function onEnded() {
+        // Clear all highlights when audio ends
+        if (contentRef.current) {
+          var active = contentRef.current.querySelector('.sentence-active');
+          if (active) active.classList.remove('sentence-active');
+        }
         prevSentenceRef.current = -1;
-        timingRef.current = null;
       }
-    };
-  }, [id, audioState.value.articleId, audioState.value.visible, readerPrefs.value.contentMode]);
+
+      audio.addEventListener('timeupdate', onTimeUpdate);
+      audio.addEventListener('ended', onEnded);
+
+      return function () {
+        cancelled = true;
+        audio.removeEventListener('timeupdate', onTimeUpdate);
+        audio.removeEventListener('ended', onEnded);
+        // Clean up highlights on unmount
+        if (sentenceWrappedRef.current && contentRef.current) {
+          unwrapSentences(contentRef.current);
+          sentenceWrappedRef.current = false;
+          prevSentenceRef.current = -1;
+          timingRef.current = null;
+        }
+      };
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [id, audioState.value.articleId, audioState.value.visible, readerPrefs.value.contentMode],
+  );
 
   async function handleArchiveToggle() {
     if (!article) return;
@@ -357,7 +399,7 @@ export function Reader({ id }) {
     }
   }
 
-  async function loadArticle(currentId, handleScroll) {
+  async function loadArticle(currentId) {
     try {
       const art = await getArticle(currentId);
       setArticle(art);
@@ -372,9 +414,11 @@ export function Reader({ id }) {
       } else if (art.excerpt) {
         html = '<p>' + escapeHtml(art.excerpt) + '</p>';
       } else if (art.status === 'pending' || art.status === 'processing') {
-        html = '<p class="reader-status-message">Article is being processed. Refresh in a moment.</p>';
+        html =
+          '<p class="reader-status-message">Article is being processed. Refresh in a moment.</p>';
       } else if (art.status === 'failed') {
-        html = '<p class="reader-status-message">Processing failed. Use the Retry button above to try again.</p>';
+        html =
+          '<p class="reader-status-message">Processing failed. Use the Retry button above to try again.</p>';
       } else {
         html =
           '<p class="reader-status-message">No content available. <a href="' +
@@ -407,7 +451,9 @@ export function Reader({ id }) {
       await updateArticle(id, { is_favorite: newFav });
       const updated = { ...article, is_favorite: newFav ? 1 : 0 };
       setArticle(updated);
-      articles.value = articles.value.map((a) => a.id === id ? { ...a, is_favorite: updated.is_favorite } : a);
+      articles.value = articles.value.map((a) =>
+        a.id === id ? { ...a, is_favorite: updated.is_favorite } : a,
+      );
       addToast(newFav ? 'Added to favourites' : 'Removed from favourites', 'success');
     } catch (e) {
       addToast(e.message, 'error');
@@ -419,7 +465,9 @@ export function Reader({ id }) {
       const newStatus = e.target.value;
       await updateArticle(id, { reading_status: newStatus });
       setArticle({ ...article, reading_status: newStatus });
-      articles.value = articles.value.map((a) => a.id === id ? { ...a, reading_status: newStatus } : a);
+      articles.value = articles.value.map((a) =>
+        a.id === id ? { ...a, reading_status: newStatus } : a,
+      );
       addToast('Status updated', 'success');
     } catch (err) {
       addToast(err.message, 'error');
@@ -550,9 +598,7 @@ export function Reader({ id }) {
     article.audio_status !== 'generating' &&
     article.audio_status !== 'ready';
   const audioPending =
-    audioRequested ||
-    article.audio_status === 'pending' ||
-    article.audio_status === 'generating';
+    audioRequested || article.audio_status === 'pending' || article.audio_status === 'generating';
 
   return (
     <>
@@ -564,9 +610,7 @@ export function Reader({ id }) {
           </a>
           <h1 class="reader-title">{article.title || 'Untitled'}</h1>
           <div class="reader-meta">
-            {article.author && (
-              <span class="reader-meta-item">{article.author}</span>
-            )}
+            {article.author && <span class="reader-meta-item">{article.author}</span>}
             {article.domain && (
               <span class="reader-meta-item">
                 <a href={article.original_url} target="_blank" rel="noopener noreferrer">
@@ -576,9 +620,7 @@ export function Reader({ id }) {
             )}
             {readingTime && <span class="reader-meta-item">{readingTime}</span>}
             {article.word_count && (
-              <span class="reader-meta-item">
-                {article.word_count.toLocaleString()} words
-              </span>
+              <span class="reader-meta-item">{article.word_count.toLocaleString()} words</span>
             )}
           </div>
           <TagPicker articleId={id} />
@@ -591,15 +633,11 @@ export function Reader({ id }) {
                 </a>
               </span>
             )}
-            {ostatus === 'paywalled' && (
-              <span>Original requires subscription</span>
-            )}
+            {ostatus === 'paywalled' && <span>Original requires subscription</span>}
             {ostatus === 'gone' && (
               <span>Original no longer available. Good thing you saved it.</span>
             )}
-            {ostatus === 'domain_dead' && (
-              <span>Source website is offline</span>
-            )}
+            {ostatus === 'domain_dead' && <span>Source website is offline</span>}
             {ostatus === 'unknown' && (
               <span>
                 Original status unknown{' '}
@@ -630,15 +668,23 @@ export function Reader({ id }) {
               <option value="archived">Archived</option>
             </select>
             <button
-              class={'btn btn-sm offline-btn' + (offlineStatus.hasContent ? ' offline-btn--saved' : '')}
+              class={
+                'btn btn-sm offline-btn' + (offlineStatus.hasContent ? ' offline-btn--saved' : '')
+              }
               onClick={handleSaveOffline}
               disabled={savingOffline}
             >
-              {savingOffline
-                ? 'Saving...'
-                : offlineStatus.hasContent
-                  ? <><IconCheck size={14} /> Saved offline</>
-                  : <><IconDownload size={14} /> Save for offline</>}
+              {savingOffline ? (
+                'Saving...'
+              ) : offlineStatus.hasContent ? (
+                <>
+                  <IconCheck size={14} /> Saved offline
+                </>
+              ) : (
+                <>
+                  <IconDownload size={14} /> Save for offline
+                </>
+              )}
             </button>
             {hasAudio && (
               <button class="btn btn-sm btn-secondary" onClick={handlePlayAudio}>
@@ -647,20 +693,40 @@ export function Reader({ id }) {
             )}
             {hasAudio && (
               <button
-                class={'btn btn-sm offline-btn' + (offlineStatus.hasAudio ? ' offline-btn--saved' : '')}
+                class={
+                  'btn btn-sm offline-btn' + (offlineStatus.hasAudio ? ' offline-btn--saved' : '')
+                }
                 onClick={handleSaveAudioOffline}
                 disabled={savingAudioOffline}
               >
-                {savingAudioOffline
-                  ? 'Downloading...'
-                  : offlineStatus.hasAudio
-                    ? <><IconCheck size={14} /> Audio offline</>
-                    : <><IconDownload size={14} /> Download audio</>}
+                {savingAudioOffline ? (
+                  'Downloading...'
+                ) : offlineStatus.hasAudio ? (
+                  <>
+                    <IconCheck size={14} /> Audio offline
+                  </>
+                ) : (
+                  <>
+                    <IconDownload size={14} /> Download audio
+                  </>
+                )}
               </button>
             )}
             {canRequestAudio && (
-              <button class="btn btn-sm btn-secondary" onClick={handleListenLater} disabled={listeningLoading}>
-                {listeningLoading ? <><IconClock size={14} /> Requesting...</> : <><IconHeadphones size={14} /> Listen Later</>}
+              <button
+                class="btn btn-sm btn-secondary"
+                onClick={handleListenLater}
+                disabled={listeningLoading}
+              >
+                {listeningLoading ? (
+                  <>
+                    <IconClock size={14} /> Requesting...
+                  </>
+                ) : (
+                  <>
+                    <IconHeadphones size={14} /> Listen Later
+                  </>
+                )}
               </button>
             )}
             {audioPending && (
@@ -699,21 +765,33 @@ export function Reader({ id }) {
           data-reader-theme={readerPrefs.value.theme || 'auto'}
         >
           <ReaderToolbar />
-          {(readerPrefs.value.contentMode === 'markdown' || readerPrefs.value.contentMode === 'source') && markdownLoading ? (
-            <div class="reader-content"><LoadingSpinner /></div>
+          {(readerPrefs.value.contentMode === 'markdown' ||
+            readerPrefs.value.contentMode === 'source') &&
+          markdownLoading ? (
+            <div class="reader-content">
+              <LoadingSpinner />
+            </div>
           ) : readerPrefs.value.contentMode === 'source' ? (
             <>
               {markdownRaw && (
                 <div class="reader-source-actions">
-                  <button class="btn btn-sm btn-secondary" onClick={function () {
-                    navigator.clipboard.writeText(markdownRaw).then(function () {
-                      setCopied(true);
-                      addToast('Markdown copied to clipboard', 'success');
-                      setTimeout(function () { setCopied(false); }, 2000);
-                    }).catch(function () {
-                      addToast('Failed to copy to clipboard', 'error');
-                    });
-                  }}>
+                  <button
+                    class="btn btn-sm btn-secondary"
+                    onClick={function () {
+                      navigator.clipboard
+                        .writeText(markdownRaw)
+                        .then(function () {
+                          setCopied(true);
+                          addToast('Markdown copied to clipboard', 'success');
+                          setTimeout(function () {
+                            setCopied(false);
+                          }, 2000);
+                        })
+                        .catch(function () {
+                          addToast('Failed to copy to clipboard', 'error');
+                        });
+                    }}
+                  >
                     {copied ? 'Copied' : 'Copy Markdown'}
                   </button>
                 </div>
@@ -725,9 +803,10 @@ export function Reader({ id }) {
               ref={contentRef}
               class="reader-content"
               dangerouslySetInnerHTML={{
-                __html: readerPrefs.value.contentMode === 'markdown' && markdownHtml
-                  ? markdownHtml
-                  : contentHtml
+                __html:
+                  readerPrefs.value.contentMode === 'markdown' && markdownHtml
+                    ? markdownHtml
+                    : contentHtml,
               }}
             />
           )}

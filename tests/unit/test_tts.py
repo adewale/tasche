@@ -1156,9 +1156,7 @@ class TestMultiChunkTTS:
         r2 = MockR2()
 
         # Each chunk should return distinct audio bytes so we can verify concatenation
-        chunk_responses = [
-            b"\xff\xfb" + bytes([i]) * 200 for i in range(10)
-        ]
+        chunk_responses = [b"\xff\xfb" + bytes([i]) * 200 for i in range(10)]
         call_idx = {"n": 0}
 
         class MultiResponseAI:
@@ -1190,7 +1188,7 @@ class TestMultiChunkTTS:
         assert len(stored) > 202, "Audio should be larger than a single chunk"
 
         # The stored audio should contain bytes from multiple chunk responses
-        expected = b"".join(chunk_responses[:len(ai.calls)])
+        expected = b"".join(chunk_responses[: len(ai.calls)])
         assert stored == expected
 
         # Diagnostics should report per-chunk data
@@ -1320,6 +1318,7 @@ class TestConsumeReadableStream:
 
         class MockStream:
             """Mock with getReader() — the preferred path."""
+
             def getReader(self):
                 return MockReader()
 
@@ -1350,6 +1349,7 @@ class TestConsumeReadableStream:
 
         class MockStreamWithBoth:
             """Has both getReader and arrayBuffer. getReader should win."""
+
             def getReader(self):
                 return MockReader()
 

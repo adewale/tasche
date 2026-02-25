@@ -81,7 +81,10 @@ export function Stats() {
             <div class="stat-card-label">Day streak</div>
           </div>
           <div class="stat-card">
-            <div class="stat-card-number">{stats.avg_reading_time_minutes}<span class="stat-card-unit">min</span></div>
+            <div class="stat-card-number">
+              {stats.avg_reading_time_minutes}
+              <span class="stat-card-unit">min</span>
+            </div>
             <div class="stat-card-label">Avg read time</div>
           </div>
         </div>
@@ -95,27 +98,36 @@ export function Stats() {
                 {stats.articles_by_status.unread > 0 && (
                   <div
                     class="stats-status-segment stats-status-segment--unread"
-                    style={{ width: (stats.articles_by_status.unread / stats.total_articles * 100) + '%' }}
+                    style={{
+                      width: (stats.articles_by_status.unread / stats.total_articles) * 100 + '%',
+                    }}
                     title={'Unread: ' + stats.articles_by_status.unread}
                   />
                 )}
                 {stats.articles_by_status.reading > 0 && (
                   <div
                     class="stats-status-segment stats-status-segment--reading"
-                    style={{ width: (stats.articles_by_status.reading / stats.total_articles * 100) + '%' }}
+                    style={{
+                      width: (stats.articles_by_status.reading / stats.total_articles) * 100 + '%',
+                    }}
                     title={'Reading: ' + stats.articles_by_status.reading}
                   />
                 )}
                 {stats.articles_by_status.archived > 0 && (
                   <div
                     class="stats-status-segment stats-status-segment--archived"
-                    style={{ width: (stats.articles_by_status.archived / stats.total_articles * 100) + '%' }}
+                    style={{
+                      width: (stats.articles_by_status.archived / stats.total_articles) * 100 + '%',
+                    }}
                     title={'Archived: ' + stats.articles_by_status.archived}
                   />
                 )}
               </>
             ) : (
-              <div class="stats-status-segment stats-status-segment--empty" style={{ width: '100%' }} />
+              <div
+                class="stats-status-segment stats-status-segment--empty"
+                style={{ width: '100%' }}
+              />
             )}
           </div>
           <div class="stats-status-legend">
@@ -170,7 +182,7 @@ export function Stats() {
             <div class="stats-domains-list">
               {stats.top_domains.map(function (d) {
                 var maxCount = stats.top_domains[0].count;
-                var pct = maxCount > 0 ? (d.count / maxCount * 100) : 0;
+                var pct = maxCount > 0 ? (d.count / maxCount) * 100 : 0;
                 return (
                   <div class="stats-domain-row" key={d.domain}>
                     <div class="stats-domain-info">

@@ -45,6 +45,7 @@ export function KeyboardShortcutsHelp({ onClose }) {
   }
 
   return (
+    // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
     <div class="shortcuts-overlay" onClick={handleOverlayClick}>
       <div class="shortcuts-panel">
         <div class="shortcuts-header">

@@ -5,7 +5,16 @@ import { getArticleTags, listenLater as apiListenLater, isOfflineCached } from '
 import { toggleArchive, toggleFavorite, removeArticle } from '../articleActions.js';
 import { nav } from '../nav.js';
 import { playAudio } from './AudioPlayer.jsx';
-import { IconStar, IconTrash, IconCheck, IconCheckSquare, IconHeadphones, IconPlay, IconClock, IconArchive } from './Icons.jsx';
+import {
+  IconStar,
+  IconTrash,
+  IconCheck,
+  IconCheckSquare,
+  IconHeadphones,
+  IconPlay,
+  IconClock,
+  IconArchive,
+} from './Icons.jsx';
 
 const tagCache = new Map();
 
@@ -112,7 +121,9 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
 
   var thumbnailSrc = a.thumbnail_key ? '/api/articles/' + a.id + '/thumbnail' : null;
   var hasThumbnail = thumbnailSrc && !thumbError;
-  var faviconSrc = a.domain ? 'https://www.google.com/s2/favicons?domain=' + a.domain + '&sz=32' : null;
+  var faviconSrc = a.domain
+    ? 'https://www.google.com/s2/favicons?domain=' + a.domain + '&sz=32'
+    : null;
 
   var cardClass = 'article-card';
   if (!hasThumbnail) cardClass += ' article-card--compact';
@@ -122,6 +133,7 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
   if (statusClass === 'reading') cardClass += ' article-card--reading';
 
   return (
+    // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
     <div class={cardClass} onClick={handleClick}>
       {isProcessing && (
         <div class="processing-overlay">
@@ -143,7 +155,9 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
               src={thumbnailSrc}
               alt=""
               loading="lazy"
-              onError={function () { setThumbError(true); }}
+              onError={function () {
+                setThumbError(true);
+              }}
             />
           </div>
         ) : faviconSrc ? (
@@ -155,7 +169,9 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
                 width="16"
                 height="16"
                 loading="lazy"
-                onError={function (e) { e.target.closest('.article-card-favicon').style.display = 'none'; }}
+                onError={function (e) {
+                  e.target.closest('.article-card-favicon').style.display = 'none';
+                }}
               />
             </div>
           </div>
@@ -184,7 +200,9 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
                   key={tag.id}
                   href={'#/?tag=' + tag.id}
                   class="tag-chip"
-                  onClick={function (e) { handleTagClick(e, tag.id); }}
+                  onClick={function (e) {
+                    handleTagClick(e, tag.id);
+                  }}
                 >
                   {tag.name}
                 </a>

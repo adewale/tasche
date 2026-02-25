@@ -42,7 +42,12 @@ class ErrorBoundary extends Component {
         <div class="error-boundary">
           <h2>Something went wrong</h2>
           <p>{this.state.error.message}</p>
-          <button onClick={() => { this.setState({ error: null }); window.location.hash = '#/'; }}>
+          <button
+            onClick={() => {
+              this.setState({ error: null });
+              window.location.hash = '#/';
+            }}
+          >
             Reload
           </button>
         </div>
@@ -153,13 +158,9 @@ export function App() {
           .then(() => addToast('Article saved!', 'success'))
           .catch((e) => addToast('Save failed: ' + e.message, 'error'));
         // Clean the URL params
-        window.history.replaceState(
-          {},
-          '',
-          window.location.pathname + window.location.hash
-        );
+        window.history.replaceState({}, '', window.location.pathname + window.location.hash);
       }
-    } catch (e) {
+    } catch (_e) {
       user.value = null;
     }
     setReady(true);
@@ -181,7 +182,11 @@ export function App() {
       <Toast />
       <AudioPlayer />
       {showShortcuts.value && (
-        <KeyboardShortcutsHelp onClose={function () { showShortcuts.value = false; }} />
+        <KeyboardShortcutsHelp
+          onClose={function () {
+            showShortcuts.value = false;
+          }}
+        />
       )}
     </div>
   );

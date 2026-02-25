@@ -1,11 +1,6 @@
 import { useState, useEffect } from 'preact/hooks';
 import { tags as tagsSignal, addToast } from '../state.js';
-import {
-  listTags,
-  getArticleTags,
-  addArticleTag,
-  removeArticleTag,
-} from '../api.js';
+import { listTags, getArticleTags, addArticleTag, removeArticleTag } from '../api.js';
 
 export function TagPicker({ articleId }) {
   const [articleTags, setArticleTags] = useState([]);
@@ -31,10 +26,7 @@ export function TagPicker({ articleId }) {
     try {
       await addArticleTag(articleId, selectedTagId);
       const tagName = tagsSignal.value.find((t) => t.id === selectedTagId);
-      setArticleTags([
-        ...articleTags,
-        { id: selectedTagId, name: tagName ? tagName.name : 'Tag' },
-      ]);
+      setArticleTags([...articleTags, { id: selectedTagId, name: tagName ? tagName.name : 'Tag' }]);
       addToast('Tag added', 'success');
       setShowPicker(false);
       setSelectedTagId('');
@@ -64,7 +56,7 @@ export function TagPicker({ articleId }) {
     if (tagsSignal.value.length === 0) {
       try {
         tagsSignal.value = await listTags();
-      } catch (e) {
+      } catch (_e) {
         // ignore
       }
     }
@@ -75,11 +67,17 @@ export function TagPicker({ articleId }) {
     <div>
       <div class="flex-wrap-gap mt-4">
         {articleTags.map((t) => (
-          <span class={'tag-chip' + (removingTagId === t.id ? ' tag-chip--removing' : '')} key={t.id}>
+          <span
+            class={'tag-chip' + (removingTagId === t.id ? ' tag-chip--removing' : '')}
+            key={t.id}
+          >
             {t.name}
+            {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
             <span
               class="tag-chip-remove"
-              onClick={() => { if (!removingTagId) handleRemoveTag(t.id); }}
+              onClick={() => {
+                if (!removingTagId) handleRemoveTag(t.id);
+              }}
               style={removingTagId ? { opacity: 0.5, pointerEvents: 'none' } : {}}
             >
               {removingTagId === t.id ? '...' : '\u00D7'}
@@ -103,10 +101,10 @@ export function TagPicker({ articleId }) {
             {tagsSignal.value
               .filter((t) => !articleTags.some((at) => at.id === t.id))
               .map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
           </select>
           <button class="btn btn-sm btn-primary" onClick={handleAddTag} disabled={addingTag}>
             {addingTag ? 'Adding...' : 'Add'}

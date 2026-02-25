@@ -341,9 +341,7 @@ class TestFFIBoundary:
 
         # Audio should be more than a single MP3 frame (~400 bytes)
         # A real article produces >10KB; example.com may be smaller
-        assert audio_bytes > 400, (
-            f"Audio is only {audio_bytes} bytes — likely truncated"
-        )
+        assert audio_bytes > 400, f"Audio is only {audio_bytes} bytes — likely truncated"
 
     async def test_process_stores_content_in_r2(
         self,

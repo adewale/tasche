@@ -11,7 +11,9 @@ function SegmentedControl({ label, prefKey, options }) {
             <button
               key={opt.value}
               class={'reader-toolbar-seg' + (current === opt.value ? ' active' : '')}
-              onClick={function () { updatePref(prefKey, opt.value); }}
+              onClick={function () {
+                updatePref(prefKey, opt.value);
+              }}
               title={opt.title || opt.label}
             >
               {opt.label}
