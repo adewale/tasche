@@ -387,6 +387,16 @@ async def process_tts(
         ai_type = "unknown"
         ai_attrs: list[str] = []
 
+        # Pre-AI diagnostic: confirm we reached the chunking stage
+        pre_diag = {
+            "stage": "pre_ai_loop",
+            "chunks_total": len(chunks),
+            "chunk_text_lengths": [len(c) for c in chunks],
+            "tts_text_length": len(tts_text),
+        }
+        pre_diag_key = article_key(article_id, "tts-diagnostics.json")
+        await r2.put(pre_diag_key, json.dumps(pre_diag))
+
         for i, chunk in enumerate(chunks):
             chunk_audio = await ai.run(_TTS_MODEL, {"text": chunk})
 
@@ -420,6 +430,20 @@ async def process_tts(
                 "audio_bytes": chunk_len,
             })
 
+            # Write incremental diagnostics to R2 after each chunk
+            # so we can inspect even if the queue consumer times out
+            incremental_diag = {
+                "ai_response_type": ai_type,
+                "ai_response_attrs": ai_attrs,
+                "chunks_total": len(chunks),
+                "chunks_completed": i + 1,
+                "chunk_diagnostics": chunk_diagnostics,
+                "audio_parts_so_far": len(audio_parts),
+                "audio_bytes_so_far": sum(len(p) for p in audio_parts),
+            }
+            diag_key = article_key(article_id, "tts-diagnostics.json")
+            await r2.put(diag_key, json.dumps(incremental_diag))
+
         if not audio_parts:
             diag = f"type={ai_type} attrs={','.join(ai_attrs)}"
             raise ValueError(
@@ -436,7 +460,43 @@ async def process_tts(
 
         # Step 5: Store audio in R2
         audio_r2_key = article_key(article_id, "audio.mp3")
+        audio_data_len = len(audio_data)
         await r2.put(audio_r2_key, audio_data)
+
+        # Verify the R2 write by reading back the object size
+        verify_obj = await r2.get(audio_r2_key)
+        from wrappers import get_r2_size
+        verify_size = get_r2_size(verify_obj) if verify_obj else -1
+        r2_write_verified = verify_size == audio_data_len
+
+        evt = current_event()
+        if evt:
+            evt.set("r2_audio_expected_bytes", audio_data_len)
+            evt.set("r2_audio_actual_bytes", verify_size)
+            evt.set("r2_write_verified", r2_write_verified)
+        if not r2_write_verified:
+            print(json.dumps({
+                "event": "r2_audio_write_mismatch",
+                "expected": audio_data_len,
+                "actual": verify_size,
+                "article_id": article_id,
+            }))
+
+        # Step 5a: Store TTS diagnostics in R2 for debugging
+        tts_diag = {
+            "ai_response_type": ai_type,
+            "ai_response_attrs": ai_attrs,
+            "text_chunks": len(chunks),
+            "chunk_text_lengths": [len(c) for c in chunks],
+            "audio_parts": len(audio_parts),
+            "audio_part_sizes": [len(p) for p in audio_parts],
+            "total_audio_bytes": audio_data_len,
+            "r2_verify_size": verify_size,
+            "r2_write_verified": r2_write_verified,
+            "chunk_diagnostics": chunk_diagnostics,
+        }
+        diag_r2_key = article_key(article_id, "tts-diagnostics.json")
+        await r2.put(diag_r2_key, json.dumps(tts_diag))
 
         # Step 5b: Generate and store sentence timing map for highlight sync
         timing_data = generate_sentence_timing(tts_text)

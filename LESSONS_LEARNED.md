@@ -545,16 +545,25 @@ Comparing to planet_cf's three-tier strategy (unit→integration→E2E against r
 
 **Lesson:** For platform-specific runtimes, E2E tests against real infrastructure are not optional — they are the only tier that validates the actual contract between your code and the platform. Mock-based tests at any sophistication level (including monkeypatched FFI fakes) can only verify that your code works *if* your assumptions about the platform are correct. E2E tests verify the assumptions themselves.
 
-### 39. ReadableStream `arrayBuffer()` Truncates in Pyodide — Use `getReader()` Instead
+### 39. TTS Audio Truncation: Two Bugs at Different Pipeline Stages
 
-TTS-generated audio was 0.57 seconds / 3.4KB when it should have been minutes long. The `audio_duration_seconds` in D1 (776s) was an estimate based on word count — not the actual audio duration — masking the problem entirely.
+TTS-generated audio served as 3.4KB (0.57 seconds) when it should have been 1.4–2.6MB (minutes long). Investigation revealed **two independent bugs** at different pipeline stages.
 
-The pipeline: markdown → strip → chunk (6 chunks × ~1900 chars) → Workers AI per chunk → concatenate → R2. The `consume_readable_stream()` helper in `wrappers.py` checked `hasattr(value, "arrayBuffer")` first. Workers AI returns a ReadableStream that has **both** `.arrayBuffer()` and `.getReader()`. In Pyodide, `await stream.arrayBuffer()` on a ReadableStream may only capture the first buffered chunk of the response, silently discarding the rest. This produced a single MP3 frame (~3.4KB) from what should have been a multi-chunk audio stream.
+**Bug 1 (defensive fix): `to_js(bytes)` Wasm memory views.** `pyodide.ffi.to_js(bytes)` creates a `Uint8Array` *view* into Wasm linear memory — not a copy. If Wasm memory grows while an async JS API (e.g., `r2.put()`) is in flight, the underlying `ArrayBuffer` can become detached. **Fix:** Add `.slice()` after `to_js()` in `to_js_bytes()` to create an owned copy in JS heap memory.
 
-The fix: prefer `getReader()` over `.arrayBuffer()` in `consume_readable_stream()`. The reader path uses the `getReader()` → `read()` → `releaseLock()` protocol that reads ALL chunks sequentially. This is the reliable way to fully consume a ReadableStream across the Pyodide FFI boundary.
+**Bug 2 (actual serving root cause): Cloudflare Workers ASGI adapter truncates StreamingResponse.** The ASGI adapter for Python Workers only consumes the **first yielded chunk** from async generators used in `StreamingResponse`. The audio endpoint used `StreamingResponse(stream_r2_body(...))` which yielded R2 body chunks (first chunk: 3,417 bytes, then 4KB chunks). The adapter consumed only the first 3,417-byte chunk and closed the response. **Fix:** Replace `StreamingResponse` with `Response` — read all body chunks via `body.getReader()` into memory, join them, and return as a single `Response`.
 
-**Why unit tests didn't catch it:** `MockAI` returns plain `bytes`, which bypasses `consume_readable_stream()` entirely (bytes have neither `getReader` nor `arrayBuffer`). The real Workers AI returns a `ReadableStream` JsProxy — a fundamentally different type with different consumption semantics. The FFI conversion path was completely untested.
+**Diagnostic journey (5 hypotheses tested, 4 wrong):**
+1. ~~`arrayBuffer()` truncation on ReadableStream~~ — Workers AI streams don't even have `arrayBuffer`
+2. ~~`to_py_bytes()` truncation~~ — conversion was correct
+3. ~~Workers AI rate limiting~~ — all chunks returned full audio
+4. ~~`to_js(bytes)` Wasm view detachment~~ — R2 read-back verified 2.6MB stored correctly
+5. **ASGI adapter StreamingResponse truncation** — the adapter only consumed first yielded chunk
 
-**Detection required tracing, not guessing:** The pipeline had 3 candidate failure points (arrayBuffer truncation, to_py_bytes truncation, empty AI responses). Without per-chunk diagnostics showing exactly where bytes disappear, any fix attempt would be speculative. The diagnostic trace script (`scripts/agent-tools/trace_tts_pipeline.py`) and per-chunk logging in `process_tts()` made the root cause empirically verifiable.
+**Key diagnostic: `X-R2-Size` header.** Adding `X-R2-Size: {r2_size}` to the response revealed R2 had 2,684,016 bytes but `Content-Length` was 3,417. The write was correct; only serving was broken.
 
-**Lesson:** When consuming binary data from JS APIs across the Pyodide FFI boundary, always prefer the streaming reader protocol (`getReader()` → `read()` loop) over convenience methods like `arrayBuffer()`. The convenience methods may only return the first buffered chunk when the underlying data is a multi-chunk stream. This applies to Workers AI responses, R2 body streams, and any other JS API that returns ReadableStream objects.
+**Lesson 1:** In Pyodide, always `.slice()` binary data from `to_js()` before passing to async JS APIs.
+
+**Lesson 2:** Never use `StreamingResponse` with async generators in Cloudflare Python Workers — the ASGI adapter silently truncates to the first yielded chunk. Use `Response` with the full body instead.
+
+**Lesson 3:** When diagnosing a data pipeline bug, trace values at **every stage boundary** (write vs. serve, not just generate vs. store). Adding a read-back verification after R2 write immediately separated "write bug" from "serve bug."

@@ -179,6 +179,13 @@ def to_js_bytes(data: bytes | bytearray | memoryview) -> Any:
     because the Pyodide FFI does not automatically convert them to a JS
     buffer type.  This helper converts explicitly via ``to_js()``.
 
+    **Critical:** ``to_js(bytes)`` creates a ``Uint8Array`` *view* into
+    Wasm linear memory — it does NOT copy the data.  If the Wasm heap
+    grows (allocations, GC) while an async operation (e.g. ``r2.put()``)
+    is in flight, the underlying ``ArrayBuffer`` becomes *detached* and
+    R2 silently writes only the first 4 KB page.  ``.slice()`` creates
+    an independent copy in the JS heap that survives memory growth.
+
     ``str`` values are accepted natively by R2 — do NOT use this helper
     for string payloads.
 
@@ -186,7 +193,8 @@ def to_js_bytes(data: bytes | bytearray | memoryview) -> Any:
     """
     if not HAS_PYODIDE:
         return data
-    return to_js(data)
+    js_view = to_js(data)
+    return js_view.slice()
 
 
 async def r2_put(r2: Any, key: str, data: Any) -> None:
