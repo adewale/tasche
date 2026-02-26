@@ -738,3 +738,25 @@ This file (`LESSONS_LEARNED.md`) accumulated stale references over time:
 **Lesson 2:** Before writing new integration tests, audit whether the behavior is already covered at another tier. In this project, every integration test was duplicated in either unit tests (error injection) or E2E tests (happy paths). The integration tier added no unique coverage — it was a maintenance burden providing false confidence.
 
 **Lesson 3:** A 334-line hand-rolled database mock is a code smell. If you need that much simulation to test something, you're either testing at the wrong tier or your code needs restructuring to be testable with simpler mocks.
+
+### 51. Deploy Without Migrations Is Deploy Without Schema
+
+Migration `0004_tag_rules.sql` (creates the `tag_rules` table) was committed alongside the code that queries it (`src/tags/rules.py`, mounted at `/api/tag-rules`). The code was deployed to staging via `pywrangler deploy`, but the migration was never applied. Result: `GET /api/tag-rules` returned 500 (table doesn't exist), which broke the Tags view — it calls both `loadTags()` and `loadRules()` on mount, and the second call failed.
+
+The bug persisted undetected because three layers of testing all missed it:
+
+1. **Backend unit tests** (`test_tag_rules.py`) — 15 tests, all using mock D1 that pattern-matches SQL strings and returns canned data. The mock never executes real SQL, so a missing table is invisible.
+2. **Frontend unit tests** (`Tags.test.jsx`) — mocks the API module (`getTagRules: vi.fn(() => Promise.resolve([]))`). No HTTP call is made.
+3. **E2E smoke tests** (`test_staging_smoke.py`) — tested `GET /api/tags` (200) but not `GET /api/tag-rules`. The smoke test suite had a coverage gap for this endpoint.
+
+The root cause is a **deployment process gap**, not a code bug. `pywrangler deploy` ships code; `wrangler d1 migrations apply` ships schema. These were two independent manual steps with no enforcement that both happened.
+
+**Fixes applied:**
+- `Makefile` deploy targets now run `wrangler d1 migrations apply` before `pywrangler deploy`, making it impossible to deploy code without applying pending migrations.
+- Added `test_tag_rules_endpoint_returns_json_array` to E2E smoke tests, so a missing table is caught on the next test run even if the migration step is somehow bypassed.
+
+**Lesson 1:** Schema migrations and code deployment must be a single atomic operation. If they're separate manual steps, they will drift. Wire migrations into the deploy command so they can't be forgotten. For D1, this means `wrangler d1 migrations apply --remote` runs before `pywrangler deploy` in every deploy target.
+
+**Lesson 2:** E2E smoke tests should cover every API endpoint that the frontend calls on page load. The Tags view calls two endpoints (`/api/tags` and `/api/tag-rules`) but the smoke tests only covered one. Any endpoint that a view hits unconditionally on mount is a candidate for a smoke test — if it returns 500, the entire view is broken.
+
+**Lesson 3:** When adding a new database table, the checklist is: (1) write the migration, (2) write the route code, (3) add a smoke test for the new endpoint, (4) deploy via the make target that applies migrations. Missing any step creates a latent failure that mocks can't detect.

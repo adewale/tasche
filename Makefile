@@ -15,9 +15,11 @@ dev:
 	uv run pywrangler dev
 
 deploy-staging:
+	npx wrangler d1 migrations apply tasche-staging-db --env staging --remote
 	uv run pywrangler deploy --env staging
 
 deploy-production:
+	npx wrangler d1 migrations apply tasche-production-db --env production --remote
 	uv run pywrangler deploy --env production
 
 frontend-lint:

@@ -48,6 +48,14 @@ class TestHealthAndRouting:
         data = resp.json()
         assert isinstance(data, list)
 
+    async def test_tag_rules_endpoint_returns_json_array(
+        self, http_client: httpx.AsyncClient
+    ) -> None:
+        resp = await http_client.get("/api/tag-rules")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+
     async def test_stats_endpoint_returns_json_object(self, http_client: httpx.AsyncClient) -> None:
         resp = await http_client.get("/api/stats")
         assert resp.status_code == 200

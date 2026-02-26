@@ -27,11 +27,12 @@ uv run ruff format src/ tests/
 # Local development (uses Miniflare for D1/R2/KV/Queues)
 uv run pywrangler dev
 
-# Deploy
-uv run pywrangler deploy --env production
+# Deploy (applies pending D1 migrations first, then deploys code)
+make deploy-staging
+make deploy-production
 ```
 
-**Important:** Use `pywrangler` (not regular `wrangler`) — regular wrangler cannot deploy Python Workers with packages. Packages are defined in `pyproject.toml`, not `requirements.txt`.
+**Important:** Use `pywrangler` (not regular `wrangler`) — regular wrangler cannot deploy Python Workers with packages. Packages are defined in `pyproject.toml`, not `requirements.txt`. Always deploy via `make deploy-*` targets so D1 migrations are applied automatically before code goes out.
 
 ## Architecture
 
