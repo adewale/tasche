@@ -829,7 +829,7 @@ flowchart TB
 | `reading_time_minutes` | INTEGER | — | Calculated at ~200 WPM |
 | `image_count` | INTEGER | — | Number of images archived |
 | `status` | TEXT | — | 'pending', 'processing', 'ready', 'failed' |
-| `reading_status` | TEXT | — | 'unread', 'reading', 'archived' |
+| `reading_status` | TEXT | — | 'unread', 'archived' |
 | `is_favorite` | INTEGER | — | 0 or 1 |
 | `audio_key` | TEXT | — | R2 path to audio.mp3 |
 | `audio_duration_seconds` | INTEGER | — | For playlist time budgeting |
@@ -1110,7 +1110,7 @@ Each screen below is a route in the SPA. The wireframes show layout structure, n
 ┌─────────────────────────────────────────────────┐
 │  Tasche                          [+Save] [⚙]    │
 ├─────────────────────────────────────────────────┤
-│  [All] [Unread] [Reading] [Archived] [♥] [🎧]  │
+│  [Unread] [🎧] [♥] [Archived]                   │
 │  ┌─────────────────────┐ ┌─────────────────────┐│
 │  │ ┌──────┐            │ │ ┌──────┐            ││
 │  │ │thumb │ Title...   │ │ │thumb │ Title...   ││
@@ -1128,10 +1128,10 @@ Each screen below is a route in the SPA. The wireframes show layout structure, n
 └─────────────────────────────────────────────────┘
 ```
 
-- Filter tabs: `All` (default), `Unread`, `Reading`, `Archived`, `♥` (favorites), `🎧` (listen later queue — articles with `audio_status = 'ready'`)
+- Filter tabs: `Unread` (default), `🎧` (listen later queue — articles with `audio_status = 'ready'`), `♥` (favorites), `Archived`
 - Each card shows: thumbnail image (from `thumbnail_key`), title, domain, reading time, tags as colored chips, favorite/audio status icons
 - Card shows processing spinner overlay when `status` is `pending` or `processing`
-- `[+Save]` opens inline form: URL input + Save button
+- `[+Save]` opens inline form: URL input + Save button + Save audio button (saves and queues TTS)
 - `[⚙]` navigates to settings/bookmarklet view
 
 **Reader View** (`#/article/:id`)
@@ -1154,7 +1154,7 @@ Each screen below is a route in the SPA. The wireframes show layout structure, n
 │  ...                                             │
 │                                                  │
 ├─────────────────────────────────────────────────┤
-│  Status: Unread · [Mark as Reading] [Archive]    │
+│  Status: Unread · [Archive]                       │
 │  Original: ✓ Available  [View Original ↗]        │
 │                                                  │
 │ ┌───────────────────────────────────────────────┐│

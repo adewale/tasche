@@ -84,10 +84,11 @@ describe('Library', () => {
     vi.clearAllMocks();
   });
 
-  it('renders save form with URL input', () => {
+  it('renders save form with URL input and both save buttons', () => {
     render(<Library />);
     expect(screen.getByPlaceholderText('Paste a URL to save...')).toBeInTheDocument();
     expect(screen.getByText('Save')).toBeInTheDocument();
+    expect(screen.getByText('Save audio')).toBeInTheDocument();
   });
 
   it('shows error toast on empty URL save', async () => {
@@ -159,6 +160,39 @@ describe('Library', () => {
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith(expect.stringContaining('already added'), 'info');
     });
+  });
+
+  it('Save audio button calls createArticle with listen_later true', async () => {
+    const user = userEvent.setup();
+    createArticle.mockResolvedValueOnce({ id: 'new-1' });
+
+    render(<Library />);
+
+    const input = screen.getByPlaceholderText('Paste a URL to save...');
+    await user.type(input, 'https://example.com');
+    await user.click(screen.getByText('Save audio'));
+
+    await waitFor(() => {
+      expect(createArticle).toHaveBeenCalledWith('https://example.com', null, true);
+      expect(addToast).toHaveBeenCalledWith(
+        'Article saved! Audio will be generated.',
+        'success',
+      );
+    });
+  });
+
+  it('disables both buttons while Save audio is in progress', async () => {
+    const user = userEvent.setup();
+    createArticle.mockImplementation(() => new Promise(() => {})); // never resolves
+
+    render(<Library />);
+
+    const input = screen.getByPlaceholderText('Paste a URL to save...');
+    await user.type(input, 'https://example.com');
+    await user.click(screen.getByText('Save audio'));
+
+    expect(screen.getByText('Save')).toBeDisabled();
+    expect(screen.getByText('Saving...')).toBeDisabled();
   });
 
   it('renders filter tabs', () => {

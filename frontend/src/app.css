@@ -513,10 +513,6 @@ textarea {
   overflow: hidden;
 }
 
-.article-card--reading {
-  border-left: 3px solid var(--text-muted);
-}
-
 .article-card--processing {
   opacity: 0.8;
 }
@@ -1490,31 +1486,29 @@ mark {
   margin-bottom: 24px;
 }
 
-.listen-toggle {
-  padding: 8px;
+.btn-save-audio {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
   border-radius: var(--radius);
-  color: var(--text-muted);
+  color: var(--text-secondary);
   border: 1px solid var(--border);
-  background: var(--bg-secondary);
-  transition: all var(--transition);
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.85rem;
+  white-space: nowrap;
   flex-shrink: 0;
 }
 
-.listen-toggle:hover {
+.btn-save-audio:hover {
   color: var(--text);
   border-color: var(--text);
-  background: var(--bg);
 }
 
-.listen-toggle--active {
-  color: var(--bg);
-  background: var(--text);
-  border-color: var(--text);
-}
-
-.listen-toggle--active:hover {
-  background: var(--text-secondary);
-  border-color: var(--text-secondary);
+.btn-save-audio:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* Empty state */
@@ -2269,10 +2263,6 @@ body.has-audio-player {
   background: var(--accent);
 }
 
-.stats-status-segment--reading {
-  background: var(--success);
-}
-
 .stats-status-segment--archived {
   background: var(--text-muted);
 }
@@ -2304,10 +2294,6 @@ body.has-audio-player {
 
 .stats-legend-dot--unread {
   background: var(--accent);
-}
-
-.stats-legend-dot--reading {
-  background: var(--success);
 }
 
 .stats-legend-dot--archived {

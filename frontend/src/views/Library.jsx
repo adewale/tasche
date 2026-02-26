@@ -69,8 +69,7 @@ function getSavedSort() {
 
 export function Library({ tag }) {
   const [saveUrl, setSaveUrl] = useState('');
-  const [listenLater, setListenLater] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [savingType, setSavingType] = useState(null); // null | 'save' | 'audio'
   const [bulkActing, setBulkActing] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   var showHelp = showShortcuts.value;
@@ -216,17 +215,17 @@ export function Library({ tag }) {
     }
   }
 
-  async function handleSave() {
-    if (saving) return;
+  async function handleSave(withAudio) {
+    if (savingType) return;
     const url = saveUrl.trim();
     if (!url) {
       addToast('Please enter a URL', 'error');
       return;
     }
 
-    setSaving(true);
+    setSavingType(withAudio ? 'audio' : 'save');
     try {
-      var result = await apiCreateArticle(url, null, listenLater);
+      var result = await apiCreateArticle(url, null, withAudio);
       if (result && result.updated) {
         var date = result.created_at ? formatDate(result.created_at) : '';
         addToast(
@@ -235,12 +234,11 @@ export function Library({ tag }) {
         );
       } else {
         addToast(
-          listenLater ? 'Article saved! Audio will be generated.' : 'Article saved!',
+          withAudio ? 'Article saved! Audio will be generated.' : 'Article saved!',
           'success',
         );
       }
       setSaveUrl('');
-      setListenLater(false);
       articles.value = [];
       offsetSignal.value = 0;
       hasMoreSignal.value = true;
@@ -254,12 +252,12 @@ export function Library({ tag }) {
         addToast(e.message, 'error');
       }
     } finally {
-      setSaving(false);
+      setSavingType(null);
     }
   }
 
   function handleKeyDown(e) {
-    if (e.key === 'Enter') handleSave();
+    if (e.key === 'Enter') handleSave(false);
   }
 
   function setFilter(key) {
@@ -394,17 +392,23 @@ export function Library({ tag }) {
                   onKeyDown={handleKeyDown}
                 />
                 <button
-                  class={'btn listen-toggle' + (listenLater ? ' listen-toggle--active' : '')}
-                  title={listenLater ? 'Audio will be generated' : 'Save & generate audio'}
+                  class="btn btn-primary"
                   onClick={function () {
-                    setListenLater(!listenLater);
+                    handleSave(false);
                   }}
-                  type="button"
+                  disabled={!!savingType}
                 >
-                  <IconHeadphones size={16} />
+                  {savingType === 'save' ? 'Saving...' : 'Save'}
                 </button>
-                <button class="btn btn-primary" onClick={handleSave} disabled={saving}>
-                  {saving ? 'Saving...' : 'Save'}
+                <button
+                  class="btn btn-save-audio"
+                  onClick={function () {
+                    handleSave(true);
+                  }}
+                  disabled={!!savingType}
+                >
+                  <IconHeadphones size={14} />
+                  {savingType === 'audio' ? 'Saving...' : 'Save audio'}
                 </button>
               </div>
             </div>
