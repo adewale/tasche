@@ -75,7 +75,6 @@ class TestGetStats:
         assert data["total_words_read"] == 0
         assert data["articles_by_status"] == {
             "unread": 0,
-            "reading": 0,
             "archived": 0,
         }
         assert data["articles_this_week"] == 0
@@ -154,7 +153,6 @@ class TestGetStats:
             if "GROUP BY reading_status" in sql:
                 return [
                     {"reading_status": "unread", "cnt": 30},
-                    {"reading_status": "reading", "cnt": 5},
                     {"reading_status": "archived", "cnt": 20},
                 ]
             if "SUM(word_count)" in sql:
@@ -178,7 +176,7 @@ class TestGetStats:
 
         assert resp.status_code == 200
         status = resp.json()["articles_by_status"]
-        assert status == {"unread": 30, "reading": 5, "archived": 20}
+        assert status == {"unread": 30, "archived": 20}
 
     async def test_top_domains(self) -> None:
         """GET /api/stats returns top domains sorted by count."""
@@ -522,7 +520,7 @@ class TestWeeklyMonthlyActivity:
 
 class TestStatsResponseStructure:
     async def test_articles_by_status_has_all_keys(self) -> None:
-        """articles_by_status always includes unread, reading, and archived keys."""
+        """articles_by_status always includes unread and archived keys."""
         env = MockEnv()
         client, sid = await _authenticated_client(env)
         resp = client.get("/api/stats", cookies={COOKIE_NAME: sid})
@@ -530,7 +528,6 @@ class TestStatsResponseStructure:
         assert resp.status_code == 200
         status = resp.json()["articles_by_status"]
         assert "unread" in status
-        assert "reading" in status
         assert "archived" in status
 
     async def test_top_domains_is_list(self) -> None:
@@ -571,7 +568,6 @@ class TestStatsResponseStructure:
             if "GROUP BY reading_status" in sql:
                 return [
                     {"reading_status": "unread", "cnt": 1},
-                    {"reading_status": "reading", "cnt": 0},
                     {"reading_status": "archived", "cnt": 0},
                 ]
             if "GROUP BY domain" in sql:

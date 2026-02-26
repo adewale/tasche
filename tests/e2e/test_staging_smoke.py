@@ -122,11 +122,11 @@ class TestArticleLifecycle:
         # 5. Update reading status — verify D1 write with None→null works
         resp = await http_client.patch(
             f"/api/articles/{article_id}",
-            json={"reading_status": "reading"},
+            json={"reading_status": "archived"},
         )
         assert resp.status_code == 200
         updated = resp.json()
-        assert updated["reading_status"] == "reading"
+        assert updated["reading_status"] == "archived"
 
         # 6. Delete article
         resp = await http_client.delete(f"/api/articles/{article_id}")

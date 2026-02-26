@@ -74,7 +74,7 @@ _LIST_COLUMNS = (
     "scroll_position, reading_progress, created_at, updated_at"
 )
 
-_VALID_READING_STATUSES = {"unread", "reading", "archived"}
+_VALID_READING_STATUSES = {"unread", "archived"}
 _VALID_STATUSES = {"pending", "processing", "ready", "failed"}
 _VALID_AUDIO_STATUSES = {"pending", "generating", "ready", "failed"}
 

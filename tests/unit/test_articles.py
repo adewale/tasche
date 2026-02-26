@@ -979,7 +979,7 @@ class TestUpdateArticle:
     async def test_updates_reading_status(self) -> None:
         """PATCH /api/articles/{id} updates reading_status and returns updated article."""
         article = ArticleFactory.create(id="art_456", user_id="user_001")
-        updated_article = {**article, "reading_status": "reading"}
+        updated_article = {**article, "reading_status": "archived"}
 
         call_count = 0
 
@@ -999,13 +999,13 @@ class TestUpdateArticle:
         client, session_id = await _authenticated_client(env)
         resp = client.patch(
             "/api/articles/art_456",
-            json={"reading_status": "reading"},
+            json={"reading_status": "archived"},
             cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
         data = resp.json()
-        assert data["reading_status"] == "reading"
+        assert data["reading_status"] == "archived"
 
     async def test_returns_404_for_missing_article(self) -> None:
         """PATCH /api/articles/{id} returns 404 when article doesn't exist."""
@@ -1015,7 +1015,7 @@ class TestUpdateArticle:
         client, session_id = await _authenticated_client(env)
         resp = client.patch(
             "/api/articles/nonexistent",
-            json={"reading_status": "reading"},
+            json={"reading_status": "archived"},
             cookies={COOKIE_NAME: session_id},
         )
 
@@ -1404,7 +1404,7 @@ class TestUpdateArticleMultipleFields:
         article = ArticleFactory.create(id="art_multi", user_id="user_001")
         updated_article = {
             **article,
-            "reading_status": "reading",
+            "reading_status": "archived",
             "is_favorite": 1,
             "reading_progress": 0.5,
         }
@@ -1427,7 +1427,7 @@ class TestUpdateArticleMultipleFields:
         resp = client.patch(
             "/api/articles/art_multi",
             json={
-                "reading_status": "reading",
+                "reading_status": "archived",
                 "is_favorite": True,
                 "reading_progress": 0.5,
             },
@@ -1436,7 +1436,7 @@ class TestUpdateArticleMultipleFields:
 
         assert resp.status_code == 200
         data = resp.json()
-        assert data["reading_status"] == "reading"
+        assert data["reading_status"] == "archived"
         assert data["is_favorite"] == 1
         assert data["reading_progress"] == 0.5
 

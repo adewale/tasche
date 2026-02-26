@@ -416,10 +416,6 @@ export function Reader({ id }) {
       }
       setContentHtml(html);
 
-      if (art.reading_status === 'unread') {
-        updateArticle(currentId, { reading_status: 'reading' }).catch(function () {});
-      }
-
       if (art.scroll_position && parseFloat(art.scroll_position) > 0) {
         setTimeout(function () {
           const pct = parseFloat(art.scroll_position);
@@ -640,7 +636,6 @@ export function Reader({ id }) {
               onChange={handleStatusChange}
             >
               <option value="unread">Unread</option>
-              <option value="reading">Reading</option>
               <option value="archived">Archived</option>
             </select>
             <button

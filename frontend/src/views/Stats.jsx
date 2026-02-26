@@ -104,15 +104,6 @@ export function Stats() {
                     title={'Unread: ' + stats.articles_by_status.unread}
                   />
                 )}
-                {stats.articles_by_status.reading > 0 && (
-                  <div
-                    class="stats-status-segment stats-status-segment--reading"
-                    style={{
-                      width: (stats.articles_by_status.reading / stats.total_articles) * 100 + '%',
-                    }}
-                    title={'Reading: ' + stats.articles_by_status.reading}
-                  />
-                )}
                 {stats.articles_by_status.archived > 0 && (
                   <div
                     class="stats-status-segment stats-status-segment--archived"
@@ -134,10 +125,6 @@ export function Stats() {
             <span class="stats-legend-item">
               <span class="stats-legend-dot stats-legend-dot--unread"></span>
               Unread: {stats.articles_by_status.unread}
-            </span>
-            <span class="stats-legend-item">
-              <span class="stats-legend-dot stats-legend-dot--reading"></span>
-              Reading: {stats.articles_by_status.reading}
             </span>
             <span class="stats-legend-item">
               <span class="stats-legend-dot stats-legend-dot--archived"></span>

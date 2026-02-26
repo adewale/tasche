@@ -57,7 +57,7 @@ async def get_stats(
         .bind(user_id)
         .all()
     )
-    articles_by_status = {"unread": 0, "reading": 0, "archived": 0}
+    articles_by_status = {"unread": 0, "archived": 0}
     for row in status_rows:
         status = row.get("reading_status", "")
         if status in articles_by_status:

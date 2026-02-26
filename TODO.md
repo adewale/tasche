@@ -9,6 +9,34 @@ The header nav (Search | Stats | Tags | Settings | Help) needs rethinking:
 - **Add active-tab indicator**: no icon currently shows which view you're on (no `aria-current`, no highlight)
 - **Mobile bottom nav**: on small screens, move primary navigation (Library, Search, Tags, Settings) to a bottom bar for thumb reachability — top header is the hardest zone to reach one-handed
 
+## Spec Gaps (Future Phases)
+
+Items described in the spec but not yet implemented.
+
+### Search Result Highlighting (Phase 10)
+
+Bold matching search terms in result titles and excerpts. The FTS5 query already returns ranked results — this is purely a frontend rendering task.
+
+- Wrap matched terms in `<mark>` tags when rendering search results
+- Handle partial word matches and stemmed variants
+
+### Media Session API Polish (Phase 10)
+
+The audio player works but lock-screen / notification controls may be incomplete.
+
+- Verify `navigator.mediaSession.metadata` is set with article title, domain, and thumbnail
+- Verify all `mediaSession.setActionHandler` callbacks (play, pause, seekbackward, seekforward, previoustrack, nexttrack) are wired
+- Test on iOS Safari, Android Chrome, and desktop browsers
+
+### Offline UI Polish (Phase 12)
+
+Service worker infrastructure exists (4 caches, background sync, offline mutations). The UI indicators and explicit save actions need work.
+
+- **"Save for offline" button**: prominent action on article cards or reader toolbar to cache content + images into OFFLINE_CACHE
+- **"Download for offline listening"**: cache audio into OFFLINE_CACHE alongside content
+- **Offline indicator**: show which articles are available offline (badge or icon on article cards)
+- **Storage usage**: display cache size in Settings so users know how much space is used
+
 ## Kindle Integration
 
 Ideas for getting articles onto Kindle devices and into the Kindle reading experience.

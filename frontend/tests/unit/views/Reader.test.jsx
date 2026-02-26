@@ -10,7 +10,7 @@ vi.mock('../../../src/api.js', () => ({
       domain: 'example.com',
       original_url: 'https://example.com/test',
       excerpt: 'An excerpt',
-      reading_status: 'reading',
+      reading_status: 'unread',
       reading_time_minutes: 5,
       is_favorite: 0,
       audio_status: null,

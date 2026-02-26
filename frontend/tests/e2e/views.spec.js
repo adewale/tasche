@@ -672,11 +672,6 @@ test.describe('Library — filter tabs', () => {
       'https://example.com/filter-unread',
       'Filter Unread',
     );
-    const reading = await createArticle(
-      request,
-      'https://example.com/filter-reading',
-      'Filter Reading',
-    );
     const archived = await createArticle(
       request,
       'https://example.com/filter-archived',
@@ -684,9 +679,6 @@ test.describe('Library — filter tabs', () => {
     );
     const fav = await createArticle(request, 'https://example.com/filter-fav', 'Filter Favourite');
 
-    await request.patch(`/api/articles/${reading.id}`, {
-      data: { reading_status: 'reading' },
-    });
     await request.patch(`/api/articles/${archived.id}`, {
       data: { reading_status: 'archived' },
     });

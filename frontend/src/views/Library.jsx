@@ -27,6 +27,7 @@ import {
 } from '../state.js';
 import {
   listArticles,
+  getArticle,
   createArticle as apiCreateArticle,
   batchUpdateArticles,
   batchDeleteArticles,
@@ -81,6 +82,8 @@ export function Library({ tag }) {
   const isLoading = loadingSignal.value;
   const moreAvailable = hasMoreSignal.value;
   const urlInputRef = useRef(null);
+  const lastLoadTimeRef = useRef(0);
+  const pollTimersRef = useRef(new Map());
 
   useEffect(() => {
     loadingSignal.value = true;
@@ -159,6 +162,29 @@ export function Library({ tag }) {
     [selectedIndex, showHelp],
   );
 
+  // Refresh article list when tab becomes visible after 30s+ away
+  useEffect(() => {
+    function handleVisibility() {
+      if (document.visibilityState === 'visible' && Date.now() - lastLoadTimeRef.current > 30000) {
+        loadArticles(true);
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentFilter, tag, currentSort]);
+
+  // Cleanup all poll timers on unmount
+  useEffect(() => {
+    var timers = pollTimersRef.current;
+    return () => {
+      for (const timer of timers.values()) {
+        clearInterval(timer.intervalId);
+      }
+      timers.clear();
+    };
+  }, []);
+
   // Scroll selected card into view
   useEffect(() => {
     if (selectedIndex < 0) return;
@@ -200,6 +226,8 @@ export function Library({ tag }) {
       offsetSignal.value = currentOffset + result.length;
       hasMoreSignal.value = result.length >= limitSignal.value;
 
+      lastLoadTimeRef.current = Date.now();
+
       const unreadIds = result
         .filter(function (a) {
           return a.reading_status === 'unread';
@@ -213,6 +241,42 @@ export function Library({ tag }) {
     } finally {
       loadingSignal.value = false;
     }
+  }
+
+  function stopAudioPoll(articleId) {
+    var timer = pollTimersRef.current.get(articleId);
+    if (timer) {
+      clearInterval(timer.intervalId);
+      pollTimersRef.current.delete(articleId);
+    }
+  }
+
+  function startAudioPoll(articleId) {
+    if (pollTimersRef.current.has(articleId)) return;
+    var startTime = Date.now();
+    var intervalId = setInterval(async () => {
+      if (Date.now() - startTime > 60000) {
+        stopAudioPoll(articleId);
+        return;
+      }
+      try {
+        var article = await getArticle(articleId);
+        if (article.audio_status === 'ready' || article.audio_status === 'failed') {
+          articles.value = articles.value.map(function (a) {
+            return a.id === articleId ? { ...a, ...article } : a;
+          });
+          if (article.audio_status === 'ready') {
+            addToast('Audio is ready!', 'success');
+          } else {
+            addToast('Audio generation failed', 'error');
+          }
+          stopAudioPoll(articleId);
+        }
+      } catch (_e) {
+        // Network error — keep polling until timeout
+      }
+    }, 5000);
+    pollTimersRef.current.set(articleId, { intervalId, startTime });
   }
 
   async function handleSave(withAudio) {
@@ -243,6 +307,9 @@ export function Library({ tag }) {
       offsetSignal.value = 0;
       hasMoreSignal.value = true;
       loadArticles(true);
+      if (withAudio && result && result.id) {
+        startAudioPoll(result.id);
+      }
     } catch (e) {
       if (isOffline.value) {
         queueOfflineMutation('/api/articles', 'POST', { url: url });

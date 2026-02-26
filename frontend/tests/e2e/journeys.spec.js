@@ -96,9 +96,6 @@ test.describe('Reader — change reading status', () => {
     const statusSelect = page.locator('select.input-inline-select');
     await expect(statusSelect).toBeVisible({ timeout: 5000 });
 
-    // Wait for auto-set to "reading" to settle on the server before changing
-    await page.waitForTimeout(1500);
-
     // Change to "archived"
     await statusSelect.selectOption('archived');
 

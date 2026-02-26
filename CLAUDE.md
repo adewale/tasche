@@ -78,7 +78,7 @@ Wide events pattern: emit one JSON log line per request (not many small lines). 
 ## Key Conventions
 
 - **FFI boundary:** All JS↔Python conversion happens in `src/wrappers.py`. Use `d1_first()` for `.first()` results, `d1_rows()` for `.all()` results, `_to_js_value()` for Python→JS, `_to_py_safe()` for JS→Python. Never expose JsProxy to business logic.
-- **Status enums:** `reading_status`: unread/reading/archived. `audio_status`: pending/generating/ready/failed. `article.status`: pending/processing/ready/failed. These match D1 CHECK constraints exactly.
+- **Status enums:** `reading_status`: unread/archived. `audio_status`: pending/generating/ready/failed. `article.status`: pending/processing/ready/failed. These match D1 CHECK constraints exactly.
 - **IDs:** `secrets.token_urlsafe(16)` for article/tag IDs, `secrets.token_urlsafe(32)` for session IDs.
 - **Timestamps:** `datetime.now(UTC).isoformat()` everywhere.
 - **R2 keys:** `articles/{article_id}/{suffix}` (e.g., `content.html`, `content.md`, `audio.mp3`, `thumbnail.webp`). Helper: `articles.storage.article_key()`.

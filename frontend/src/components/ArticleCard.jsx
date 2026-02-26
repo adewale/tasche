@@ -21,7 +21,6 @@ const tagCache = new Map();
 export function ArticleCard({ article, onDelete, selectMode, selected, onToggleSelect }) {
   const a = article;
   const readingTime = a.reading_time_minutes ? a.reading_time_minutes + ' min read' : '';
-  const statusClass = a.reading_status || 'unread';
   const isFav = a.is_favorite;
   const progress = a.reading_progress ? parseFloat(a.reading_progress) : 0;
   const isProcessing = a.status === 'pending' || a.status === 'processing';
@@ -130,7 +129,6 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
   if (isProcessing) cardClass += ' article-card--processing';
   if (selectMode) cardClass += ' article-card--selectable';
   if (selected) cardClass += ' article-card--checked';
-  if (statusClass === 'reading') cardClass += ' article-card--reading';
 
   return (
     // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
