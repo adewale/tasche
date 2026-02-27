@@ -469,7 +469,7 @@ export function Reader({ id }) {
   }
 
   function handlePlayAudio() {
-    playAudio(id, article ? article.title : '');
+    playAudio(id, article ? article.title : '', article ? article.domain : '', article ? article.thumbnail_key : null);
   }
 
   async function handleDelete() {

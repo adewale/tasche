@@ -98,7 +98,7 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
 
   function handlePlayAudio(e) {
     e.stopPropagation();
-    playAudio(a.id, a.title || '');
+    playAudio(a.id, a.title || '', a.domain || '', a.thumbnail_key);
   }
 
   function handleArchiveToggle(e) {

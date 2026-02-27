@@ -21,11 +21,13 @@ export function getAudio() {
   return audioEl;
 }
 
-export function playAudio(articleId, title) {
+export function playAudio(articleId, title, domain, thumbnailKey) {
   const audio = getAudio();
   audioState.value = {
     articleId,
     articleTitle: title || 'Untitled',
+    articleDomain: domain || '',
+    articleThumbnail: thumbnailKey ? '/api/articles/' + articleId + '/thumbnail' : null,
     isPlaying: true,
     visible: true,
   };
@@ -52,6 +54,13 @@ export function AudioPlayer() {
     function onTimeUpdate() {
       setCurrentTime(audio.currentTime);
       setDuration(audio.duration || 0);
+      if ('mediaSession' in navigator && audio.duration > 0 && isFinite(audio.duration)) {
+        navigator.mediaSession.setPositionState({
+          duration: audio.duration,
+          playbackRate: audio.playbackRate,
+          position: audio.currentTime,
+        });
+      }
     }
 
     function onPlay() {
@@ -78,9 +87,14 @@ export function AudioPlayer() {
     setDuration(audio.duration || 0);
 
     if ('mediaSession' in navigator) {
+      var artwork = state.articleThumbnail
+        ? [{ src: state.articleThumbnail, sizes: '512x512', type: 'image/webp' }]
+        : [];
       navigator.mediaSession.metadata = new MediaMetadata({
         title: state.articleTitle || 'Untitled',
-        artist: 'Tasche',
+        artist: state.articleDomain || 'Tasche',
+        album: 'Tasche',
+        artwork: artwork,
       });
 
       navigator.mediaSession.setActionHandler('play', function () {
@@ -94,6 +108,9 @@ export function AudioPlayer() {
       });
       navigator.mediaSession.setActionHandler('seekforward', function () {
         audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + 15);
+      });
+      navigator.mediaSession.setActionHandler('seekto', function (details) {
+        audio.currentTime = details.seekTime;
       });
     }
 

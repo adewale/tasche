@@ -13,29 +13,17 @@ The header nav (Search | Stats | Tags | Settings | Help) needs rethinking:
 
 Items described in the spec but not yet implemented.
 
-### Search Result Highlighting (Phase 10)
+### ~~Search Result Highlighting (Phase 10)~~ — Done
 
-Bold matching search terms in result titles and excerpts. The FTS5 query already returns ranked results — this is purely a frontend rendering task.
+Implemented: `HighlightedText` component in `Search.jsx`, `highlightTerms()` in `utils.js`, `<mark>` CSS with light/dark mode support.
 
-- Wrap matched terms in `<mark>` tags when rendering search results
-- Handle partial word matches and stemmed variants
+### ~~Media Session API Polish (Phase 10)~~ — Done
 
-### Media Session API Polish (Phase 10)
+Implemented: MediaMetadata with title, domain (artist), album, and thumbnail artwork. Position state updates for lock-screen progress bar. Action handlers: play, pause, seekbackward, seekforward, seekto.
 
-The audio player works but lock-screen / notification controls may be incomplete.
+### ~~Offline UI Polish (Phase 12)~~ — Done
 
-- Verify `navigator.mediaSession.metadata` is set with article title, domain, and thumbnail
-- Verify all `mediaSession.setActionHandler` callbacks (play, pause, seekbackward, seekforward, previoustrack, nexttrack) are wired
-- Test on iOS Safari, Android Chrome, and desktop browsers
-
-### Offline UI Polish (Phase 12)
-
-Service worker infrastructure exists (4 caches, background sync, offline mutations). The UI indicators and explicit save actions need work.
-
-- **"Save for offline" button**: prominent action on article cards or reader toolbar to cache content + images into OFFLINE_CACHE
-- **"Download for offline listening"**: cache audio into OFFLINE_CACHE alongside content
-- **Offline indicator**: show which articles are available offline (badge or icon on article cards)
-- **Storage usage**: display cache size in Settings so users know how much space is used
+Implemented: "Save for offline" and "Download audio" buttons in Reader, offline indicator (checkmark) on article cards, cache stats in Settings, auto-precache toggle, offline bar in Header, background sync, LRU eviction (100 articles max).
 
 ## Kindle Integration
 
