@@ -42,6 +42,18 @@ export async function request(method, path, body) {
   return resp;
 }
 
+// Health (unauthenticated — uses plain fetch, not request())
+export function getHealthConfig() {
+  return fetch('/api/health/config')
+    .then(function (resp) {
+      if (!resp.ok) throw new Error('Health check failed');
+      return resp.json();
+    })
+    .catch(function () {
+      return { status: 'error', checks: [] };
+    });
+}
+
 // Auth
 export function getSession() {
   return request('GET', '/api/auth/session');

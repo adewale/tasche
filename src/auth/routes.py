@@ -28,6 +28,27 @@ from wrappers import http_fetch
 router = APIRouter()
 
 GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
+
+
+def _get_site_url(env: object, request: Request) -> str:
+    """Resolve SITE_URL from config or auto-detect from request Host header.
+
+    When SITE_URL is not configured or still contains the deploy-button
+    placeholder (``<your-subdomain>``), falls back to building the URL
+    from the incoming request's ``Host`` header and scheme.
+    """
+    site_url = env.get("SITE_URL", "")
+    if not site_url or "<your-subdomain>" in site_url:
+        host = request.headers.get("host", "")
+        scheme = (
+            "https"
+            if request.headers.get("x-forwarded-proto") == "https" or request.url.scheme == "https"
+            else "http"
+        )
+        site_url = f"{scheme}://{host}"
+    return site_url.rstrip("/")
+
+
 GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
 GITHUB_USER_URL = "https://api.github.com/user"
 GITHUB_USER_EMAILS_URL = "https://api.github.com/user/emails"
@@ -43,7 +64,7 @@ async def login(request: Request) -> RedirectResponse:
     client_id = env.get("GITHUB_CLIENT_ID", "")
     if not client_id:
         raise HTTPException(status_code=500, detail="GITHUB_CLIENT_ID is not configured")
-    site_url = env.get("SITE_URL", "")
+    site_url = _get_site_url(env, request)
     redirect_uri = f"{site_url}/api/auth/callback"
 
     # Generate CSRF state token and store in KV with 10-minute TTL
@@ -84,7 +105,7 @@ async def callback(request: Request) -> RedirectResponse:
     client_secret = env.get("GITHUB_CLIENT_SECRET", "")
     if not client_secret:
         raise HTTPException(status_code=500, detail="GITHUB_CLIENT_SECRET is not configured")
-    site_url = env.get("SITE_URL", "")
+    site_url = _get_site_url(env, request)
     redirect_uri = f"{site_url}/api/auth/callback"
 
     # --- Exchange code for access token ---
@@ -227,7 +248,7 @@ async def logout(request: Request) -> Response:
     if session_id:
         await delete_session(env.SESSIONS, session_id)
 
-    is_secure = env.get("SITE_URL", "").startswith("https://")
+    is_secure = _get_site_url(env, request).startswith("https://")
     response = Response(status_code=200)
     response.delete_cookie(
         key=COOKIE_NAME,

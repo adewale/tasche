@@ -1,0 +1,29 @@
+{
+  "name": "tasche",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "cd frontend && npm install && npm run build",
+    "deploy": "npx wrangler d1 migrations apply DB --remote && npx pywrangler deploy",
+    "db:migrate": "npx wrangler d1 migrations apply DB --remote"
+  },
+  "cloudflare": {
+    "bindings": {
+      "GITHUB_CLIENT_ID": {
+        "description": "GitHub OAuth App **Client ID**. Create one at [github.com/settings/developers](https://github.com/settings/developers). Set the Callback URL to `<your-worker-url>/api/auth/callback`."
+      },
+      "GITHUB_CLIENT_SECRET": {
+        "description": "GitHub OAuth App **Client Secret** from the same OAuth App."
+      },
+      "ALLOWED_EMAILS": {
+        "description": "Your GitHub email address (the one you log in with). Comma-separated for multiple users."
+      },
+      "CF_ACCOUNT_ID": {
+        "description": "*(Optional)* Cloudflare Account ID — enables Browser Rendering for JS-heavy pages. Find it on the Workers dashboard sidebar."
+      },
+      "CF_API_TOKEN": {
+        "description": "*(Optional)* Cloudflare API token — enables Browser Rendering. Create at dash.cloudflare.com/profile/api-tokens."
+      }
+    }
+  }
+}

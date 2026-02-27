@@ -111,7 +111,7 @@ async def health_config(request: Request) -> dict:
         ("AI", True, "Workers AI binding for TTS"),
     ]
     _VARS = [
-        ("SITE_URL", True, "Base URL for auth callbacks and bookmarklet"),
+        ("SITE_URL", False, "Base URL for auth callbacks (auto-detected if empty)"),
         ("ALLOWED_EMAILS", True, "Comma-separated list of allowed emails"),
         ("GITHUB_CLIENT_ID", True, "GitHub OAuth app client ID"),
         ("GITHUB_CLIENT_SECRET", True, "GitHub OAuth app client secret"),

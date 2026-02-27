@@ -1,4 +1,12 @@
 # GitHub OAuth credentials (required)
 # Create at https://github.com/settings/developers
+# Set Callback URL to: <your-worker-url>/api/auth/callback
 GITHUB_CLIENT_ID=your_github_client_id
 GITHUB_CLIENT_SECRET=your_github_client_secret
+
+# Your GitHub email for login (required)
+ALLOWED_EMAILS=your@email.com
+
+# Browser Rendering (optional — enables JS-heavy page screenshots)
+# CF_ACCOUNT_ID=your_account_id
+# CF_API_TOKEN=your_api_token

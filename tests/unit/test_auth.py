@@ -15,7 +15,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.auth.dependencies import get_current_user
-from src.auth.routes import OAUTH_STATE_PREFIX, router
+from src.auth.routes import OAUTH_STATE_PREFIX, _get_site_url, router
 from src.auth.session import (
     _REFRESH_INTERVAL,
     COOKIE_NAME,
@@ -413,6 +413,86 @@ class TestAllowedEmailsParsing:
     def test_ignores_empty_entries(self) -> None:
         result = parse_allowed_emails("a@b.com,,c@d.com,")
         assert result == {"a@b.com", "c@d.com"}
+
+
+# =========================================================================
+# _get_site_url helper (src/auth/routes.py)
+# =========================================================================
+
+
+class _FakeURL:
+    """Minimal stand-in for Starlette's URL with a scheme attribute."""
+
+    def __init__(self, scheme: str = "https") -> None:
+        self.scheme = scheme
+
+
+class _FakeRequest:
+    """Minimal request-like object for testing _get_site_url."""
+
+    def __init__(self, headers: dict[str, str] | None = None, scheme: str = "https") -> None:
+        self.headers = headers or {}
+        self.url = _FakeURL(scheme)
+
+
+class TestGetSiteUrl:
+    def test_site_url_returns_configured_value(self) -> None:
+        """When SITE_URL is set to a real URL, returns it unchanged."""
+        env = MockEnv(site_url="https://tasche.example.com")
+        from src.wrappers import SafeEnv
+
+        safe_env = SafeEnv(env)
+        request = _FakeRequest(headers={"host": "other.example.com"})
+        result = _get_site_url(safe_env, request)
+        assert result == "https://tasche.example.com"
+
+    def test_site_url_auto_detects_from_host_header(self) -> None:
+        """When SITE_URL is empty, returns https://{host} from request."""
+        env = MockEnv(site_url="")
+        from src.wrappers import SafeEnv
+
+        safe_env = SafeEnv(env)
+        request = _FakeRequest(
+            headers={"host": "my-app.workers.dev", "x-forwarded-proto": "https"},
+        )
+        result = _get_site_url(safe_env, request)
+        assert result == "https://my-app.workers.dev"
+
+    def test_site_url_auto_detects_when_placeholder(self) -> None:
+        """When SITE_URL contains <your-subdomain>, auto-detects from host."""
+        env = MockEnv(site_url="https://<your-subdomain>.workers.dev")
+        from src.wrappers import SafeEnv
+
+        safe_env = SafeEnv(env)
+        request = _FakeRequest(
+            headers={"host": "tasche.adewale-883.workers.dev", "x-forwarded-proto": "https"},
+        )
+        result = _get_site_url(safe_env, request)
+        assert result == "https://tasche.adewale-883.workers.dev"
+
+    def test_site_url_strips_trailing_slash(self) -> None:
+        """Ensures no trailing slash on configured or auto-detected URLs."""
+        env = MockEnv(site_url="https://tasche.example.com/")
+        from src.wrappers import SafeEnv
+
+        safe_env = SafeEnv(env)
+        request = _FakeRequest(headers={"host": "other.example.com"})
+        result = _get_site_url(safe_env, request)
+        assert result == "https://tasche.example.com"
+        assert not result.endswith("/")
+
+    def test_site_url_uses_http_when_no_https_indicators(self) -> None:
+        """When neither x-forwarded-proto nor scheme is https, uses http."""
+        env = MockEnv(site_url="")
+        from src.wrappers import SafeEnv
+
+        safe_env = SafeEnv(env)
+        request = _FakeRequest(
+            headers={"host": "localhost:8787"},
+            scheme="http",
+        )
+        result = _get_site_url(safe_env, request)
+        assert result == "http://localhost:8787"
 
 
 # =========================================================================

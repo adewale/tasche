@@ -28,6 +28,7 @@ htmlcov/
 node_modules/
 package-lock.json
 !frontend/package-lock.json
+!/package-lock.json
 
 # Pyodide / pywrangler dependency cache
 python_modules/

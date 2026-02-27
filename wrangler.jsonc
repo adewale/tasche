@@ -10,9 +10,8 @@
   // Required secrets (set via `pywrangler secret put`):
   // - GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET (GitHub OAuth)
   // - CF_ACCOUNT_ID, CF_API_TOKEN (Browser Rendering REST API)
-  "vars": { "DISABLE_AUTH": "true", "ALLOWED_EMAILS": "", "SITE_URL": "https://tasche.<your-subdomain>.workers.dev" },
+  "vars": { "ALLOWED_EMAILS": "", "SITE_URL": "" },
   "ai": { "binding": "AI" },
-  "services": [{ "binding": "READABILITY", "service": "readability-worker", "entrypoint": "ReadabilityService" }],
   "d1_databases": [{ "binding": "DB", "database_name": "tasche-db", "database_id": "7f0dfc00-1891-4d8a-9876-03dbd8cf6804" }],
   "r2_buckets": [{ "binding": "CONTENT", "bucket_name": "tasche-content" }],
   "kv_namespaces": [{ "binding": "SESSIONS", "id": "7ca9ebd65b3e40638ec32f5c635483de" }],

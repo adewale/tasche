@@ -73,11 +73,20 @@ Monochrome. Colour reserved for semantic meaning only.
 | `--accent` | `#1d1d1f` | Interactive colour (= text) |
 | `--link` | `#1d1d1f` | Links (underlined, not coloured) |
 
-### Semantic colours (minimal use)
+### Semantic colours (desaturated, minimal use)
 
-- `--danger` / `--success` / `--warning` — toast 3px stripes and status badges only
+Semantic colours are desaturated to ~25-30% saturation so they register with
+the same visual weight as the monochrome greys. They read as tinted greys, not
+vivid markers.
+
+| Variable | Light | Dark | Purpose |
+|----------|-------|------|---------|
+| `--danger` | `#915550` | `#b89490` | Error toasts, delete actions |
+| `--success` | `#527a5c` | `#85a88e` | Success toasts |
+| `--warning` | `#907040` | `#b09870` | Warning toasts, search marks |
+
 - Highlight colours (yellow, green, blue, pink) — reader annotations only
-- Status badge colours (`--status-*`) — functional semantic information
+- Status badge colours (`--status-*`) — desaturated functional badges
 
 ## Type Scale
 
