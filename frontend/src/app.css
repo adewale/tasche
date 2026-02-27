@@ -46,6 +46,7 @@
   --status-dead-border: #e3dcdb;
   --mark-bg: var(--warning);
   --mark-text: #000;
+  --crosshatch-stroke: rgba(29, 29, 31, 0.15);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -84,6 +85,7 @@
     --status-dead-border: #3d3535;
     --mark-bg: #504020;
     --mark-text: #d0b880;
+    --crosshatch-stroke: rgba(245, 245, 247, 0.2);
   }
 }
 
@@ -122,6 +124,7 @@
   --status-dead-border: #3d3535;
   --mark-bg: #504020;
   --mark-text: #d0b880;
+  --crosshatch-stroke: rgba(245, 245, 247, 0.2);
 }
 
 /* Reset */
@@ -627,26 +630,28 @@ textarea {
 .processing-overlay {
   position: absolute;
   inset: 0;
-  background: var(--overlay-bg);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
   z-index: 10;
+  pointer-events: none;
   border-radius: var(--radius);
+  background:
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 7px,
+      var(--crosshatch-stroke) 7px,
+      var(--crosshatch-stroke) 8px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 7px,
+      var(--crosshatch-stroke) 7px,
+      var(--crosshatch-stroke) 8px
+    );
 }
 
-.processing-overlay .spinner {
-  width: 28px;
-  height: 28px;
-  border-color: rgba(255, 255, 255, 0.3); /* spinner track — intentionally subtle */
-  border-top-color: var(--text-on-color);
-}
-
-.processing-overlay-text {
-  /* Hidden — spinner alone conveys the state (Tuftean data-ink ratio) */
-  display: none;
+.article-card--processing {
+  filter: saturate(0.3);
 }
 
 .article-card-title {

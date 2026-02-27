@@ -43,18 +43,6 @@ async function createArticle(request, url, title) {
   return body;
 }
 
-async function waitForReady(request, articleId) {
-  for (let i = 0; i < 30; i++) {
-    const resp = await request.get(`/api/articles/${articleId}`);
-    if (resp.ok()) {
-      const art = await resp.json();
-      if (art.status === 'ready') return art;
-    }
-    await new Promise((r) => setTimeout(r, 500));
-  }
-  throw new Error(`Article ${articleId} did not become ready in time`);
-}
-
 // ---------------------------------------------------------------------------
 // Library: Save button loading state
 // ---------------------------------------------------------------------------
@@ -157,7 +145,7 @@ test('Reader — Listen Later button shows "Requesting..." while submitting', as
     'https://example.com/listen-test-' + Date.now(),
     'Listen Test',
   );
-  await waitForReady(request, article.id);
+  await request.post(`/api/articles/${article.id}/process-now`);
 
   await page.goto(`/#/article/${article.id}`);
   await page.waitForSelector('.reader-title');
@@ -183,7 +171,7 @@ test('Reader — Delete button shows "Deleting..." while removing', async ({ pag
     'https://example.com/delete-test-' + Date.now(),
     'Delete Test',
   );
-  await waitForReady(request, article.id);
+  await request.post(`/api/articles/${article.id}/process-now`);
 
   await page.goto(`/#/article/${article.id}`);
   await page.waitForSelector('.reader-title');
@@ -212,7 +200,7 @@ test('Reader — Retry button shows "Retrying..." while reprocessing', async ({ 
     'https://example.com/retry-test-' + Date.now(),
     'Retry Test',
   );
-  await waitForReady(request, article.id);
+  await request.post(`/api/articles/${article.id}/process-now`);
 
   await page.goto(`/#/article/${article.id}`);
   await page.waitForSelector('.reader-title');

@@ -131,13 +131,15 @@ describe('ArticleCard', () => {
   });
 
   it('shows processing overlay for pending articles', () => {
-    render(<ArticleCard article={makeArticle({ status: 'pending' })} />);
-    expect(screen.getByText('Saving...')).toBeInTheDocument();
+    const { container } = render(<ArticleCard article={makeArticle({ status: 'pending' })} />);
+    expect(container.querySelector('.processing-overlay')).toBeInTheDocument();
+    expect(container.querySelector('.article-card--processing')).toBeInTheDocument();
   });
 
   it('shows processing overlay for processing articles', () => {
-    render(<ArticleCard article={makeArticle({ status: 'processing' })} />);
-    expect(screen.getByText('Processing...')).toBeInTheDocument();
+    const { container } = render(<ArticleCard article={makeArticle({ status: 'processing' })} />);
+    expect(container.querySelector('.processing-overlay')).toBeInTheDocument();
+    expect(container.querySelector('.article-card--processing')).toBeInTheDocument();
   });
 
   it('renders excerpt', () => {

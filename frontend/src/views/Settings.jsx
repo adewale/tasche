@@ -91,6 +91,7 @@ export function Settings() {
               onClick={handleToggleAutoCache}
               role="switch"
               aria-checked={autoCacheEnabled.value}
+              aria-label="Auto-cache articles for offline"
             >
               <span class="settings-toggle-knob" />
             </button>

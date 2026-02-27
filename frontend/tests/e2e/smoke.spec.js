@@ -168,7 +168,7 @@ test.describe('Tags', () => {
     await page.locator('.input-group .btn-primary').click();
 
     // Wait for the tag to appear in the list
-    await expect(page.locator('.tag-row-name')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('.tag-row-name').filter({ hasText: tagName })).toBeVisible({ timeout: 5000 });
 
     // Clean up via API (tags list is a plain array)
     const listResp = await request.get('/api/tags');

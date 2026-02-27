@@ -133,12 +133,7 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
     // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
     <div class={cardClass} onClick={handleClick}>
       {isProcessing && (
-        <div class="processing-overlay">
-          <div class="spinner"></div>
-          <span class="processing-overlay-text">
-            {a.status === 'pending' ? 'Saving...' : 'Processing...'}
-          </span>
-        </div>
+        <div class="processing-overlay"></div>
       )}
       <div class="article-card-body">
         {selectMode && (

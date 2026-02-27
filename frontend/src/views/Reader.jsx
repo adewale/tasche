@@ -683,6 +683,7 @@ export function Reader({ id }) {
               class="input input-inline-select"
               value={statusClass}
               onChange={handleStatusChange}
+              aria-label="Reading status"
             >
               <option value="unread">Unread</option>
               <option value="archived">Archived</option>

@@ -12,8 +12,8 @@
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
   <link rel="apple-touch-icon" href="/static/icon-192.png">
-  <script type="module" crossorigin src="/assets/index-C3ADLUBA.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-Ds76Zqt7.css">
+  <script type="module" crossorigin src="/assets/index-irG__r8v.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-Bmp3LhIT.css">
 </head>
 <body>
   <div id="app">
@@ -27,8 +27,26 @@
       window.addEventListener('load', function () {
         navigator.serviceWorker.register('/sw.js').then(function (reg) {
           console.log('Service Worker registered:', reg.scope);
+
+          // Detect SW updates and reload cleanly (#4)
+          reg.addEventListener('updatefound', function () {
+            var newWorker = reg.installing;
+            if (!newWorker) return;
+            newWorker.addEventListener('statechange', function () {
+              if (newWorker.state === 'activated') {
+                // New SW has activated — reload to use fresh assets
+                window.location.reload();
+              }
+            });
+          });
         }).catch(function (err) {
           console.warn('Service Worker registration failed:', err);
+        });
+
+        // When a new SW takes over via skipWaiting + clients.claim,
+        // reload to avoid half-old-half-new state (#4)
+        navigator.serviceWorker.addEventListener('controllerchange', function () {
+          window.location.reload();
         });
       });
     }

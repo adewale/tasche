@@ -1,3 +1,4 @@
+import { useEffect } from 'preact/hooks';
 import { IconX } from './Icons.jsx';
 
 var LIBRARY_SHORTCUTS = [
@@ -38,6 +39,17 @@ function ShortcutRow({ shortcut }) {
 }
 
 export function KeyboardShortcutsHelp({ onClose }) {
+  useEffect(function () {
+    function handleEscape(e) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    }
+    window.addEventListener('keydown', handleEscape);
+    return function () { window.removeEventListener('keydown', handleEscape); };
+  }, [onClose]);
+
   function handleOverlayClick(e) {
     if (e.target === e.currentTarget) {
       onClose();

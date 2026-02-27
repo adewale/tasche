@@ -54,21 +54,22 @@ async function createTag(request, name) {
 // ---------------------------------------------------------------------------
 // Reader view: toggle favorite
 // ---------------------------------------------------------------------------
-test.describe('Reader — toggle favorite', () => {
-  test('favorite button toggles state in reader view', async ({ page, request }) => {
+test.describe('Reader — toggle favourite', () => {
+  test('favourite button toggles state in reader view', async ({ page, request }) => {
     const { id } = await createArticle(request, 'https://example.com/fav-test', 'Fav Test');
+    await request.post(`/api/articles/${id}/process-now`);
 
     await page.goto(`/#/article/${id}`);
     await expect(page.locator('.reader-header')).toBeVisible({ timeout: 10000 });
 
-    // Initially should be un-favorited (btn-secondary, text "Favorite")
-    const favBtn = page.locator('.reader-actions button').filter({ hasText: 'Favorite' }).first();
+    // Initially should be un-favourited (btn-secondary, text "Favourite")
+    const favBtn = page.locator('.reader-actions button').filter({ hasText: 'Favourite' }).first();
     await expect(favBtn).toBeVisible({ timeout: 5000 });
     await expect(favBtn).toHaveClass(/btn-secondary/);
 
-    // Click to favorite
+    // Click to favourite
     await favBtn.click();
-    await expect(favBtn).toHaveText(/Favorited/, { timeout: 5000 });
+    await expect(favBtn).toHaveText(/Favourited/, { timeout: 5000 });
     await expect(favBtn).toHaveClass(/btn-primary/);
 
     // Verify via API
@@ -76,9 +77,9 @@ test.describe('Reader — toggle favorite', () => {
     const article = await getResp.json();
     expect(article.is_favorite).toBeTruthy();
 
-    // Click again to un-favorite
+    // Click again to un-favourite
     await favBtn.click();
-    await expect(favBtn).toHaveText(/Favorite/, { timeout: 5000 });
+    await expect(favBtn).toHaveText(/Favourite/, { timeout: 5000 });
     await expect(favBtn).toHaveClass(/btn-secondary/);
   });
 });
@@ -280,7 +281,7 @@ test.describe('Reader — tag management via UI', () => {
 // Library: favorite toggle from article card
 // ---------------------------------------------------------------------------
 test.describe('Library — card actions', () => {
-  test('favorite button on card toggles favorite state', async ({ page, request }) => {
+  test('favourite button on card toggles favourite state', async ({ page, request }) => {
     const { id } = await createArticle(
       request,
       'https://example.com/card-fav-test',
@@ -299,10 +300,10 @@ test.describe('Library — card actions', () => {
       const favBtn = card.locator('.fav-btn');
       await expect(favBtn).toBeVisible();
 
-      // Should not be favorited initially
+      // Should not be favourited initially
       await expect(favBtn).not.toHaveClass(/favorited/);
 
-      // Click to favorite
+      // Click to favourite
       await favBtn.click();
       await expect(favBtn).toHaveClass(/favorited/, { timeout: 5000 });
 

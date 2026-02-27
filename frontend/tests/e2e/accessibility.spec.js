@@ -36,18 +36,6 @@ async function createArticle(request, url, title) {
   return body;
 }
 
-async function waitForReady(request, articleId) {
-  for (let i = 0; i < 30; i++) {
-    const resp = await request.get(`/api/articles/${articleId}`);
-    if (resp.ok()) {
-      const art = await resp.json();
-      if (art.status === 'ready') return art;
-    }
-    await new Promise((r) => setTimeout(r, 500));
-  }
-  throw new Error(`Article ${articleId} did not become ready in time`);
-}
-
 /**
  * Run axe-core scan and return only critical violations.
  * @param {import('@playwright/test').Page} page
@@ -82,7 +70,7 @@ test('Reader view has no critical a11y violations', async ({ page, request }) =>
     'https://example.com/a11y-reader-' + Date.now(),
     'A11y Reader Test',
   );
-  await waitForReady(request, article.id);
+  await request.post(`/api/articles/${article.id}/process-now`);
 
   await page.goto(`/#/article/${article.id}`);
   await page.waitForSelector('.reader-title');

@@ -356,6 +356,7 @@ export function Tags() {
               onChange={function (e) {
                 setRuleTagId(e.target.value);
               }}
+              aria-label="Select tag"
             >
               <option value="">Select tag...</option>
               {tagList.map(function (t) {
@@ -372,6 +373,7 @@ export function Tags() {
               onChange={function (e) {
                 setRuleMatchType(e.target.value);
               }}
+              aria-label="Match type"
             >
               <option value="domain">Domain</option>
               <option value="title_contains">Title Contains</option>

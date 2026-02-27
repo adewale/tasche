@@ -499,6 +499,7 @@ export function Library({ tag }) {
                 class="input input-inline-select"
                 value={currentSort}
                 onChange={handleSortChange}
+                aria-label="Sort articles"
               >
                 {SORT_OPTIONS.map(function (opt) {
                   return (
