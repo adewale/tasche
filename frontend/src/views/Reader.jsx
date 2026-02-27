@@ -365,20 +365,21 @@ export function Reader({ id }) {
       audio.addEventListener('timeupdate', onTimeUpdate);
       audio.addEventListener('ended', onEnded);
 
+      var contentEl = contentRef.current;
       return function () {
         cancelled = true;
         audio.removeEventListener('timeupdate', onTimeUpdate);
         audio.removeEventListener('ended', onEnded);
         // Clean up highlights on unmount
-        if (sentenceWrappedRef.current && contentRef.current) {
-          unwrapSentences(contentRef.current);
+        if (sentenceWrappedRef.current && contentEl) {
+          unwrapSentences(contentEl);
           sentenceWrappedRef.current = false;
           prevSentenceRef.current = -1;
           timingRef.current = null;
         }
       };
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- signal .value deps are valid in Preact
     [id, audioState.value.articleId, audioState.value.visible, readerPrefs.value.contentMode],
   );
 

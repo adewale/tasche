@@ -75,7 +75,7 @@ Initial release of Tasche — a self-hosted read-it-later service on Cloudflare 
 - TTS queue processor verifies article ownership via `user_id`
 
 **Testing**
-- 239 unit tests passing
+- Unit test suite passing
 - Lint clean (`ruff check`)
 
 ### Spec

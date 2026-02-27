@@ -202,7 +202,8 @@ class TestGetCurrentUser:
         env = MockEnv()
         app = _make_app_with_env(env)
         client = TestClient(app)
-        resp = client.get("/me", cookies={COOKIE_NAME: "bogus_session_id"})
+        client.cookies.set(COOKIE_NAME, "bogus_session_id")
+        resp = client.get("/me")
         assert resp.status_code == 401
 
     async def test_returns_user_data_with_valid_session(self) -> None:
@@ -219,7 +220,8 @@ class TestGetCurrentUser:
 
         app = _make_app_with_env(env)
         client = TestClient(app)
-        resp = client.get("/me", cookies={COOKIE_NAME: session_id})
+        client.cookies.set(COOKIE_NAME, session_id)
+        resp = client.get("/me")
         assert resp.status_code == 200
         data = resp.json()
         assert data["user_id"] == "u1"
@@ -315,7 +317,8 @@ class TestSessionRevocation:
 
         app = _make_app_with_env(env)
         client = TestClient(app)
-        resp = client.get("/me", cookies={COOKIE_NAME: session_id})
+        client.cookies.set(COOKIE_NAME, session_id)
+        resp = client.get("/me")
         assert resp.status_code == 401
         assert "revoked" in resp.json()["detail"].lower()
 
@@ -336,7 +339,8 @@ class TestSessionRevocation:
 
         app = _make_app_with_env(env)
         client = TestClient(app)
-        resp = client.get("/me", cookies={COOKIE_NAME: session_id})
+        client.cookies.set(COOKIE_NAME, session_id)
+        resp = client.get("/me")
         assert resp.status_code == 200
 
     async def test_rejects_session_when_allowlist_empty(self) -> None:
@@ -353,7 +357,8 @@ class TestSessionRevocation:
 
         app = _make_app_with_env(env)
         client = TestClient(app)
-        resp = client.get("/me", cookies={COOKIE_NAME: session_id})
+        client.cookies.set(COOKIE_NAME, session_id)
+        resp = client.get("/me")
         assert resp.status_code == 401
 
 
@@ -373,16 +378,17 @@ class TestSessionRevocationOnAllowlistChange:
 
         app = _make_app_with_env(env)
         client = TestClient(app)
+        client.cookies.set(COOKIE_NAME, session_id)
 
         # First request should succeed
-        resp = client.get("/me", cookies={COOKIE_NAME: session_id})
+        resp = client.get("/me")
         assert resp.status_code == 200
 
         # Change ALLOWED_EMAILS to exclude the user
         env.ALLOWED_EMAILS = "other@example.com"
 
         # Next request should return 401
-        resp = client.get("/me", cookies={COOKIE_NAME: session_id})
+        resp = client.get("/me")
         assert resp.status_code == 401
 
         # Session should be deleted from KV
@@ -832,8 +838,9 @@ class TestLogout:
 
         app = _make_auth_app(env)
         client = TestClient(app)
+        client.cookies.set(COOKIE_NAME, session_id)
 
-        resp = client.post("/api/auth/logout", cookies={COOKIE_NAME: session_id})
+        resp = client.post("/api/auth/logout")
         assert resp.status_code == 200
 
         # Session should be deleted from KV
@@ -860,8 +867,9 @@ class TestSessionEndpoint:
 
         app = _make_auth_app(env)
         client = TestClient(app)
+        client.cookies.set(COOKIE_NAME, session_id)
 
-        resp = client.get("/api/auth/session", cookies={COOKIE_NAME: session_id})
+        resp = client.get("/api/auth/session")
         assert resp.status_code == 200
         data = resp.json()
         assert data["user_id"] == "u1"
@@ -881,7 +889,8 @@ class TestSessionEndpoint:
         app = _make_auth_app(env)
         client = TestClient(app)
 
-        resp = client.get("/api/auth/session", cookies={COOKIE_NAME: "expired_id"})
+        client.cookies.set(COOKIE_NAME, "expired_id")
+        resp = client.get("/api/auth/session")
         assert resp.status_code == 401
 
 
@@ -933,7 +942,8 @@ class TestCaseInsensitiveEmail:
 
         app = _make_app_with_env(env)
         client = TestClient(app)
-        resp = client.get("/me", cookies={COOKIE_NAME: session_id})
+        client.cookies.set(COOKIE_NAME, session_id)
+        resp = client.get("/me")
         assert resp.status_code == 200
 
 

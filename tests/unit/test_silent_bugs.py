@@ -28,7 +28,6 @@ Bug inventory:
 from __future__ import annotations
 
 from src.articles.routes import router as articles_router
-from src.auth.session import COOKIE_NAME
 from src.stats.routes import _calculate_streak
 from src.tts.routes import router as tts_router
 from tests.conftest import (
@@ -93,7 +92,6 @@ class TestBatchUpdateReportsWrongCount:
                 "article_ids": ["nonexistent_1", "nonexistent_2"],
                 "updates": {"reading_status": "archived"},
             },
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -148,7 +146,6 @@ class TestBatchUpdateNoOwnershipVerification:
                 "article_ids": [other_article["id"]],
                 "updates": {"reading_status": "archived"},
             },
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -199,7 +196,6 @@ class TestOffsetZeroHandling:
         client1, sid1 = await _authenticated_client(env1)
         client1.get(
             "/api/articles?offset=0&limit=20",
-            cookies={COOKIE_NAME: sid1},
         )
 
         # Without offset (relying on default)
@@ -208,7 +204,6 @@ class TestOffsetZeroHandling:
         client2, sid2 = await _authenticated_client(env2)
         client2.get(
             "/api/articles?limit=20",
-            cookies={COOKIE_NAME: sid2},
         )
 
         # Both should produce the same SQL with the same params
@@ -304,7 +299,6 @@ class TestAudioTimingEndpoint:
 
         resp = client.get(
             "/api/articles/timing_test/audio-timing",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -385,7 +379,6 @@ class TestExportReturnsProperErrors:
 
         resp = client.get(
             "/api/export/json",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -445,7 +438,6 @@ class TestBatchDeleteCleanup:
         resp = client.post(
             "/api/articles/batch-delete",
             json={"article_ids": ["del_test"]},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -565,7 +557,6 @@ class TestListenLaterAlreadyReady:
 
         resp = client.post(
             "/api/articles/ready_audio/listen-later",
-            cookies={COOKIE_NAME: session_id},
         )
 
         # Backend returns 200 (not 202) when audio is already ready
@@ -618,7 +609,6 @@ class TestTagRuleDeletionEdgeCase:
 
         resp = client.delete(
             "/api/tag-rules/nonexistent_rule",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 404
@@ -665,7 +655,6 @@ class TestDefaultSortIsNewest:
         # Without sort param (what the frontend does for 'newest')
         resp = client.get(
             "/api/articles",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -700,13 +689,13 @@ class TestDefaultSortIsNewest:
         db1 = MockD1(execute=execute_default)
         env1 = MockEnv(db=db1)
         client1, sid1 = await _authenticated_client(env1)
-        client1.get("/api/articles", cookies={COOKIE_NAME: sid1})
+        client1.get("/api/articles")
 
         # Explicit sort=newest
         db2 = MockD1(execute=execute_explicit)
         env2 = MockEnv(db=db2)
         client2, sid2 = await _authenticated_client(env2)
-        client2.get("/api/articles?sort=newest", cookies={COOKIE_NAME: sid2})
+        client2.get("/api/articles?sort=newest")
 
         select_default = [(s, p) for s, p in captured_default if "SELECT" in s]
         select_explicit = [(s, p) for s, p in captured_explicit if "SELECT" in s]
@@ -760,7 +749,6 @@ class TestIsFavoriteCoercion:
         resp = client.patch(
             "/api/articles/fav_bool_test",
             json={"is_favorite": True},  # Boolean, not integer
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -788,7 +776,6 @@ class TestIsFavoriteCoercion:
         resp = client.patch(
             "/api/articles/fav_int_test",
             json={"is_favorite": 1},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -812,7 +799,6 @@ class TestIsFavoriteCoercion:
         resp = client.patch(
             "/api/articles/fav_invalid_test",
             json={"is_favorite": 2},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 422
@@ -857,7 +843,6 @@ class TestMarkdownEndpointFallback:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles/no_md/markdown",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 404
@@ -886,7 +871,6 @@ class TestMarkdownEndpointFallback:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles/empty_md/markdown",
-            cookies={COOKIE_NAME: session_id},
         )
 
         # Backend returns 404 for empty string too (falsy check)

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from src.auth.session import COOKIE_NAME
 from src.stats.routes import router
 from tests.conftest import (
     MockD1,
@@ -42,7 +41,7 @@ class TestGetStats:
         """GET /api/stats returns all expected keys in the response."""
         env = MockEnv()
         client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats", cookies={COOKIE_NAME: sid})
+        resp = client.get("/api/stats")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -66,7 +65,7 @@ class TestGetStats:
         """GET /api/stats returns zeros when user has no articles."""
         env = MockEnv()
         client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats", cookies={COOKIE_NAME: sid})
+        resp = client.get("/api/stats")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -113,7 +112,7 @@ class TestGetStats:
         db = MockD1(execute=execute)
         env = MockEnv(db=db)
         client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats", cookies={COOKIE_NAME: sid})
+        resp = client.get("/api/stats")
 
         assert resp.status_code == 200
         assert resp.json()["total_articles"] == 42
@@ -141,7 +140,7 @@ class TestGetStats:
         db = MockD1(execute=execute)
         env = MockEnv(db=db)
         client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats", cookies={COOKIE_NAME: sid})
+        resp = client.get("/api/stats")
 
         assert resp.status_code == 200
         assert resp.json()["total_words_read"] == 150000
@@ -172,7 +171,7 @@ class TestGetStats:
         db = MockD1(execute=execute)
         env = MockEnv(db=db)
         client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats", cookies={COOKIE_NAME: sid})
+        resp = client.get("/api/stats")
 
         assert resp.status_code == 200
         status = resp.json()["articles_by_status"]
@@ -205,7 +204,7 @@ class TestGetStats:
         db = MockD1(execute=execute)
         env = MockEnv(db=db)
         client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats", cookies={COOKIE_NAME: sid})
+        resp = client.get("/api/stats")
 
         assert resp.status_code == 200
         domains = resp.json()["top_domains"]
@@ -237,7 +236,7 @@ class TestGetStats:
         db = MockD1(execute=execute)
         env = MockEnv(db=db)
         client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats", cookies={COOKIE_NAME: sid})
+        resp = client.get("/api/stats")
 
         assert resp.status_code == 200
         assert resp.json()["avg_reading_time_minutes"] == 7.3
@@ -273,7 +272,7 @@ class TestGetStats:
         db = MockD1(execute=execute)
         env = MockEnv(db=db)
         client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats", cookies={COOKIE_NAME: sid})
+        resp = client.get("/api/stats")
 
         assert resp.status_code == 200
         by_month = resp.json()["articles_by_month"]
@@ -310,7 +309,7 @@ class TestReadingStreak:
         db = MockD1(execute=execute)
         env = MockEnv(db=db)
         client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats", cookies={COOKIE_NAME: sid})
+        resp = client.get("/api/stats")
 
         assert resp.status_code == 200
         assert resp.json()["reading_streak_days"] == 5
@@ -342,7 +341,7 @@ class TestReadingStreak:
         db = MockD1(execute=execute)
         env = MockEnv(db=db)
         client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats", cookies={COOKIE_NAME: sid})
+        resp = client.get("/api/stats")
 
         assert resp.status_code == 200
         assert resp.json()["reading_streak_days"] == 3
@@ -380,7 +379,7 @@ class TestReadingStreak:
         db = MockD1(execute=execute)
         env = MockEnv(db=db)
         client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats", cookies={COOKIE_NAME: sid})
+        resp = client.get("/api/stats")
 
         assert resp.status_code == 200
         # Streak is 2 (today + yesterday), gap at day 2 breaks it
@@ -412,7 +411,7 @@ class TestReadingStreak:
         db = MockD1(execute=execute)
         env = MockEnv(db=db)
         client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats", cookies={COOKIE_NAME: sid})
+        resp = client.get("/api/stats")
 
         assert resp.status_code == 200
         assert resp.json()["reading_streak_days"] == 0
@@ -440,7 +439,7 @@ class TestReadingStreak:
         db = MockD1(execute=execute)
         env = MockEnv(db=db)
         client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats", cookies={COOKIE_NAME: sid})
+        resp = client.get("/api/stats")
 
         assert resp.status_code == 200
         assert resp.json()["reading_streak_days"] == 0
@@ -477,7 +476,7 @@ class TestWeeklyMonthlyActivity:
         db = MockD1(execute=execute)
         env = MockEnv(db=db)
         client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats", cookies={COOKIE_NAME: sid})
+        resp = client.get("/api/stats")
 
         assert resp.status_code == 200
         assert resp.json()["articles_this_week"] == 7
@@ -507,7 +506,7 @@ class TestWeeklyMonthlyActivity:
         db = MockD1(execute=execute)
         env = MockEnv(db=db)
         client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats", cookies={COOKIE_NAME: sid})
+        resp = client.get("/api/stats")
 
         assert resp.status_code == 200
         assert resp.json()["archived_this_month"] == 12
@@ -523,7 +522,7 @@ class TestStatsResponseStructure:
         """articles_by_status always includes unread and archived keys."""
         env = MockEnv()
         client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats", cookies={COOKIE_NAME: sid})
+        resp = client.get("/api/stats")
 
         assert resp.status_code == 200
         status = resp.json()["articles_by_status"]
@@ -534,7 +533,7 @@ class TestStatsResponseStructure:
         """top_domains is always a list, even when empty."""
         env = MockEnv()
         client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats", cookies={COOKIE_NAME: sid})
+        resp = client.get("/api/stats")
 
         assert resp.status_code == 200
         assert isinstance(resp.json()["top_domains"], list)
@@ -543,7 +542,7 @@ class TestStatsResponseStructure:
         """articles_by_month is always a list, even when empty."""
         env = MockEnv()
         client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats", cookies={COOKIE_NAME: sid})
+        resp = client.get("/api/stats")
 
         assert resp.status_code == 200
         assert isinstance(resp.json()["articles_by_month"], list)
@@ -552,7 +551,7 @@ class TestStatsResponseStructure:
         """avg_reading_time_minutes is 0 when no articles have reading time."""
         env = MockEnv()
         client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats", cookies={COOKIE_NAME: sid})
+        resp = client.get("/api/stats")
 
         assert resp.status_code == 200
         assert resp.json()["avg_reading_time_minutes"] == 0
@@ -583,7 +582,7 @@ class TestStatsResponseStructure:
         db = MockD1(execute=execute)
         env = MockEnv(db=db)
         client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats", cookies={COOKIE_NAME: sid})
+        resp = client.get("/api/stats")
 
         assert resp.status_code == 200
         data = resp.json()

@@ -263,9 +263,8 @@ class TestUserIdExtraction:
             return {"status": "ok"}
 
         client = TestClient(test_app, raise_server_exceptions=False)
-        events = _capture_events(
-            capsys, client, "get", "/authenticated", cookies={COOKIE_NAME: session_id}
-        )
+        client.cookies.set(COOKIE_NAME, session_id)
+        events = _capture_events(capsys, client, "get", "/authenticated")
 
         event = events[-1]
         assert event["user.id"] == "u42"
@@ -275,9 +274,8 @@ class TestUserIdExtraction:
         env = MockEnv()
         app = _make_app(env=env)
         client = TestClient(app, raise_server_exceptions=False)
-        events = _capture_events(
-            capsys, client, "get", "/ok", cookies={COOKIE_NAME: "bogus_session_id"}
-        )
+        client.cookies.set(COOKIE_NAME, "bogus_session_id")
+        events = _capture_events(capsys, client, "get", "/ok")
 
         event = events[-1]
         assert event["user.id"] is None

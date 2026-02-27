@@ -9,7 +9,6 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from src.articles.export import _escape_html, _iso_to_unix, router
-from src.auth.session import COOKIE_NAME
 from tests.conftest import (
     ArticleFactory,
     MockD1,
@@ -64,10 +63,7 @@ class TestExportJson:
         env = MockEnv(db=db)
 
         client, session_id = await _authenticated_client(env)
-        resp = client.get(
-            "/api/export/json",
-            cookies={COOKIE_NAME: session_id},
-        )
+        resp = client.get("/api/export/json")
 
         assert resp.status_code == 200
         assert "application/json" in resp.headers["content-type"]
@@ -92,10 +88,7 @@ class TestExportJson:
         env = MockEnv(db=db)
 
         client, session_id = await _authenticated_client(env)
-        resp = client.get(
-            "/api/export/json",
-            cookies={COOKIE_NAME: session_id},
-        )
+        resp = client.get("/api/export/json")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -122,10 +115,7 @@ class TestExportJson:
         env = MockEnv(db=db)
 
         client, session_id = await _authenticated_client(env)
-        resp = client.get(
-            "/api/export/json",
-            cookies={COOKIE_NAME: session_id},
-        )
+        resp = client.get("/api/export/json")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -176,10 +166,7 @@ class TestExportHtml:
         env = MockEnv(db=db)
 
         client, session_id = await _authenticated_client(env)
-        resp = client.get(
-            "/api/export/html",
-            cookies={COOKIE_NAME: session_id},
-        )
+        resp = client.get("/api/export/html")
 
         assert resp.status_code == 200
         assert "text/html" in resp.headers["content-type"]
@@ -207,10 +194,7 @@ class TestExportHtml:
         env = MockEnv(db=db)
 
         client, session_id = await _authenticated_client(env)
-        resp = client.get(
-            "/api/export/html",
-            cookies={COOKIE_NAME: session_id},
-        )
+        resp = client.get("/api/export/html")
 
         assert resp.status_code == 200
         body = resp.text
@@ -241,10 +225,7 @@ class TestExportHtml:
         env = MockEnv(db=db)
 
         client, session_id = await _authenticated_client(env)
-        resp = client.get(
-            "/api/export/html",
-            cookies={COOKIE_NAME: session_id},
-        )
+        resp = client.get("/api/export/html")
 
         assert resp.status_code == 200
         body = resp.text
@@ -275,10 +256,7 @@ class TestExportHtml:
         env = MockEnv(db=db)
 
         client, session_id = await _authenticated_client(env)
-        resp = client.get(
-            "/api/export/html",
-            cookies={COOKIE_NAME: session_id},
-        )
+        resp = client.get("/api/export/html")
 
         assert resp.status_code == 200
         body = resp.text
@@ -306,10 +284,7 @@ class TestExportHtml:
         env = MockEnv(db=db)
 
         client, session_id = await _authenticated_client(env)
-        resp = client.get(
-            "/api/export/html",
-            cookies={COOKIE_NAME: session_id},
-        )
+        resp = client.get("/api/export/html")
 
         assert resp.status_code == 200
         body = resp.text

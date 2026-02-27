@@ -89,6 +89,15 @@ _VALID_SORT_OPTIONS: dict[str, str] = {
 }
 
 
+def _validate_reading_status(value: str) -> None:
+    """Raise 422 if *value* is not a valid reading_status."""
+    if value not in _VALID_READING_STATUSES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"reading_status must be one of: {', '.join(sorted(_VALID_READING_STATUSES))}",
+        )
+
+
 async def _get_user_article(
     db: Any,
     article_id: str,
@@ -173,65 +182,36 @@ async def create_article(
     if is_update:
         article_id = existing["id"]
         # Reset status so the pipeline re-processes the article
+        update_sql = "UPDATE articles SET status = 'pending'"
         if listen_later:
-            await (
-                db.prepare(
-                    "UPDATE articles SET status = 'pending', audio_status = 'pending', "
-                    "updated_at = ? WHERE id = ?"
-                )
-                .bind(now, article_id)
-                .run()
-            )
-        else:
-            await (
-                db.prepare("UPDATE articles SET status = 'pending', updated_at = ? WHERE id = ?")
-                .bind(now, article_id)
-                .run()
-            )
+            update_sql += ", audio_status = 'pending'"
+        update_sql += ", updated_at = ? WHERE id = ?"
+        await db.prepare(update_sql).bind(now, article_id).run()
     else:
         article_id = generate_id()
         domain = extract_domain(url)
 
+        columns = (
+            "id, user_id, original_url, domain, title, "
+            "status, reading_status, is_favorite"
+        )
+        values = "?, ?, ?, ?, ?, 'pending', 'unread', 0"
+        bind_params = [article_id, user_id, url, domain, title]
+
+        if listen_later:
+            columns += ", audio_status"
+            values += ", 'pending'"
+
+        columns += ", created_at, updated_at"
+        values += ", ?, ?"
+        bind_params.extend([now, now])
+
         try:
-            if listen_later:
-                await (
-                    db.prepare(
-                        "INSERT INTO articles "
-                        "(id, user_id, original_url, domain, title, "
-                        "status, reading_status, is_favorite, "
-                        "audio_status, created_at, updated_at) "
-                        "VALUES (?, ?, ?, ?, ?, 'pending', "
-                        "'unread', 0, 'pending', ?, ?)"
-                    )
-                    .bind(
-                        article_id,
-                        user_id,
-                        url,
-                        domain,
-                        title,
-                        now,
-                        now,
-                    )
-                    .run()
-                )
-            else:
-                await (
-                    db.prepare(
-                        "INSERT INTO articles (id, user_id, original_url, domain, title, "
-                        "status, reading_status, is_favorite, created_at, updated_at) "
-                        "VALUES (?, ?, ?, ?, ?, 'pending', 'unread', 0, ?, ?)"
-                    )
-                    .bind(
-                        article_id,
-                        user_id,
-                        url,
-                        domain,
-                        title,
-                        now,
-                        now,
-                    )
-                    .run()
-                )
+            await (
+                db.prepare(f"INSERT INTO articles ({columns}) VALUES ({values})")
+                .bind(*bind_params)
+                .run()
+            )
         except Exception as exc:
             # Handle unique constraint violation (race condition)
             exc_msg = str(exc).lower()
@@ -303,11 +283,8 @@ async def list_articles(
             status_code=422,
             detail=f"status must be one of: {', '.join(sorted(_VALID_STATUSES))}",
         )
-    if reading_status is not None and reading_status not in _VALID_READING_STATUSES:
-        raise HTTPException(
-            status_code=422,
-            detail=f"reading_status must be one of: {', '.join(sorted(_VALID_READING_STATUSES))}",
-        )
+    if reading_status is not None:
+        _validate_reading_status(reading_status)
     if audio_status is not None and audio_status not in _VALID_AUDIO_STATUSES:
         raise HTTPException(
             status_code=422,
@@ -446,11 +423,8 @@ async def batch_update_articles(
             detail=f"Invalid update fields: {', '.join(sorted(invalid_fields))}",
         )
 
-    if "reading_status" in updates and updates["reading_status"] not in _VALID_READING_STATUSES:
-        raise HTTPException(
-            status_code=422,
-            detail=f"reading_status must be one of: {', '.join(sorted(_VALID_READING_STATUSES))}",
-        )
+    if "reading_status" in updates:
+        _validate_reading_status(updates["reading_status"])
     if "is_favorite" in updates and updates["is_favorite"] not in (0, 1, True, False):
         raise HTTPException(status_code=422, detail="is_favorite must be 0 or 1")
 
@@ -802,11 +776,8 @@ async def update_article(
     if "title" in body and isinstance(body["title"], str) and len(body["title"]) > 500:
         raise HTTPException(status_code=400, detail="Title must not exceed 500 characters")
     # Validate enum fields
-    if "reading_status" in body and body["reading_status"] not in _VALID_READING_STATUSES:
-        raise HTTPException(
-            status_code=422,
-            detail=f"reading_status must be one of: {', '.join(sorted(_VALID_READING_STATUSES))}",
-        )
+    if "reading_status" in body:
+        _validate_reading_status(body["reading_status"])
     if "is_favorite" in body and body["is_favorite"] not in (0, 1, True, False):
         raise HTTPException(status_code=422, detail="is_favorite must be 0 or 1")
     if "reading_progress" in body:

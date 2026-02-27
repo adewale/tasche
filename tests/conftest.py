@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import re
-import secrets
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -19,7 +18,8 @@ import pytest  # noqa: I001
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.auth.session import create_session
+from src.auth.session import COOKIE_NAME, create_session
+from src.utils import generate_id
 
 # ---------------------------------------------------------------------------
 # Mock D1 (Database)
@@ -381,10 +381,6 @@ class MockEnv:
 # ---------------------------------------------------------------------------
 
 
-def _make_id() -> str:
-    return secrets.token_urlsafe(16)
-
-
 class ArticleFactory:
     """Convenience factory for creating article dicts in tests.
 
@@ -402,7 +398,7 @@ class ArticleFactory:
         cls._counter += 1
         n = cls._counter
 
-        article_id = overrides.get("id", _make_id())
+        article_id = overrides.get("id", generate_id())
 
         defaults: dict[str, Any] = {
             "id": article_id,
@@ -564,18 +560,20 @@ async def _authenticated_client(
     """Create a test client with a valid session cookie.
 
     Builds the app with the given routers and returns a ``(client, session_id)``
-    tuple ready for making authenticated requests::
+    tuple ready for making authenticated requests.  The session cookie is set
+    on the client instance so callers do not need to pass ``cookies=`` per
+    request::
 
         client, sid = await _authenticated_client(
             env,
             (articles_router, "/api/articles"),
         )
-        resp = client.get("/api/articles", cookies={COOKIE_NAME: sid})
+        resp = client.get("/api/articles")
     """
     data = user_data or USER_DATA
     session_id = await create_session(env.SESSIONS, data)
     app = _make_test_app(env, *routers)
-    client = TestClient(app, raise_server_exceptions=False)
+    client = TestClient(app, raise_server_exceptions=False, cookies={COOKIE_NAME: session_id})
     return client, session_id
 
 

@@ -11,7 +11,6 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from src.auth.session import COOKIE_NAME
 from src.tts.routes import router
 from tests.conftest import (
     ArticleFactory,
@@ -53,7 +52,6 @@ class TestListenLater:
         client, session_id = await _authenticated_client(env)
         resp = client.post(
             "/api/articles/art_tts1/listen-later",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 202
@@ -81,7 +79,6 @@ class TestListenLater:
         client, session_id = await _authenticated_client(env)
         resp = client.post(
             "/api/articles/nonexistent/listen-later",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 404
@@ -109,7 +106,6 @@ class TestListenLater:
         client, session_id = await _authenticated_client(env)
         resp = client.post(
             "/api/articles/art_dup1/listen-later",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 409
@@ -135,7 +131,6 @@ class TestListenLater:
         client, session_id = await _authenticated_client(env)
         resp = client.post(
             "/api/articles/art_dup2/listen-later",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 202
@@ -163,7 +158,6 @@ class TestListenLater:
         client, session_id = await _authenticated_client(env)
         resp = client.post(
             "/api/articles/art_ready/listen-later",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -191,7 +185,6 @@ class TestListenLater:
         client, session_id = await _authenticated_client(env)
         resp = client.post(
             "/api/articles/art_fail/listen-later",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 202
@@ -224,7 +217,6 @@ class TestGetAudio:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles/art_audio1/audio",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -251,7 +243,6 @@ class TestGetAudio:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles/art_noaudio/audio",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 404
@@ -277,7 +268,6 @@ class TestGetAudio:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles/art_norfile/audio",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 404
@@ -302,7 +292,6 @@ class TestGetAudio:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles/art_gen/audio",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 409
@@ -316,7 +305,6 @@ class TestGetAudio:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles/nonexistent/audio",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 404
@@ -997,7 +985,6 @@ class TestGetAudioTiming:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles/art_atm1/audio-timing",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -1024,7 +1011,6 @@ class TestGetAudioTiming:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles/art_notm/audio-timing",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 404
@@ -1037,7 +1023,6 @@ class TestGetAudioTiming:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles/nonexistent/audio-timing",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 404
@@ -1083,7 +1068,6 @@ class TestEnqueueFailureRollback:
         client, session_id = await _authenticated_client(env)
         resp = client.post(
             "/api/articles/art_qfail/listen-later",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 503

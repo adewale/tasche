@@ -10,7 +10,6 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
-from src.auth.session import COOKIE_NAME
 from src.search.routes import _sanitize_fts5_query, router
 from tests.conftest import (
     ArticleFactory,
@@ -58,7 +57,6 @@ class TestSearchArticles:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/search?q=python",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -81,7 +79,6 @@ class TestSearchArticles:
         client, session_id = await _authenticated_client(env)
         client.get(
             "/api/search?q=test",
-            cookies={COOKIE_NAME: session_id},
         )
 
         # Verify the query includes user_id filter
@@ -104,7 +101,6 @@ class TestSearchArticles:
         client, session_id = await _authenticated_client(env)
         client.get(
             "/api/search?q=cloudflare",
-            cookies={COOKIE_NAME: session_id},
         )
 
         select_calls = [c for c in captured if "SELECT" in c["sql"]]
@@ -123,7 +119,6 @@ class TestSearchArticles:
 
         resp = client.get(
             "/api/search?q=",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 422
@@ -136,7 +131,6 @@ class TestSearchArticles:
 
         resp = client.get(
             "/api/search",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 422
@@ -149,7 +143,6 @@ class TestSearchArticles:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/search?q=nonexistent",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -169,7 +162,6 @@ class TestSearchArticles:
         client, session_id = await _authenticated_client(env)
         client.get(
             "/api/search?q=test&limit=5&offset=10",
-            cookies={COOKIE_NAME: session_id},
         )
 
         select_calls = [c for c in captured if "SELECT" in c["sql"]]
@@ -209,7 +201,6 @@ class TestFts5Sanitization:
         client, session_id = await _authenticated_client(env)
         client.get(
             "/api/search?q=hello+world",
-            cookies={COOKIE_NAME: session_id},
         )
 
         select_calls = [c for c in captured if "SELECT" in c["sql"]]
@@ -231,7 +222,6 @@ class TestFts5Sanitization:
         client, session_id = await _authenticated_client(env)
         client.get(
             "/api/search?q=test*+OR+evil",
-            cookies={COOKIE_NAME: session_id},
         )
 
         select_calls = [c for c in captured if "SELECT" in c["sql"]]
@@ -249,7 +239,6 @@ class TestFts5Sanitization:
 
         resp = client.get(
             "/api/search?q=***",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 422
@@ -264,7 +253,6 @@ class TestFts5SpecialCharsSanitized:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             '/api/search?q="hello"',
-            cookies={COOKIE_NAME: session_id},
         )
 
         # Should either return 200 (empty results) or 422 (sanitized away)
@@ -278,7 +266,6 @@ class TestFts5SpecialCharsSanitized:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/search?q=(test)+AND+(other)",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code in (200, 422)
@@ -297,7 +284,6 @@ class TestFts5SpecialCharsSanitized:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/search?q=test*+hello(world)",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -326,7 +312,6 @@ class TestSearchResultShape:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/search?q=result",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -350,7 +335,6 @@ class TestSearchResultShape:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/search?q=anything",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -373,7 +357,6 @@ class TestSearchSingleWord:
         client, session_id = await _authenticated_client(env)
         client.get(
             "/api/search?q=python",
-            cookies={COOKIE_NAME: session_id},
         )
 
         select_calls = [c for c in captured if "SELECT" in c["sql"]]
@@ -397,7 +380,6 @@ class TestSearchUnicode:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/search?q=caf%C3%A9",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -415,7 +397,6 @@ class TestSearchWhitespace:
 
         resp = client.get(
             "/api/search?q=%20%20%20",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 422
@@ -436,7 +417,6 @@ class TestSearchDefaultPagination:
         client, session_id = await _authenticated_client(env)
         client.get(
             "/api/search?q=test",
-            cookies={COOKIE_NAME: session_id},
         )
 
         select_calls = [c for c in captured if "SELECT" in c["sql"]]
@@ -462,7 +442,6 @@ class TestSearchSqlStructure:
         client, session_id = await _authenticated_client(env)
         client.get(
             "/api/search?q=test",
-            cookies={COOKIE_NAME: session_id},
         )
 
         select_calls = [c for c in captured if "SELECT" in c["sql"]]
@@ -484,7 +463,6 @@ class TestSearchSqlStructure:
         client, session_id = await _authenticated_client(env)
         client.get(
             "/api/search?q=test",
-            cookies={COOKIE_NAME: session_id},
         )
 
         select_calls = [c for c in captured if "SELECT" in c["sql"]]

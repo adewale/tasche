@@ -11,7 +11,6 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from src.articles.routes import router
-from src.auth.session import COOKIE_NAME
 from tests.conftest import (
     ArticleFactory,
     MockD1,
@@ -51,7 +50,6 @@ class TestCreateArticle:
         resp = client.post(
             "/api/articles",
             json={"url": "https://example.com/article", "title": "My Article"},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 201
@@ -93,7 +91,6 @@ class TestCreateArticle:
         resp = client.post(
             "/api/articles",
             json={"url": "https://example.com/existing"},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 201
@@ -143,7 +140,6 @@ class TestCreateArticle:
         resp = client.post(
             "/api/articles",
             json={"url": "https://example.com/redirected"},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 201
@@ -188,7 +184,6 @@ class TestCreateArticle:
         resp = client.post(
             "/api/articles",
             json={"url": "https://example.com/page"},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 201
@@ -227,7 +222,6 @@ class TestCreateArticle:
         resp = client.post(
             "/api/articles",
             json={"url": "https://example.com/final-page"},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 201
@@ -258,7 +252,6 @@ class TestCreateArticle:
         resp = client.post(
             "/api/articles",
             json={"url": url},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 201
@@ -302,7 +295,6 @@ class TestCreateArticle:
         resp = client.post(
             "/api/articles",
             json={"url": "https://okayfail.com/2025/test.html"},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 201
@@ -328,7 +320,6 @@ class TestCreateArticle:
         resp = client.post(
             "/api/articles",
             json={"url": "https://example.com/test-params"},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 201
@@ -360,7 +351,6 @@ class TestCreateArticle:
         resp = client.post(
             "/api/articles",
             json={"url": "https://example.com/article?utm_source=twitter&ref=123"},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 201
@@ -379,7 +369,6 @@ class TestCreateArticle:
         resp = client.post(
             "/api/articles",
             json={"url": "ftp://not-allowed.com/file"},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 422
@@ -392,7 +381,6 @@ class TestCreateArticle:
         resp = client.post(
             "/api/articles",
             json={"url": ""},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 422
@@ -413,7 +401,6 @@ class TestCreateArticle:
         resp = client.post(
             "/api/articles",
             json={"url": "https://example.com/listen", "listen_later": True},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 201
@@ -442,7 +429,6 @@ class TestCreateArticle:
         resp = client.post(
             "/api/articles",
             json={"url": "https://example.com/no-listen"},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 201
@@ -475,7 +461,6 @@ class TestCreateArticle:
         resp = client.post(
             "/api/articles",
             json={"url": "https://example.com/dup-listen", "listen_later": True},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 201
@@ -547,7 +532,6 @@ class TestListenLaterBehaviour:
         resp = client.post(
             "/api/articles",
             json={"url": "https://example.com/audio-insert", "listen_later": True},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 201
@@ -570,7 +554,6 @@ class TestListenLaterBehaviour:
         resp = client.post(
             "/api/articles",
             json={"url": "https://example.com/plain-insert"},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 201
@@ -604,7 +587,6 @@ class TestListenLaterBehaviour:
         resp = client.post(
             "/api/articles",
             json={"url": "https://example.com/dup-audio-update", "listen_later": True},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 201
@@ -639,7 +621,6 @@ class TestListenLaterBehaviour:
         resp = client.post(
             "/api/articles",
             json={"url": "https://example.com/dup-plain-update"},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 201
@@ -668,7 +649,6 @@ class TestListenLaterBehaviour:
                     "url": f"https://example.com/enqueue-{listen_later}",
                     "listen_later": listen_later,
                 },
-                cookies={COOKIE_NAME: session_id},
             )
 
             assert resp.status_code == 201
@@ -711,7 +691,6 @@ class TestCreateArticleWithContent:
                 "title": "Paywalled Article",
                 "content": "<html><body><p>Secret content</p></body></html>",
             },
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 201
@@ -741,7 +720,6 @@ class TestCreateArticleWithContent:
         resp = client.post(
             "/api/articles",
             json={"url": "https://example.com/no-content"},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 201
@@ -758,7 +736,6 @@ class TestCreateArticleWithContent:
         resp = client.post(
             "/api/articles",
             json={"url": "https://example.com/huge", "content": huge_content},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 400
@@ -772,7 +749,6 @@ class TestCreateArticleWithContent:
         resp = client.post(
             "/api/articles",
             json={"url": "https://example.com/bad", "content": 12345},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 400
@@ -801,7 +777,6 @@ class TestCreateArticleWithContent:
                 "url": "https://example.com/dup-content",
                 "content": "<html><body><p>Updated content</p></body></html>",
             },
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 201
@@ -828,7 +803,6 @@ class TestCreateArticleWithContent:
         resp = client.post(
             "/api/articles",
             json={"url": "https://example.com/empty-content", "content": ""},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 201
@@ -856,7 +830,6 @@ class TestCreateArticleWithContent:
                 "url": "https://example.com/with-content",
                 "content": "<html><body><p>Content</p></body></html>",
             },
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 201
@@ -917,7 +890,6 @@ class TestListArticles:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -946,7 +918,6 @@ class TestListArticles:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -969,7 +940,6 @@ class TestListArticles:
         client, session_id = await _authenticated_client(env)
         client.get(
             "/api/articles?reading_status=unread",
-            cookies={COOKIE_NAME: session_id},
         )
 
         # Verify the query includes reading_status filter
@@ -991,7 +961,6 @@ class TestListArticles:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -1013,7 +982,6 @@ class TestListArticles:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles?sort=oldest",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -1035,7 +1003,6 @@ class TestListArticles:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles?sort=shortest",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -1057,7 +1024,6 @@ class TestListArticles:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles?sort=longest",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -1079,7 +1045,6 @@ class TestListArticles:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles?sort=title_asc",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -1095,7 +1060,6 @@ class TestListArticles:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles?sort=invalid",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 422
@@ -1115,7 +1079,6 @@ class TestListArticles:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles?reading_status=unread&sort=shortest",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -1147,7 +1110,6 @@ class TestGetArticle:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles/art_123",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -1162,7 +1124,6 @@ class TestGetArticle:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles/nonexistent",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 404
@@ -1198,7 +1159,6 @@ class TestUpdateArticle:
         resp = client.patch(
             "/api/articles/art_456",
             json={"reading_status": "archived"},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -1214,7 +1174,6 @@ class TestUpdateArticle:
         resp = client.patch(
             "/api/articles/nonexistent",
             json={"reading_status": "archived"},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 404
@@ -1235,7 +1194,6 @@ class TestUpdateArticle:
         resp = client.patch(
             "/api/articles/art_789",
             json={"unknown_field": "value"},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 422
@@ -1267,7 +1225,6 @@ class TestDeleteArticle:
         client, session_id = await _authenticated_client(env)
         resp = client.delete(
             "/api/articles/art_del",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 204
@@ -1280,7 +1237,6 @@ class TestDeleteArticle:
         client, session_id = await _authenticated_client(env)
         resp = client.delete(
             "/api/articles/nonexistent",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 404
@@ -1315,7 +1271,6 @@ class TestGetArticleThumbnail:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles/art_thumb/thumbnail",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -1342,7 +1297,6 @@ class TestGetArticleThumbnail:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles/art_nothumb/thumbnail",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 404
@@ -1367,7 +1321,6 @@ class TestGetArticleThumbnail:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles/art_gone/thumbnail",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 404
@@ -1402,7 +1355,6 @@ class TestGetArticleScreenshot:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles/art_ss/screenshot",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -1429,7 +1381,6 @@ class TestGetArticleScreenshot:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles/art_noss/screenshot",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 404
@@ -1454,7 +1405,6 @@ class TestGetArticleScreenshot:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles/art_ss_gone/screenshot",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 404
@@ -1492,7 +1442,6 @@ class TestGetArticleImage:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles/art_img/images/abc123.webp",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -1518,7 +1467,6 @@ class TestGetArticleImage:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles/art_jpg/images/def456.jpg",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -1540,7 +1488,6 @@ class TestGetArticleImage:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles/art_noimg/images/missing.webp",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 404
@@ -1553,7 +1500,6 @@ class TestGetArticleImage:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles/nonexistent/images/abc123.webp",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 404
@@ -1584,7 +1530,6 @@ class TestGetArticleImage:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles/art_bin/images/file.bin",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -1629,7 +1574,6 @@ class TestUpdateArticleMultipleFields:
                 "is_favorite": True,
                 "reading_progress": 0.5,
             },
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -1669,7 +1613,6 @@ class TestListenLaterIdempotency:
 
         resp = client.post(
             "/api/articles/art_audio_ready/listen-later",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200, (
@@ -1694,7 +1637,6 @@ class TestFilterByTag:
         client, session_id = await _authenticated_client(env)
         client.get(
             "/api/articles?tag=tag_001",
-            cookies={COOKIE_NAME: session_id},
         )
 
         select_calls = [c for c in captured if "SELECT" in c["sql"]]
@@ -1720,7 +1662,6 @@ class TestFilterByAudioStatus:
         client, session_id = await _authenticated_client(env)
         client.get(
             "/api/articles?audio_status=ready",
-            cookies={COOKIE_NAME: session_id},
         )
 
         select_calls = [c for c in captured if "SELECT" in c["sql"]]
@@ -1749,7 +1690,6 @@ class TestInputValidation:
         resp = client.post(
             "/api/articles",
             json={"url": long_url},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 400
@@ -1763,7 +1703,6 @@ class TestInputValidation:
         resp = client.post(
             "/api/articles",
             json={"url": "https://example.com", "title": "x" * 501},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 400
@@ -1785,7 +1724,6 @@ class TestInputValidation:
         resp = client.patch(
             "/api/articles/art_valid",
             json={"title": "x" * 501},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 400
@@ -1815,7 +1753,6 @@ class TestEnqueueFailure:
         resp = client.post(
             "/api/articles",
             json={"url": "https://example.com/queue-fail"},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 503
@@ -1844,7 +1781,6 @@ class TestRejectsInvalidReadingStatus:
         resp = client.patch(
             "/api/articles/art_inv_rs",
             json={"reading_status": "invalid_status"},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 422
@@ -1868,7 +1804,6 @@ class TestRejectsInvalidReadingProgressBounds:
         resp = client.patch(
             "/api/articles/art_rp_hi",
             json={"reading_progress": 1.5},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 422
@@ -1890,7 +1825,6 @@ class TestRejectsInvalidReadingProgressBounds:
         resp = client.patch(
             "/api/articles/art_rp_lo",
             json={"reading_progress": -0.1},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 422
@@ -1914,7 +1848,6 @@ class TestRejectsInvalidScrollPosition:
         resp = client.patch(
             "/api/articles/art_sp_neg",
             json={"scroll_position": -1},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 422
@@ -1949,7 +1882,6 @@ class TestGetArticleContent:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles/art_html/content",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -1978,7 +1910,6 @@ class TestGetArticleContent:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles/art_csp/content",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -2005,7 +1936,6 @@ class TestGetArticleContent:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles/art_nohtml/content",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 404
@@ -2038,7 +1968,6 @@ class TestGetArticleMetadata:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles/art_meta/metadata",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -2062,7 +1991,6 @@ class TestGetArticleMetadata:
         client, session_id = await _authenticated_client(env)
         resp = client.get(
             "/api/articles/art_nometa/metadata",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 404
@@ -2088,7 +2016,6 @@ class TestFilterByStatus:
         client, session_id = await _authenticated_client(env)
         client.get(
             "/api/articles?status=ready",
-            cookies={COOKIE_NAME: session_id},
         )
 
         select_calls = [c for c in captured if "SELECT" in c["sql"]]
@@ -2103,7 +2030,6 @@ class TestFilterByStatus:
 
         resp = client.get(
             "/api/articles?status=bogus",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 422
@@ -2116,7 +2042,6 @@ class TestFilterByStatus:
 
         resp = client.get(
             "/api/articles?audio_status=bogus",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 422
@@ -2190,7 +2115,6 @@ class TestRetryArticle:
         client, session_id = await _authenticated_client(env)
         resp = client.post(
             "/api/articles/art_fail/retry",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 202
@@ -2224,7 +2148,6 @@ class TestRetryArticle:
         client, session_id = await _authenticated_client(env)
         resp = client.post(
             "/api/articles/art_stuck/retry",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 202
@@ -2247,7 +2170,6 @@ class TestRetryArticle:
         client, session_id = await _authenticated_client(env)
         resp = client.post(
             "/api/articles/art_ready/retry",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 202
@@ -2262,7 +2184,6 @@ class TestRetryArticle:
         client, session_id = await _authenticated_client(env)
         resp = client.post(
             "/api/articles/nonexistent/retry",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 404
@@ -2299,7 +2220,6 @@ class TestRetryArticle:
         client, session_id = await _authenticated_client(env)
         resp = client.post(
             "/api/articles/art_qfail/retry",
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 503
@@ -2335,7 +2255,6 @@ class TestBatchUpdateArticles:
                 "article_ids": ["art_bu1", "art_bu2"],
                 "updates": {"reading_status": "archived"},
             },
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -2350,7 +2269,6 @@ class TestBatchUpdateArticles:
         resp = client.post(
             "/api/articles/batch-update",
             json={"article_ids": [], "updates": {"reading_status": "archived"}},
-            cookies={COOKIE_NAME: session_id},
         )
         assert resp.status_code == 422
 
@@ -2361,7 +2279,6 @@ class TestBatchUpdateArticles:
         resp = client.post(
             "/api/articles/batch-update",
             json={"article_ids": ["art_1"], "updates": {}},
-            cookies={COOKIE_NAME: session_id},
         )
         assert resp.status_code == 422
 
@@ -2372,7 +2289,6 @@ class TestBatchUpdateArticles:
         resp = client.post(
             "/api/articles/batch-update",
             json={"article_ids": ["art_1"], "updates": {"title": "Hacked"}},
-            cookies={COOKIE_NAME: session_id},
         )
         assert resp.status_code == 422
         assert "Invalid update fields" in resp.json()["detail"]
@@ -2384,7 +2300,6 @@ class TestBatchUpdateArticles:
         resp = client.post(
             "/api/articles/batch-update",
             json={"article_ids": ["art_1"], "updates": {"reading_status": "bad"}},
-            cookies={COOKIE_NAME: session_id},
         )
         assert resp.status_code == 422
 
@@ -2396,7 +2311,6 @@ class TestBatchUpdateArticles:
         resp = client.post(
             "/api/articles/batch-update",
             json={"article_ids": ids, "updates": {"reading_status": "archived"}},
-            cookies={COOKIE_NAME: session_id},
         )
         assert resp.status_code == 422
         assert "100" in resp.json()["detail"]
@@ -2442,7 +2356,6 @@ class TestBatchDeleteArticles:
         resp = client.post(
             "/api/articles/batch-delete",
             json={"article_ids": ["art_bd1", "art_bd2"]},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -2466,7 +2379,6 @@ class TestBatchDeleteArticles:
         resp = client.post(
             "/api/articles/batch-delete",
             json={"article_ids": ["nonexistent_1", "nonexistent_2"]},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -2479,7 +2391,6 @@ class TestBatchDeleteArticles:
         resp = client.post(
             "/api/articles/batch-delete",
             json={"article_ids": []},
-            cookies={COOKIE_NAME: session_id},
         )
         assert resp.status_code == 422
 
@@ -2491,7 +2402,6 @@ class TestBatchDeleteArticles:
         resp = client.post(
             "/api/articles/batch-delete",
             json={"article_ids": ids},
-            cookies={COOKIE_NAME: session_id},
         )
         assert resp.status_code == 422
         assert "100" in resp.json()["detail"]
@@ -2530,7 +2440,6 @@ class TestGetArticleMarkdown:
         client, sid = await _authenticated_client(env)
         resp = client.get(
             "/api/articles/art_md/markdown",
-            cookies={COOKIE_NAME: sid},
         )
         assert resp.status_code == 200
         assert resp.text == "# Hello\n\nWorld"
@@ -2552,7 +2461,6 @@ class TestGetArticleMarkdown:
         client, sid = await _authenticated_client(env)
         resp = client.get(
             "/api/articles/art_md_cache/markdown",
-            cookies={COOKIE_NAME: sid},
         )
         assert resp.status_code == 200
         assert "private" in resp.headers.get("cache-control", "")
@@ -2573,7 +2481,6 @@ class TestGetArticleMarkdown:
         client, sid = await _authenticated_client(env)
         resp = client.get(
             "/api/articles/art_nomd/markdown",
-            cookies={COOKIE_NAME: sid},
         )
         assert resp.status_code == 404
 
@@ -2623,7 +2530,6 @@ class TestArticleOwnershipIsolation:
 
         resp = client.get(
             "/api/articles/art_other",
-            cookies={COOKIE_NAME: session_id},
         )
         assert resp.status_code == 404
 
@@ -2636,7 +2542,6 @@ class TestArticleOwnershipIsolation:
         resp = client.patch(
             "/api/articles/art_other",
             json={"reading_status": "archived"},
-            cookies={COOKIE_NAME: session_id},
         )
         assert resp.status_code == 404
 
@@ -2648,7 +2553,6 @@ class TestArticleOwnershipIsolation:
 
         resp = client.delete(
             "/api/articles/art_other",
-            cookies={COOKIE_NAME: session_id},
         )
         assert resp.status_code == 404
 
@@ -2660,7 +2564,6 @@ class TestArticleOwnershipIsolation:
 
         resp = client.get(
             "/api/articles/art_other/content",
-            cookies={COOKIE_NAME: session_id},
         )
         assert resp.status_code == 404
 
@@ -2682,7 +2585,6 @@ class TestArticleOwnershipIsolation:
 
         resp = client.get(
             "/api/articles",
-            cookies={COOKIE_NAME: session_id},
         )
         assert resp.status_code == 200
         data = resp.json()

@@ -11,6 +11,12 @@ function navigateToLogin() {
   window.location.hash = '#/login';
 }
 
+function handleUnauthorized() {
+  user.value = null;
+  navigateToLogin();
+  throw new Error('Unauthorized');
+}
+
 export async function request(method, path, body) {
   const opts = {
     method,
@@ -22,11 +28,7 @@ export async function request(method, path, body) {
     opts.body = JSON.stringify(body);
   }
   const resp = await fetch(path, opts);
-  if (resp.status === 401) {
-    user.value = null;
-    navigateToLogin();
-    throw new Error('Unauthorized');
-  }
+  if (resp.status === 401) handleUnauthorized();
   if (resp.status === 204) return null;
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({ detail: resp.statusText }));
@@ -108,11 +110,7 @@ export function batchDeleteArticles(articleIds) {
 // Authenticated fetch with shared 401 handling (returns raw Response)
 function authenticatedFetch(path) {
   return fetch(path, { credentials: 'include' }).then(function (resp) {
-    if (resp.status === 401) {
-      user.value = null;
-      navigateToLogin();
-      throw new Error('Unauthorized');
-    }
+    if (resp.status === 401) handleUnauthorized();
     return resp;
   });
 }

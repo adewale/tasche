@@ -29,6 +29,14 @@ article_tags_router = APIRouter()
 # ---------------------------------------------------------------------------
 
 
+def _validate_tag_name(name: str) -> None:
+    """Raise if *name* is empty or exceeds 100 characters."""
+    if not name:
+        raise HTTPException(status_code=422, detail="Tag name is required")
+    if len(name) > 100:
+        raise HTTPException(status_code=400, detail="Tag name must not exceed 100 characters")
+
+
 async def _get_user_tag(
     db: Any,
     tag_id: str,
@@ -62,12 +70,7 @@ async def create_tag(
     """
     body = await request.json()
     name = body.get("name", "").strip()
-
-    if not name:
-        raise HTTPException(status_code=422, detail="Tag name is required")
-
-    if len(name) > 100:
-        raise HTTPException(status_code=400, detail="Tag name must not exceed 100 characters")
+    _validate_tag_name(name)
 
     env = request.scope["env"]
     db = env.DB
@@ -135,15 +138,7 @@ async def rename_tag(
     """
     body = await request.json()
     name = body.get("name", "").strip()
-
-    if not name:
-        raise HTTPException(status_code=422, detail="Tag name is required")
-
-    if len(name) > 100:
-        raise HTTPException(
-            status_code=400,
-            detail="Tag name must not exceed 100 characters",
-        )
+    _validate_tag_name(name)
 
     env = request.scope["env"]
     db = env.DB

@@ -10,7 +10,6 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
-from src.auth.session import COOKIE_NAME
 from src.tags.rules import router
 from src.wrappers import SafeEnv
 from tests.conftest import (
@@ -62,10 +61,7 @@ class TestListTagRules:
         env = MockEnv(db=db)
 
         client, session_id = await _authenticated_client(env)
-        resp = client.get(
-            "/api/tag-rules",
-            cookies={COOKIE_NAME: session_id},
-        )
+        resp = client.get("/api/tag-rules")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -80,10 +76,7 @@ class TestListTagRules:
         env = MockEnv(db=db)
 
         client, session_id = await _authenticated_client(env)
-        resp = client.get(
-            "/api/tag-rules",
-            cookies={COOKIE_NAME: session_id},
-        )
+        resp = client.get("/api/tag-rules")
 
         assert resp.status_code == 200
         assert resp.json() == []
@@ -117,7 +110,6 @@ class TestCreateTagRule:
                 "match_type": "domain",
                 "pattern": "example.com",
             },
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 201
@@ -140,7 +132,6 @@ class TestCreateTagRule:
         resp = client.post(
             "/api/tag-rules",
             json={"match_type": "domain", "pattern": "example.com"},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 422
@@ -154,7 +145,6 @@ class TestCreateTagRule:
         resp = client.post(
             "/api/tag-rules",
             json={"tag_id": "tag_1", "pattern": "example.com"},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 422
@@ -168,7 +158,6 @@ class TestCreateTagRule:
         resp = client.post(
             "/api/tag-rules",
             json={"tag_id": "tag_1", "match_type": "invalid", "pattern": "x"},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 400
@@ -182,7 +171,6 @@ class TestCreateTagRule:
         resp = client.post(
             "/api/tag-rules",
             json={"tag_id": "tag_1", "match_type": "domain"},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 422
@@ -200,7 +188,6 @@ class TestCreateTagRule:
                 "match_type": "domain",
                 "pattern": "x" * 501,
             },
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 400
@@ -219,7 +206,6 @@ class TestCreateTagRule:
                 "match_type": "domain",
                 "pattern": "example.com",
             },
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 404
@@ -248,7 +234,6 @@ class TestCreateTagRule:
                 "match_type": "domain",
                 "pattern": "example.com",
             },
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 409
@@ -276,10 +261,7 @@ class TestDeleteTagRule:
         env = MockEnv(db=db)
 
         client, session_id = await _authenticated_client(env)
-        resp = client.delete(
-            "/api/tag-rules/rule_001",
-            cookies={COOKIE_NAME: session_id},
-        )
+        resp = client.delete("/api/tag-rules/rule_001")
 
         assert resp.status_code == 204
 
@@ -292,10 +274,7 @@ class TestDeleteTagRule:
         env = MockEnv(db=db)
 
         client, session_id = await _authenticated_client(env)
-        resp = client.delete(
-            "/api/tag-rules/nonexistent",
-            cookies={COOKIE_NAME: session_id},
-        )
+        resp = client.delete("/api/tag-rules/nonexistent")
 
         assert resp.status_code == 404
 

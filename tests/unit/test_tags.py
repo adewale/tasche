@@ -10,7 +10,6 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
-from src.auth.session import COOKIE_NAME
 from src.tags.routes import article_tags_router, router
 from tests.conftest import (
     ArticleFactory,
@@ -51,7 +50,6 @@ class TestCreateTag:
         resp = client.post(
             "/api/tags",
             json={"name": "python"},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 201
@@ -85,7 +83,6 @@ class TestCreateTag:
         resp = client.post(
             "/api/tags",
             json={"name": "python"},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 409
@@ -99,7 +96,6 @@ class TestCreateTag:
         resp = client.post(
             "/api/tags",
             json={"name": ""},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 422
@@ -113,7 +109,6 @@ class TestCreateTag:
         resp = client.post(
             "/api/tags",
             json={"name": "   "},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 422
@@ -130,7 +125,6 @@ class TestCreateTag:
         resp = client.post(
             "/api/tags",
             json={"name": "x" * 101},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 400
@@ -166,10 +160,7 @@ class TestListTags:
         env = MockEnv(db=db)
 
         client, session_id = await _authenticated_client(env)
-        resp = client.get(
-            "/api/tags",
-            cookies={COOKIE_NAME: session_id},
-        )
+        resp = client.get("/api/tags")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -205,10 +196,7 @@ class TestListTags:
         env = MockEnv(db=db)
 
         client, session_id = await _authenticated_client(env)
-        resp = client.get(
-            "/api/tags",
-            cookies={COOKIE_NAME: session_id},
-        )
+        resp = client.get("/api/tags")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -227,10 +215,7 @@ class TestListTags:
         env = MockEnv(db=db)
 
         client, session_id = await _authenticated_client(env)
-        client.get(
-            "/api/tags",
-            cookies={COOKIE_NAME: session_id},
-        )
+        client.get("/api/tags")
 
         tag_queries = [c for c in calls if "FROM tags" in c["sql"]]
         assert len(tag_queries) >= 1
@@ -245,10 +230,7 @@ class TestListTags:
         env = MockEnv(db=db)
 
         client, session_id = await _authenticated_client(env)
-        resp = client.get(
-            "/api/tags",
-            cookies={COOKIE_NAME: session_id},
-        )
+        resp = client.get("/api/tags")
 
         assert resp.status_code == 200
         assert resp.json() == []
@@ -287,7 +269,6 @@ class TestRenameTag:
         resp = client.patch(
             "/api/tags/tag_001",
             json={"name": "python3"},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -308,7 +289,6 @@ class TestRenameTag:
         resp = client.patch(
             "/api/tags/nonexistent",
             json={"name": "new-name"},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 404
@@ -343,7 +323,6 @@ class TestRenameTag:
         resp = client.patch(
             "/api/tags/tag_001",
             json={"name": "javascript"},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 409
@@ -357,7 +336,6 @@ class TestRenameTag:
         resp = client.patch(
             "/api/tags/tag_001",
             json={"name": ""},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 422
@@ -388,7 +366,6 @@ class TestRenameTag:
         resp = client.patch(
             "/api/tags/tag_001",
             json={"name": "  python3  "},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 200
@@ -421,10 +398,7 @@ class TestDeleteTag:
         env = MockEnv(db=db)
 
         client, session_id = await _authenticated_client(env)
-        resp = client.delete(
-            "/api/tags/tag_001",
-            cookies={COOKIE_NAME: session_id},
-        )
+        resp = client.delete("/api/tags/tag_001")
 
         assert resp.status_code == 204
 
@@ -437,10 +411,7 @@ class TestDeleteTag:
         env = MockEnv(db=db)
 
         client, session_id = await _authenticated_client(env)
-        resp = client.delete(
-            "/api/tags/nonexistent",
-            cookies={COOKIE_NAME: session_id},
-        )
+        resp = client.delete("/api/tags/nonexistent")
 
         assert resp.status_code == 404
 
@@ -477,7 +448,6 @@ class TestAddTagToArticle:
         resp = client.post(
             "/api/articles/art_001/tags",
             json={"tag_id": "tag_001"},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 201
@@ -497,7 +467,6 @@ class TestAddTagToArticle:
         resp = client.post(
             "/api/articles/nonexistent/tags",
             json={"tag_id": "tag_001"},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 404
@@ -519,7 +488,6 @@ class TestAddTagToArticle:
         resp = client.post(
             "/api/articles/art_001/tags",
             json={"tag_id": "nonexistent"},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 404
@@ -552,7 +520,6 @@ class TestAddTagToArticle:
         resp = client.post(
             "/api/articles/art_001/tags",
             json={"tag_id": "tag_001"},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 409
@@ -566,7 +533,6 @@ class TestAddTagToArticle:
         resp = client.post(
             "/api/articles/art_001/tags",
             json={},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 422
@@ -601,10 +567,7 @@ class TestRemoveTagFromArticle:
         env = MockEnv(db=db)
 
         client, session_id = await _authenticated_client(env)
-        resp = client.delete(
-            "/api/articles/art_001/tags/tag_001",
-            cookies={COOKIE_NAME: session_id},
-        )
+        resp = client.delete("/api/articles/art_001/tags/tag_001")
 
         assert resp.status_code == 204
 
@@ -617,10 +580,7 @@ class TestRemoveTagFromArticle:
         env = MockEnv(db=db)
 
         client, session_id = await _authenticated_client(env)
-        resp = client.delete(
-            "/api/articles/nonexistent/tags/tag_001",
-            cookies={COOKIE_NAME: session_id},
-        )
+        resp = client.delete("/api/articles/nonexistent/tags/tag_001")
 
         assert resp.status_code == 404
 
@@ -637,10 +597,7 @@ class TestRemoveTagFromArticle:
         env = MockEnv(db=db)
 
         client, session_id = await _authenticated_client(env)
-        resp = client.delete(
-            "/api/articles/art_001/tags/nonexistent",
-            cookies={COOKIE_NAME: session_id},
-        )
+        resp = client.delete("/api/articles/art_001/tags/nonexistent")
 
         assert resp.status_code == 404
 
@@ -680,10 +637,7 @@ class TestGetArticleTags:
         env = MockEnv(db=db)
 
         client, session_id = await _authenticated_client(env)
-        resp = client.get(
-            "/api/articles/art_001/tags",
-            cookies={COOKIE_NAME: session_id},
-        )
+        resp = client.get("/api/articles/art_001/tags")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -697,10 +651,7 @@ class TestGetArticleTags:
         env = MockEnv(db=db)
 
         client, session_id = await _authenticated_client(env)
-        resp = client.get(
-            "/api/articles/nonexistent/tags",
-            cookies={COOKIE_NAME: session_id},
-        )
+        resp = client.get("/api/articles/nonexistent/tags")
 
         assert resp.status_code == 404
 
@@ -792,7 +743,6 @@ class TestTagCreationEdgeCases:
         resp = client.post(
             "/api/tags",
             json={"name": "  my tag  "},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 201
@@ -811,7 +761,6 @@ class TestTagCreationEdgeCases:
         resp = client.post(
             "/api/tags",
             json={"name": "C++/Rust"},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 201
@@ -845,10 +794,7 @@ class TestTagListShape:
         env = MockEnv(db=db)
 
         client, session_id = await _authenticated_client(env)
-        resp = client.get(
-            "/api/tags",
-            cookies={COOKIE_NAME: session_id},
-        )
+        resp = client.get("/api/tags")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -871,10 +817,7 @@ class TestTagListShape:
         env = MockEnv(db=db)
 
         client, session_id = await _authenticated_client(env)
-        client.get(
-            "/api/tags",
-            cookies={COOKIE_NAME: session_id},
-        )
+        client.get("/api/tags")
 
         tag_queries = [c for c in calls if "FROM tags" in c["sql"]]
         assert len(tag_queries) >= 1
@@ -895,7 +838,6 @@ class TestRenameTagEdgeCases:
         resp = client.patch(
             "/api/tags/tag_001",
             json={"name": "x" * 101},
-            cookies={COOKIE_NAME: session_id},
         )
 
         assert resp.status_code == 400
@@ -921,10 +863,7 @@ class TestArticleTagEdgeCases:
         env = MockEnv(db=db)
 
         client, session_id = await _authenticated_client(env)
-        resp = client.get(
-            "/api/articles/art_001/tags",
-            cookies={COOKIE_NAME: session_id},
-        )
+        resp = client.get("/api/articles/art_001/tags")
 
         assert resp.status_code == 200
         assert resp.json() == []
@@ -944,10 +883,7 @@ class TestArticleTagEdgeCases:
         env = MockEnv(db=db)
 
         client, session_id = await _authenticated_client(env)
-        client.get(
-            "/api/articles/art_001/tags",
-            cookies={COOKIE_NAME: session_id},
-        )
+        client.get("/api/articles/art_001/tags")
 
         tag_queries = [c for c in calls if "FROM tags" in c["sql"]]
         assert len(tag_queries) >= 1

@@ -17,7 +17,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
 
 from src.articles.routes import router
-from src.auth.session import COOKIE_NAME
 from tests.conftest import (
     ArticleFactory,
     MockD1,
@@ -254,10 +253,7 @@ class TestCheckOriginalEndpoint:
 
         with patch("src.articles.routes.check_original_url", new_callable=AsyncMock) as mock_check:
             mock_check.return_value = "available"
-            resp = client.post(
-                "/api/articles/art_check_001/check-original",
-                cookies={COOKIE_NAME: session_id},
-            )
+            resp = client.post("/api/articles/art_check_001/check-original")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -281,10 +277,7 @@ class TestCheckOriginalEndpoint:
 
         client, session_id = await _authenticated_client(env)
 
-        resp = client.post(
-            "/api/articles/nonexistent_id/check-original",
-            cookies={COOKIE_NAME: session_id},
-        )
+        resp = client.post("/api/articles/nonexistent_id/check-original")
 
         assert resp.status_code == 404
 
@@ -330,10 +323,7 @@ class TestBatchCheckOriginals:
 
         with patch("src.articles.routes.check_original_url", new_callable=AsyncMock) as mock_check:
             mock_check.return_value = "available"
-            resp = client.post(
-                "/api/articles/batch-check-originals",
-                cookies={COOKIE_NAME: session_id},
-            )
+            resp = client.post("/api/articles/batch-check-originals")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -351,10 +341,7 @@ class TestBatchCheckOriginals:
         client, session_id = await _authenticated_client(env)
 
         with patch("articles.routes.check_original_url", new_callable=AsyncMock):
-            resp = client.post(
-                "/api/articles/batch-check-originals",
-                cookies={COOKIE_NAME: session_id},
-            )
+            resp = client.post("/api/articles/batch-check-originals")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -529,10 +516,7 @@ class TestBatchCheckOriginalsEdgeCases:
 
         with patch("src.articles.routes.check_original_url", new_callable=AsyncMock) as mock_check:
             mock_check.return_value = "available"
-            resp = client.post(
-                "/api/articles/batch-check-originals",
-                cookies={COOKIE_NAME: session_id},
-            )
+            resp = client.post("/api/articles/batch-check-originals")
 
         assert resp.status_code == 200
 
@@ -556,10 +540,7 @@ class TestBatchCheckOriginalsEdgeCases:
         client, session_id = await _authenticated_client(env)
 
         with patch("src.articles.routes.check_original_url", new_callable=AsyncMock):
-            resp = client.post(
-                "/api/articles/batch-check-originals",
-                cookies={COOKIE_NAME: session_id},
-            )
+            resp = client.post("/api/articles/batch-check-originals")
 
         assert resp.status_code == 200
 
@@ -598,10 +579,7 @@ class TestBatchCheckOriginalsEdgeCases:
 
         with patch("src.articles.routes.check_original_url", new_callable=AsyncMock) as mock_check:
             mock_check.side_effect = side_effect
-            resp = client.post(
-                "/api/articles/batch-check-originals",
-                cookies={COOKIE_NAME: session_id},
-            )
+            resp = client.post("/api/articles/batch-check-originals")
 
         assert resp.status_code == 200
         data = resp.json()

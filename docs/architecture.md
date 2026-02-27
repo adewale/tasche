@@ -447,6 +447,8 @@ Each queue message gets its own WideEvent with `pipeline="queue"`. The event cap
 
 ### Tables
 
+> **Note:** The authoritative schema lives in `migrations/`. The tables below are a snapshot for reference and may lag behind the latest migrations.
+
 **users**
 | Column | Type | Notes |
 |--------|------|-------|
@@ -926,43 +928,11 @@ All configuration lives in `wrangler.jsonc`. Three environments:
 
 ### Deploy Commands
 
-```bash
-# Deploy (must use pywrangler, not wrangler)
-uv run pywrangler deploy --env production
-uv run pywrangler deploy --env staging
-
-# Build frontend (output to assets/)
-cd frontend && npm run build
-
-# Secrets (not in wrangler.jsonc)
-wrangler secret put GITHUB_CLIENT_ID --env production
-wrangler secret put GITHUB_CLIENT_SECRET --env production
-```
-
-**Why pywrangler:** Regular wrangler cannot deploy Python Workers with packages. `pywrangler` handles the Pyodide bundling and package installation from `pyproject.toml`.
+See `CLAUDE.md` and `Makefile` for current deploy commands. Key requirement: must use `pywrangler` (not regular `wrangler`) because regular wrangler cannot deploy Python Workers with packages. `pywrangler` handles Pyodide bundling and package installation from `pyproject.toml`.
 
 ### Testing
 
-```bash
-# Backend unit tests (CPython, 876 tests)
-uv run pytest tests/unit/ -x -q
-
-# Backend lint
-uv run ruff check src/ tests/
-
-# Frontend unit tests (Vitest, 60 tests)
-cd frontend && npm test
-
-# Frontend lint
-cd frontend && npm run lint
-
-# All gates
-make check
-
-# E2E (staging)
-RUN_E2E_TESTS=1 uv run pytest tests/e2e/ -x -q
-cd frontend && E2E_BASE_URL=https://tasche-staging.adewale-883.workers.dev npx playwright test
-```
+See `CLAUDE.md` for current test commands. Run `make check` for all gates (backend lint + pytest + frontend lint + format + vitest).
 
 ### Testing Blind Spots
 

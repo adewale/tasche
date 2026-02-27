@@ -9,7 +9,7 @@ Tasche is a single-user, self-hosted read-it-later service built entirely on the
 ## Development Commands
 
 ```bash
-# Run unit tests (834 tests)
+# Run unit tests
 uv run pytest tests/unit/ -x -q
 
 # Run a single test file
