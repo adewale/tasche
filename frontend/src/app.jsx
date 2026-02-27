@@ -100,18 +100,24 @@ export function App() {
       addToast('You are offline', 'info');
     }
 
-    // Listen for sync status messages from service worker
+    // Centralized SW message handler — routes all message types (#13)
     function handleSWMessage(event) {
-      if (!event.data || event.data.type !== 'SYNC_STATUS') return;
-      syncStatus.value = event.data.status;
-      if (event.data.status === 'synced') {
-        addToast('All changes synced', 'success');
-        // Reset status after a moment
-        setTimeout(function () {
-          syncStatus.value = null;
-        }, 3000);
-      } else if (event.data.status === 'error') {
-        addToast('Some changes failed to sync', 'error');
+      if (!event.data || !event.data.type) return;
+
+      switch (event.data.type) {
+        case 'SYNC_STATUS':
+          syncStatus.value = event.data.status;
+          if (event.data.status === 'synced') {
+            addToast('All changes synced', 'success');
+            setTimeout(function () { syncStatus.value = null; }, 3000);
+          } else if (event.data.status === 'error') {
+            addToast('Some changes failed to sync', 'error');
+          }
+          break;
+
+        case 'CACHES_CLEARED':
+          addToast('Caches cleared', 'info');
+          break;
       }
     }
 

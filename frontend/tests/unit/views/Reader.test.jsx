@@ -119,8 +119,8 @@ describe('Reader', () => {
     await waitFor(() => {
       expect(screen.getByText('Test Article')).toBeInTheDocument();
     });
-    expect(screen.getByText('example.com')).toBeInTheDocument();
-    expect(screen.getByText('5 min read')).toBeInTheDocument();
+    expect(screen.getAllByText('example.com').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('5 min read').length).toBeGreaterThanOrEqual(1);
   });
 
   it('disables Listen Later button while loading', async () => {

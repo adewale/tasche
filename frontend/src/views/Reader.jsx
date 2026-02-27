@@ -21,6 +21,7 @@ import {
   IconCheck,
   IconCamera,
   IconRefresh,
+  IconInkDrop,
 } from '../components/Icons.jsx';
 import {
   getArticle,
@@ -37,7 +38,7 @@ import {
 } from '../api.js';
 import DOMPurify from 'dompurify';
 import { renderMarkdown } from '../markdown.js';
-import { escapeHtml } from '../utils.js';
+import { escapeHtml, formatDate } from '../utils.js';
 
 /**
  * Walk text nodes in the reader content element and wrap sentence boundaries
@@ -129,6 +130,39 @@ function unwrapSentences(containerEl) {
   containerEl.normalize();
 }
 
+/**
+ * Breath marks: small tick marks in the margin at positions where
+ * the reader previously paused. Stored per-article in localStorage.
+ * Each return visit adds a mark; older marks fade (decreasing opacity).
+ */
+var BREATH_MARKS_KEY = 'tasche-breath-marks';
+var MAX_BREATH_MARKS = 5;
+
+function loadBreathMarks(articleId) {
+  try {
+    var all = JSON.parse(localStorage.getItem(BREATH_MARKS_KEY) || '{}');
+    return (all[articleId] || []).slice(-MAX_BREATH_MARKS);
+  } catch (_e) {
+    return [];
+  }
+}
+
+function saveBreathMark(articleId, position) {
+  if (!position || position <= 0) return;
+  try {
+    var all = JSON.parse(localStorage.getItem(BREATH_MARKS_KEY) || '{}');
+    var marks = all[articleId] || [];
+    // Don't add if very close to the last mark
+    var last = marks[marks.length - 1];
+    if (last && Math.abs(last - position) < 0.02) return;
+    marks.push(position);
+    all[articleId] = marks.slice(-MAX_BREATH_MARKS);
+    localStorage.setItem(BREATH_MARKS_KEY, JSON.stringify(all));
+  } catch (_e) {
+    // localStorage full or unavailable
+  }
+}
+
 export function Reader({ id }) {
   const [article, setArticle] = useState(null);
   const [contentHtml, setContentHtml] = useState('');
@@ -149,6 +183,7 @@ export function Reader({ id }) {
   const [markdownRaw, setMarkdownRaw] = useState(null);
   const [markdownLoading, setMarkdownLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [breathMarks, setBreathMarks] = useState([]);
   const contentRef = useRef(null);
   const timingRef = useRef(null);
   const prevSentenceRef = useRef(-1);
@@ -178,6 +213,7 @@ export function Reader({ id }) {
     isOfflineCached(currentId).then(function (status) {
       setOfflineStatus(status);
     });
+    setBreathMarks(loadBreathMarks(currentId));
 
     window.addEventListener('scroll', handleScroll);
 
@@ -186,6 +222,13 @@ export function Reader({ id }) {
         clearTimeout(scrollTimer);
       }
       window.removeEventListener('scroll', handleScroll);
+      // Save a breath mark at the current scroll position on unmount
+      var scrollTop = window.scrollY || document.documentElement.scrollTop;
+      var docHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+      if (docHeight > 0) {
+        var pos = Math.min(1, Math.max(0, scrollTop / docHeight));
+        saveBreathMark(currentId, Math.round(pos * 10000) / 10000);
+      }
     };
   }, [id]);
 
@@ -595,6 +638,11 @@ export function Reader({ id }) {
             {article.word_count && (
               <span class="reader-meta-item">{article.word_count.toLocaleString()} words</span>
             )}
+            {article._cachedAt && (
+              <span class="reader-meta-item cached-indicator" title={'Cached copy from ' + new Date(article._cachedAt).toLocaleString()}>
+                <IconInkDrop size={10} /> saved copy · {formatDate(article._cachedAt)}
+              </span>
+            )}
           </div>
           <TagPicker articleId={id} />
           <div class={'original-status original-status--' + ostatus}>
@@ -735,53 +783,94 @@ export function Reader({ id }) {
         <div
           style={getReaderStyle(readerPrefs.value)}
           data-reader-theme={readerPrefs.value.theme || 'auto'}
+          class="reader-body"
         >
           <ReaderToolbar />
-          {(readerPrefs.value.contentMode === 'markdown' ||
-            readerPrefs.value.contentMode === 'source') &&
-          markdownLoading ? (
-            <div class="reader-content">
-              <LoadingSpinner />
-            </div>
-          ) : readerPrefs.value.contentMode === 'source' ? (
-            <>
-              {markdownRaw && (
-                <div class="reader-source-actions">
-                  <button
-                    class="btn btn-sm btn-secondary"
-                    onClick={function () {
-                      navigator.clipboard
-                        .writeText(markdownRaw)
-                        .then(function () {
-                          setCopied(true);
-                          addToast('Markdown copied to clipboard', 'success');
-                          setTimeout(function () {
-                            setCopied(false);
-                          }, 2000);
-                        })
-                        .catch(function () {
-                          addToast('Failed to copy to clipboard', 'error');
-                        });
-                    }}
-                  >
-                    {copied ? 'Copied' : 'Copy Markdown'}
-                  </button>
+          <div class="reader-layout">
+            {/* Margin sidenotes — visible on desktop, hidden on mobile */}
+            <aside class="reader-sidenotes" aria-label="Article metadata">
+              {article.domain && (
+                <div class="sidenote">
+                  <a href={article.original_url} target="_blank" rel="noopener noreferrer">
+                    {article.domain}
+                  </a>
                 </div>
               )}
-              <pre class="markdown-view-content">{markdownRaw || 'No markdown available.'}</pre>
-            </>
-          ) : (
-            <article
-              ref={contentRef}
-              class="reader-content"
-              dangerouslySetInnerHTML={{
-                __html:
-                  readerPrefs.value.contentMode === 'markdown' && markdownHtml
-                    ? markdownHtml
-                    : contentHtml,
-              }}
-            />
-          )}
+              {article.reading_time_minutes && (
+                <div class="sidenote">{article.reading_time_minutes} min read</div>
+              )}
+              {article.word_count && (
+                <div class="sidenote">{article.word_count.toLocaleString()} words</div>
+              )}
+              {article.created_at && (
+                <div class="sidenote">saved {formatDate(article.created_at)}</div>
+              )}
+              {article._cachedAt && (
+                <div class="sidenote cached-indicator">
+                  <IconInkDrop size={9} /> cached {formatDate(article._cachedAt)}
+                </div>
+              )}
+              {/* Breath marks — tick marks at previous reading pauses */}
+              {breathMarks.length > 0 && breathMarks.map(function (pos, i) {
+                var opacity = 0.12 + ((i + 1) / breathMarks.length) * 0.22;
+                return (
+                  <div
+                    key={i}
+                    class="breath-mark"
+                    style={{ top: (pos * 100) + '%', opacity: opacity }}
+                    title={'Previous reading pause at ' + Math.round(pos * 100) + '%'}
+                  />
+                );
+              })}
+            </aside>
+            <div class="reader-main">
+              {(readerPrefs.value.contentMode === 'markdown' ||
+                readerPrefs.value.contentMode === 'source') &&
+              markdownLoading ? (
+                <div class="reader-content">
+                  <LoadingSpinner />
+                </div>
+              ) : readerPrefs.value.contentMode === 'source' ? (
+                <>
+                  {markdownRaw && (
+                    <div class="reader-source-actions">
+                      <button
+                        class="btn btn-sm btn-secondary"
+                        onClick={function () {
+                          navigator.clipboard
+                            .writeText(markdownRaw)
+                            .then(function () {
+                              setCopied(true);
+                              addToast('Markdown copied to clipboard', 'success');
+                              setTimeout(function () {
+                                setCopied(false);
+                              }, 2000);
+                            })
+                            .catch(function () {
+                              addToast('Failed to copy to clipboard', 'error');
+                            });
+                        }}
+                      >
+                        {copied ? 'Copied' : 'Copy Markdown'}
+                      </button>
+                    </div>
+                  )}
+                  <pre class="markdown-view-content">{markdownRaw || 'No markdown available.'}</pre>
+                </>
+              ) : (
+                <article
+                  ref={contentRef}
+                  class="reader-content"
+                  dangerouslySetInnerHTML={{
+                    __html:
+                      readerPrefs.value.contentMode === 'markdown' && markdownHtml
+                        ? markdownHtml
+                        : contentHtml,
+                  }}
+                />
+              )}
+            </div>
+          </div>
         </div>
       </main>
     </>

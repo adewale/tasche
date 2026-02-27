@@ -37,7 +37,13 @@ export async function request(method, path, body) {
     throw e;
   }
   if (resp.headers.get('content-type')?.includes('application/json')) {
-    return resp.json();
+    const data = await resp.json();
+    // Attach cache provenance when served from SW cache
+    var cacheSource = resp.headers.get('X-Tasche-Source');
+    if (cacheSource === 'cache' && data && typeof data === 'object' && !Array.isArray(data)) {
+      data._cachedAt = resp.headers.get('X-Tasche-Cached-At') || new Date().toISOString();
+    }
+    return data;
   }
   return resp;
 }
@@ -369,6 +375,32 @@ export function getCacheStats() {
     navigator.serviceWorker.controller.postMessage({
       type: 'GET_CACHE_STATS',
     });
+  });
+}
+
+// Clear SW caches (force refresh)
+export function clearAllCaches() {
+  return new Promise(function (resolve) {
+    if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) {
+      resolve(false);
+      return;
+    }
+
+    var timeout = setTimeout(function () {
+      navigator.serviceWorker.removeEventListener('message', handler);
+      resolve(false);
+    }, 5000);
+
+    function handler(event) {
+      if (event.data && event.data.type === 'CACHES_CLEARED') {
+        clearTimeout(timeout);
+        navigator.serviceWorker.removeEventListener('message', handler);
+        resolve(true);
+      }
+    }
+
+    navigator.serviceWorker.addEventListener('message', handler);
+    navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_CACHES' });
   });
 }
 

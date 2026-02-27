@@ -570,6 +570,56 @@ textarea {
   border-radius: 2px;
 }
 
+/* Data-ink favicon — monochrome dithered */
+
+.ink-favicon {
+  display: block;
+  image-rendering: pixelated;
+}
+
+.ink-favicon--letter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  font-family: var(--font-serif);
+  font-size: 0.75rem;
+  font-style: italic;
+  color: var(--text-secondary);
+  line-height: 1;
+}
+
+/* Ink-wash thumbnail — sumi-e posterized effect */
+
+.ink-wash-thumbnail {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.ink-wash-thumbnail-ink {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.ink-wash-thumbnail-color {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity var(--duration-slow) ease;
+}
+
+.ink-wash-thumbnail:hover .ink-wash-thumbnail-color {
+  opacity: 1;
+}
+
 .article-card--compact .article-card-body {
   gap: 12px;
 }
@@ -774,6 +824,83 @@ textarea {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+.cached-indicator {
+  color: var(--text-muted);
+  font-style: italic;
+  font-variant: normal;
+  letter-spacing: 0;
+}
+
+/* Reader layout — sidenotes + content */
+
+.reader-layout {
+  position: relative;
+}
+
+.reader-main {
+  max-width: var(--reader-max-width, 680px);
+  margin: 0 auto;
+}
+
+/* Margin sidenotes — Tuftean marginal annotations */
+
+.reader-sidenotes {
+  display: none;
+}
+
+.sidenote {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-variant: small-caps;
+  letter-spacing: 0.03em;
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+
+.sidenote a {
+  color: var(--text-muted);
+  text-decoration: underline;
+}
+
+.sidenote a:hover {
+  color: var(--text-secondary);
+}
+
+/* Breath marks — reading pause tick marks in the margin */
+
+.breath-mark {
+  position: absolute;
+  left: 0;
+  width: 1px;
+  height: 8px;
+  background: var(--text);
+}
+
+@media (min-width: 1080px) {
+  .reader-layout {
+    display: grid;
+    grid-template-columns: 160px 1fr;
+    gap: 32px;
+  }
+
+  .reader-sidenotes {
+    display: block;
+    position: relative;
+    padding-top: 4px;
+  }
+
+  .reader-main {
+    margin: 0;
+    max-width: var(--reader-max-width, 680px);
+  }
+
+  .breath-mark {
+    left: -20px;
+    width: 1px;
+    height: 6px;
+  }
 }
 
 .reader-actions {

@@ -560,6 +560,21 @@ export function IconMoon({ size = 16, ...props }) {
   );
 }
 
+export function IconInkDrop({ size = 12, ...props }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      stroke="none"
+      {...props}
+    >
+      <path d="M8 1.5C8 1.5 3.5 7 3.5 10.5a4.5 4.5 0 009 0C12.5 7 8 1.5 8 1.5z" />
+    </svg>
+  );
+}
+
 export function IconSun({ size = 16, ...props }) {
   return (
     <svg

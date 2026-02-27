@@ -565,6 +565,9 @@ async def get_article_content(
     response.headers["Content-Security-Policy"] = (
         "default-src 'none'; img-src * data:; style-src 'unsafe-inline'"
     )
+    # Ensure the SW's network-first strategy always revalidates — content
+    # can change when a user retries processing (#10).
+    response.headers["Cache-Control"] = "private, no-cache"
     return response
 
 

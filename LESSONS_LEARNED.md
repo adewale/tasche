@@ -760,3 +760,138 @@ The root cause is a **deployment process gap**, not a code bug. `pywrangler depl
 **Lesson 2:** E2E smoke tests should cover every API endpoint that the frontend calls on page load. The Tags view calls two endpoints (`/api/tags` and `/api/tag-rules`) but the smoke tests only covered one. Any endpoint that a view hits unconditionally on mount is a candidate for a smoke test — if it returns 500, the entire view is broken.
 
 **Lesson 3:** When adding a new database table, the checklist is: (1) write the migration, (2) write the route code, (3) add a smoke test for the new endpoint, (4) deploy via the make target that applies migrations. Missing any step creates a latent failure that mocks can't detect.
+
+---
+
+## Service Worker Lessons
+
+### 52. API Cache Must Be Invalidated After Mutations
+
+The Service Worker cached every `GET /api/*` response but never cleared cache entries when the user performed mutations (POST, PATCH, DELETE). Result: after archiving an article, the library still showed it as unread because the next `GET /api/articles` served the stale cached response. The user saw "bad stale content with no solutions available."
+
+**Root cause:** The SW's fetch handler only distinguished between navigation requests and everything else. All fetches went through `networkFirst()` which cached successful GET responses, but mutations passed through with no side effects on the cache. There was no connection between "user archived article X" and "invalidate the cached article list."
+
+**Fix:** Intercept all non-GET API requests in a dedicated `networkWithCacheInvalidation()` handler. On success, call `invalidateApiCache(mutationUrl)` which deletes:
+- The specific resource (`/api/articles/{id}`)
+- List endpoints (`/api/articles?*`)
+- Related sub-resources (`/api/articles/{id}/tags`)
+- Aggregate endpoints (`/api/stats/*`)
+
+**Lesson:** A Service Worker that caches reads but ignores writes is worse than no caching at all. Every cache-write strategy needs a corresponding invalidation strategy. Map out which mutations affect which cached resources before shipping.
+
+### 53. Network Timeout Is Not Optional for Network-First
+
+The original SW used a pure network-first strategy: try network, fall back to cache only on network error. Problem: a slow/hanging network connection (common on mobile) would leave the user staring at a blank screen for 30+ seconds before the browser's default timeout kicked in and the SW fell back to cache. The user had cached content available but couldn't access it.
+
+**Fix:** `Promise.race()` between the fetch and a 4-second timeout. If the network doesn't respond in 4s, serve from cache immediately. If the network eventually responds, update the cache in the background.
+
+```javascript
+function raceTimeout(fetchPromise, timeoutMs) {
+  return Promise.race([
+    fetchPromise,
+    new Promise(function (_, reject) {
+      setTimeout(function () { reject(new Error('timeout')); }, timeoutMs);
+    }),
+  ]);
+}
+```
+
+**Lesson:** Network-first without a timeout is effectively network-only on slow connections. The timeout should be aggressive (2–5s) because the whole point of caching is to serve instantly when the network is slow.
+
+### 54. skipWaiting Alone Causes Silent Breakage
+
+The SW called `self.skipWaiting()` in its install event, which immediately activates the new version. But the running page was still using the old SW's cached responses and message protocol. If the new SW changed cache names, message types, or fetch strategies, the page would silently break until the user manually reloaded.
+
+**Fix:** Keep `skipWaiting()` but add a `controllerchange` listener on the page that auto-reloads:
+
+```javascript
+navigator.serviceWorker.addEventListener('controllerchange', function () {
+  window.location.reload();
+});
+```
+
+Also detect `updatefound` + `statechange` on the registration to reload when a new SW activates.
+
+**Lesson:** `skipWaiting()` is only half the solution. The page must detect the controller change and reload itself. Without the page-side listener, `skipWaiting()` creates a window where old page code talks to a new SW.
+
+### 55. Cache Size Grows Without Bounds Unless You Prune
+
+The API cache stored every successful GET response with no eviction. Over weeks of use, this accumulated hundreds of entries (article lists with different query params, individual articles, stats snapshots). On devices with limited storage, this could hit quota limits and cause all caching to fail silently.
+
+**Fix:** After every cache write, run `pruneApiCache()` which checks entry count against `MAX_API_CACHE_ENTRIES` (60) and deletes oldest entries (by `X-Tasche-Cached-At` timestamp) when over the limit. Also clear the entire API cache on SW activation (version bump).
+
+**Lesson:** Every cache needs a size policy. Even "small" caches grow unbounded over time. LRU eviction or TTL expiry should be wired in from the start, not added after storage quota errors appear in production.
+
+### 56. 5xx Errors Should Fall Back to Stale Cache
+
+The original SW only fell back to cache on network errors (TypeError from fetch). A 500/502/503 from the server was treated as a successful network response — the error page was returned to the app, and the perfectly good cached version was ignored.
+
+**Fix:** In the network-first handler, check `response.ok`. If the server returns 5xx, search both the API cache and offline cache for the best (most recent) cached version of that URL via `findBestCached()`. Only if no cached version exists does the 5xx propagate to the app.
+
+**Lesson:** From the user's perspective, a server error and a network error are the same thing — the content they want isn't available from the network. The SW should treat 5xx the same as a network failure and serve cached content with a staleness indicator.
+
+### 57. Dual-Cache Architecture Needs Cross-Cache Lookup
+
+The SW had two caches: `tasche-api-v2` (automatic API response cache) and `tasche-offline-v1` (user-initiated "save for offline"). But lookups only checked the cache where the entry was originally stored. An article saved for offline wouldn't be found when the API cache handler looked for a fallback, and vice versa.
+
+**Fix:** `findBestCached(request)` searches both caches and returns the most recent match by comparing `X-Tasche-Cached-At` timestamps. `handleSaveForOffline` and `handleAutoPrecache` now store responses in both caches with timestamps, ensuring content is findable regardless of which cache the lookup hits.
+
+**Lesson:** If you have multiple caches, your fallback logic must search all of them. Otherwise you end up with content the user saved but can't access through the normal fetch path. A cross-cache lookup function centralizes this.
+
+### 58. Cache Provenance Headers Enable Staleness UI
+
+Users seeing cached content need to know it's cached and how old it is. Without this information, they can't tell whether they're looking at live data or a 3-day-old snapshot.
+
+**Fix:** Two custom headers:
+- `X-Tasche-Cached-At`: stamped when a response is written to cache (ISO timestamp)
+- `X-Tasche-Source: cache`: stamped when a response is served from cache
+
+The frontend's `request()` function detects `X-Tasche-Source: cache` and attaches `_cachedAt` to the response data. The Reader view displays "saved copy · 2h ago" with an ink-drop icon when viewing cached content.
+
+**Lesson:** Cache provenance should be a first-class concept, not an afterthought. Stamp when cached, stamp when served from cache, and let the UI layer decide how to present staleness. Users trust cached content more when they know it's cached.
+
+### 59. Offline Mutation Queues Need Conflict Detection
+
+The SW queued mutations (POST/PATCH/DELETE) when offline for replay when connectivity returned. But without timestamps, stale queued mutations could overwrite newer server state. Example: user archives an article offline, then un-archives it on another device. When the first device comes back online, the stale "archive" mutation replays and overwrites the un-archive.
+
+**Fix:** Stamp every queued mutation with `queuedAt` timestamp. On replay, drop any mutation older than 1 hour. This is a simple heuristic — not true conflict resolution — but it prevents the worst case of very stale mutations overwriting current state.
+
+**Lesson:** Offline mutation queues without conflict detection are a source of data loss. At minimum, timestamp mutations and drop stale ones. For production systems, consider vector clocks or server-side last-write-wins with client-visible conflict markers.
+
+### 60. Server Must Set Cache-Control on Mutable Content
+
+The article content endpoint (`GET /api/articles/{id}/content`) returned R2 content without any `Cache-Control` header. Browsers and intermediate proxies could cache this response indefinitely. If the article was re-processed (e.g., after a retry), the user would keep seeing the old content from the browser's HTTP cache, bypassing the SW entirely.
+
+**Fix:** Added `Cache-Control: private, no-cache` to the content endpoint. This tells the browser to always revalidate with the server (or SW), ensuring the SW's cache strategy is the single source of truth for freshness.
+
+**Lesson:** Service Worker caching and HTTP caching are two independent layers. If the server doesn't set `Cache-Control`, the browser's HTTP cache can serve stale content before the SW even sees the request. Set `Cache-Control: private, no-cache` on any endpoint where the SW manages freshness.
+
+### 61. Centralize SW Message Handling
+
+The original codebase had message listeners scattered across multiple components — `app.jsx` listened for sync status, `Settings.jsx` listened for cache clear confirmation, individual views posted messages independently. This made it impossible to reason about the full message protocol or add new message types without checking every component.
+
+**Fix:** Single `message` event listener in `app.jsx` with a `switch(event.data.type)` dispatch. Components that need to react to SW messages use a `useSWMessage` hook that subscribes to the centralized handler.
+
+**Lesson:** The SW ↔ page message channel is an API boundary. Treat it like one: centralize the handler, document the message types, and route through a single dispatcher. Scattered listeners are the SW equivalent of scattered API calls with no client library.
+
+### 62. SW Version Bumps Must Clear Old Caches
+
+When the SW was updated but cache names stayed the same, the new SW inherited the old SW's cached data. If the new SW expected a different response format or cache structure, it would break on the stale entries. Conversely, if you bump the cache name without clearing the old one, storage grows unbounded.
+
+**Fix:** Bump API cache to `tasche-api-v2` on the rewrite. In the `activate` event, delete all caches not in the current allowlist. This ensures a clean slate on SW version changes.
+
+```javascript
+self.addEventListener('activate', function (event) {
+  var keep = new Set([STATIC_CACHE, API_CACHE, OFFLINE_CACHE]);
+  event.waitUntil(
+    caches.keys().then(function (names) {
+      return Promise.all(
+        names.filter(function (n) { return !keep.has(n); })
+             .map(function (n) { return caches.delete(n); })
+      );
+    })
+  );
+});
+```
+
+**Lesson:** Every SW deploy should include cache cleanup in the activate event. List the caches you want to keep and delete everything else. This prevents orphaned caches from consuming storage and ensures the new SW starts with the caches it expects.

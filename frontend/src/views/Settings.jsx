@@ -3,7 +3,7 @@ import { useEffect, useCallback } from 'preact/hooks';
 import { Header } from '../components/Header.jsx';
 import { user, addToast } from '../state.js';
 import { useSWMessage } from '../hooks/useSWMessage.js';
-import { performLogout, exportData, getCacheStats, triggerAutoPrecache } from '../api.js';
+import { performLogout, exportData, getCacheStats, triggerAutoPrecache, clearAllCaches } from '../api.js';
 import { getBookmarkletCode } from '../utils.js';
 import { IconBookmark } from '../components/Icons.jsx';
 
@@ -22,6 +22,7 @@ export function Settings() {
   const autoCacheEnabled = useSignal(localStorage.getItem('tasche-auto-cache') !== 'false');
   const cacheStats = useSignal(null);
   const precaching = useSignal(false);
+  const clearing = useSignal(false);
 
   useEffect(function () {
     loadCacheStats();
@@ -106,13 +107,31 @@ export function Settings() {
                   ')'}
             </p>
           )}
-          <button
-            class="btn btn-secondary mt-2"
-            disabled={precaching.value || !navigator.onLine}
-            onClick={handlePrecacheNow}
-          >
-            {precaching.value ? 'Caching...' : 'Cache articles now'}
-          </button>
+          <div class="flex-wrap-gap mt-2">
+            <button
+              class="btn btn-secondary"
+              disabled={precaching.value || !navigator.onLine}
+              onClick={handlePrecacheNow}
+            >
+              {precaching.value ? 'Caching...' : 'Cache articles now'}
+            </button>
+            <button
+              class="btn btn-secondary"
+              disabled={clearing.value}
+              onClick={function () {
+                clearing.value = true;
+                clearAllCaches().then(function () {
+                  addToast('Caches cleared. Reloading...', 'success');
+                  setTimeout(function () { window.location.reload(); }, 500);
+                }).catch(function () {
+                  clearing.value = false;
+                  addToast('Failed to clear caches', 'error');
+                });
+              }}
+            >
+              {clearing.value ? 'Clearing...' : 'Clear cache & reload'}
+            </button>
+          </div>
         </div>
 
         <div class="mt-8">

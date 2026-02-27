@@ -15,6 +15,8 @@ import {
   IconClock,
   IconArchive,
 } from './Icons.jsx';
+import { InkFavicon } from './InkFavicon.jsx';
+import { InkWashThumbnail } from './InkWashThumbnail.jsx';
 
 const tagCache = new Map();
 
@@ -26,7 +28,7 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
   const isProcessing = a.status === 'pending' || a.status === 'processing';
 
   const [cardTags, setCardTags] = useState([]);
-  const [thumbError, setThumbError] = useState(false);
+  const [thumbError] = useState(false);
   const [offlineSaved, setOfflineSaved] = useState(false);
   const [audioLoading, setAudioLoading] = useState(false);
 
@@ -120,9 +122,6 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
 
   var thumbnailSrc = a.thumbnail_key ? '/api/articles/' + a.id + '/thumbnail' : null;
   var hasThumbnail = thumbnailSrc && !thumbError;
-  var faviconSrc = a.domain
-    ? 'https://www.google.com/s2/favicons?domain=' + a.domain + '&sz=32'
-    : null;
 
   var cardClass = 'article-card';
   if (!hasThumbnail) cardClass += ' article-card--compact';
@@ -149,28 +148,15 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
         )}
         {hasThumbnail ? (
           <div class="article-card-thumbnail">
-            <img
+            <InkWashThumbnail
               src={thumbnailSrc}
               alt=""
-              loading="lazy"
-              onError={function () {
-                setThumbError(true);
-              }}
             />
           </div>
-        ) : faviconSrc ? (
+        ) : a.domain ? (
           <div class="article-card-favicon">
             <div class="favicon-container">
-              <img
-                src={faviconSrc}
-                alt=""
-                width="16"
-                height="16"
-                loading="lazy"
-                onError={function (e) {
-                  e.target.closest('.article-card-favicon').style.display = 'none';
-                }}
-              />
+              <InkFavicon domain={a.domain} size={16} />
             </div>
           </div>
         ) : null}
