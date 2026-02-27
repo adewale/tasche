@@ -18,6 +18,7 @@ from tests.conftest import (
     MockEnv,
     MockQueue,
     MockR2,
+    TrackingD1,
     make_test_helpers,
 )
 
@@ -484,6 +485,203 @@ class TestCreateArticle:
         # Verify the UPDATE includes audio_status
         assert len(updates) == 1
         assert "audio_status" in updates[0]["sql"]
+
+
+# ---------------------------------------------------------------------------
+# POST /api/articles — listen_later behaviour tests (value-level assertions)
+# ---------------------------------------------------------------------------
+
+
+def _parse_insert_columns_and_params(
+    sql: str, params: list[Any]
+) -> dict[str, Any]:
+    """Parse an INSERT ... VALUES statement into a column→value mapping.
+
+    Handles both parameterised (?) and inline ('pending') values.
+    Returns a dict mapping column names to their bound or inline values.
+    """
+    import re
+
+    # Extract column names from INSERT INTO table (col1, col2, ...)
+    col_match = re.search(r"\(([^)]+)\)\s*VALUES", sql, re.IGNORECASE)
+    if not col_match:
+        return {}
+
+    columns = [c.strip() for c in col_match.group(1).split(",")]
+
+    # Extract values from VALUES (...)
+    val_match = re.search(r"VALUES\s*\(([^)]+)\)", sql, re.IGNORECASE)
+    if not val_match:
+        return {}
+
+    values_raw = [v.strip() for v in val_match.group(1).split(",")]
+
+    result: dict[str, Any] = {}
+    param_idx = 0
+    for i, col in enumerate(columns):
+        if i < len(values_raw):
+            val = values_raw[i]
+            if val == "?":
+                result[col] = params[param_idx] if param_idx < len(params) else None
+                param_idx += 1
+            else:
+                # Inline value like 'pending' or 0
+                result[col] = val.strip("'")
+    return result
+
+
+class TestListenLaterBehaviour:
+    """Value-level assertions for the listen_later / save-audio flow.
+
+    Unlike the SQL-string-inspection tests above, these verify the actual
+    bound parameter values that would reach D1.
+    """
+
+    async def test_listen_later_insert_binds_audio_status_pending(self) -> None:
+        """POST with listen_later=true binds audio_status='pending' in the INSERT."""
+        db = TrackingD1()
+        queue = MockQueue()
+        env = MockEnv(db=db, article_queue=queue)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles",
+            json={"url": "https://example.com/audio-insert", "listen_later": True},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 201
+
+        insert_stmts = [
+            (sql, params) for sql, params in db.executed if sql.strip().startswith("INSERT")
+        ]
+        assert len(insert_stmts) == 1
+
+        parsed = _parse_insert_columns_and_params(*insert_stmts[0])
+        assert parsed.get("audio_status") == "pending"
+
+    async def test_save_insert_does_not_include_audio_status(self) -> None:
+        """POST without listen_later omits audio_status from the INSERT entirely."""
+        db = TrackingD1()
+        queue = MockQueue()
+        env = MockEnv(db=db, article_queue=queue)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles",
+            json={"url": "https://example.com/plain-insert"},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 201
+
+        insert_stmts = [
+            (sql, params) for sql, params in db.executed if sql.strip().startswith("INSERT")
+        ]
+        assert len(insert_stmts) == 1
+
+        parsed = _parse_insert_columns_and_params(*insert_stmts[0])
+        assert "audio_status" not in parsed
+
+    async def test_listen_later_duplicate_update_sets_audio_status_pending(
+        self,
+    ) -> None:
+        """POST with listen_later=true on existing article sets audio_status='pending' in UPDATE."""
+        existing = ArticleFactory.create(
+            user_id="user_001",
+            original_url="https://example.com/dup-audio-update",
+        )
+
+        def result_fn(sql, params):
+            if "original_url = ?" in sql:
+                return [existing]
+            return []
+
+        db = TrackingD1(result_fn=result_fn)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles",
+            json={"url": "https://example.com/dup-audio-update", "listen_later": True},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 201
+
+        update_stmts = [
+            (sql, params)
+            for sql, params in db.executed
+            if "UPDATE articles SET" in sql
+        ]
+        assert len(update_stmts) == 1
+
+        # audio_status is set as an inline value in the SQL, not a ? placeholder
+        sql = update_stmts[0][0]
+        assert "audio_status = 'pending'" in sql
+
+    async def test_save_duplicate_update_does_not_set_audio_status(self) -> None:
+        """POST without listen_later on existing article does not include audio_status in UPDATE."""
+        existing = ArticleFactory.create(
+            user_id="user_001",
+            original_url="https://example.com/dup-plain-update",
+        )
+
+        def result_fn(sql, params):
+            if "original_url = ?" in sql:
+                return [existing]
+            return []
+
+        db = TrackingD1(result_fn=result_fn)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles",
+            json={"url": "https://example.com/dup-plain-update"},
+            cookies={COOKIE_NAME: session_id},
+        )
+
+        assert resp.status_code == 201
+
+        update_stmts = [
+            (sql, params)
+            for sql, params in db.executed
+            if "UPDATE articles SET" in sql
+        ]
+        assert len(update_stmts) == 1
+
+        sql = update_stmts[0][0]
+        assert "audio_status" not in sql
+
+    async def test_both_paths_enqueue_article_processing(self) -> None:
+        """Both Save and Save Audio enqueue an article_processing message."""
+        for listen_later in [False, True]:
+            db = TrackingD1()
+            queue = MockQueue()
+            env = MockEnv(db=db, article_queue=queue)
+
+            client, session_id = await _authenticated_client(env)
+            resp = client.post(
+                "/api/articles",
+                json={
+                    "url": f"https://example.com/enqueue-{listen_later}",
+                    "listen_later": listen_later,
+                },
+                cookies={COOKIE_NAME: session_id},
+            )
+
+            assert resp.status_code == 201
+
+            processing_msgs = [
+                m for m in queue.messages if m.get("type") == "article_processing"
+            ]
+            assert len(processing_msgs) == 1, (
+                f"listen_later={listen_later} should enqueue exactly one "
+                f"article_processing message, got {len(processing_msgs)}"
+            )
+            assert "article_id" in processing_msgs[0]
+            assert processing_msgs[0]["url"] == f"https://example.com/enqueue-{listen_later}"
 
 
 # ---------------------------------------------------------------------------

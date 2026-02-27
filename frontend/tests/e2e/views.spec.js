@@ -662,6 +662,118 @@ test.describe('Save article — UI form', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Save audio via UI form
+// ---------------------------------------------------------------------------
+test.describe('Save audio — UI form', () => {
+  test('save audio by entering URL and clicking Save audio', async ({ page }) => {
+    const errors = setupErrorListener(page);
+
+    await page.goto('/');
+    await expect(page.locator('.save-form')).toBeVisible({ timeout: 10000 });
+
+    const input = page.locator('.save-form input[type="url"]');
+    await input.fill('https://example.com/e2e-save-audio-test');
+    await page.locator('.btn-save-audio').click();
+
+    // Should show success toast
+    await expect(page.locator('.toast').filter({ hasText: /saved/i })).toBeVisible({
+      timeout: 10000,
+    });
+
+    // New article should appear in the list
+    await expect(page.locator('.article-card').first()).toBeVisible({ timeout: 10000 });
+
+    // Clean up: find and delete the article
+    const resp = await page.request.get('/api/articles?limit=1');
+    const articles = await resp.json();
+    if (articles.length > 0) {
+      createdArticleIds.push(articles[0].id);
+    }
+
+    expect(errors).toEqual([]);
+  });
+
+  test('save audio button shows loading state', async ({ page }) => {
+    const errors = setupErrorListener(page);
+
+    await page.goto('/');
+    await expect(page.locator('.save-form')).toBeVisible({ timeout: 10000 });
+
+    const input = page.locator('.save-form input[type="url"]');
+    await input.fill('https://example.com/e2e-save-audio-loading');
+
+    const btn = page.locator('.btn-save-audio');
+    await btn.click();
+
+    // Button should show loading state (disabled + text change)
+    await expect(btn).toBeDisabled({ timeout: 2000 });
+
+    // Wait for save to complete
+    await expect(page.locator('.toast').filter({ hasText: /saved/i })).toBeVisible({
+      timeout: 10000,
+    });
+
+    // Clean up
+    const resp = await page.request.get('/api/articles?limit=1');
+    const articles = await resp.json();
+    if (articles.length > 0) {
+      createdArticleIds.push(articles[0].id);
+    }
+
+    expect(errors).toEqual([]);
+  });
+
+  test('both save paths create articles with same structure', async ({ page, request }) => {
+    const errors = setupErrorListener(page);
+
+    // Save via regular Save button
+    await page.goto('/');
+    await expect(page.locator('.save-form')).toBeVisible({ timeout: 10000 });
+
+    const input = page.locator('.save-form input[type="url"]');
+    await input.fill('https://example.com/e2e-parity-save');
+    await page.locator('.save-form .btn-primary').click();
+    await expect(page.locator('.toast').filter({ hasText: /saved/i })).toBeVisible({
+      timeout: 10000,
+    });
+
+    // Get the saved article
+    let resp = await request.get('/api/articles?limit=1');
+    let articles = await resp.json();
+    expect(articles.length).toBeGreaterThan(0);
+    const saveArticle = articles[0];
+    createdArticleIds.push(saveArticle.id);
+
+    // Dismiss toast and save via Save Audio button
+    await page.locator('.toast').click().catch(() => {});
+    await page.waitForTimeout(500);
+
+    await input.fill('https://example.com/e2e-parity-audio');
+    await page.locator('.btn-save-audio').click();
+    await expect(page.locator('.toast').filter({ hasText: /saved/i })).toBeVisible({
+      timeout: 10000,
+    });
+
+    // Get the audio-saved article
+    resp = await request.get('/api/articles?limit=1');
+    articles = await resp.json();
+    expect(articles.length).toBeGreaterThan(0);
+    const audioArticle = articles[0];
+    createdArticleIds.push(audioArticle.id);
+
+    // Both should have the same structural fields
+    expect(saveArticle.status).toBe('pending');
+    expect(audioArticle.status).toBe('pending');
+    expect(saveArticle.id).toBeTruthy();
+    expect(audioArticle.id).toBeTruthy();
+    expect(saveArticle.domain).toBe('example.com');
+    expect(audioArticle.domain).toBe('example.com');
+
+    expect(errors).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Library: filter tabs
 // ---------------------------------------------------------------------------
 test.describe('Library — filter tabs', () => {

@@ -1295,3 +1295,170 @@ class TestProcessArticlePreSuppliedContent:
             if "title" in sql and "ready" in str(params)
         ]
         assert len(ready_updates) >= 1
+
+
+# =========================================================================
+# test_process_article — content parity between Save and Save Audio paths
+# =========================================================================
+
+
+class TestProcessArticleContentParity:
+    """Verify process_article() produces identical content outputs regardless
+    of whether audio_status is 'pending' (Save Audio) or None (plain Save).
+
+    Both paths go through the same processing pipeline. These tests confirm
+    the content extraction (HTML, markdown, metadata) happens identically.
+    """
+
+    async def test_processing_stores_html_regardless_of_audio_status(self) -> None:
+        """content.html is stored in R2 for both audio_status=None and audio_status='pending'."""
+        for audio_status in [None, "pending"]:
+
+            def make_result_fn(status):
+                def result_fn(sql, params):
+                    if "SELECT audio_status" in sql:
+                        return [{"audio_status": status, "user_id": "user_001"}]
+                    return []
+
+                return result_fn
+
+            db = TrackingD1(result_fn=make_result_fn(audio_status))
+            r2 = MockR2()
+            queue = MockQueue()
+            env = _browser_env(MockEnv(db=db, content=r2, article_queue=queue))
+
+            mock_client = _make_mock_http_fetch()
+
+            with (
+                patch("articles.processing.http_fetch", mock_client),
+                patch("articles.images.http_fetch", mock_client),
+                patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+            ):
+                from articles.processing import process_article
+
+                art_id = f"art_html_{audio_status}"
+                await process_article(art_id, "https://example.com/article", env)
+
+            assert f"articles/{art_id}/content.html" in r2._store, (
+                f"content.html missing in R2 when audio_status={audio_status!r}"
+            )
+
+    async def test_processing_stores_markdown_in_d1_regardless_of_audio_status(
+        self,
+    ) -> None:
+        """The final UPDATE includes markdown_content for both Save and Save Audio paths."""
+        for audio_status in [None, "pending"]:
+
+            def make_result_fn(status):
+                def result_fn(sql, params):
+                    if "SELECT audio_status" in sql:
+                        return [{"audio_status": status, "user_id": "user_001"}]
+                    return []
+
+                return result_fn
+
+            db = TrackingD1(result_fn=make_result_fn(audio_status))
+            r2 = MockR2()
+            queue = MockQueue()
+            env = _browser_env(MockEnv(db=db, content=r2, article_queue=queue))
+
+            mock_client = _make_mock_http_fetch()
+
+            with (
+                patch("articles.processing.http_fetch", mock_client),
+                patch("articles.images.http_fetch", mock_client),
+                patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+            ):
+                from articles.processing import process_article
+
+                await process_article(
+                    f"art_md_{audio_status}", "https://example.com/article", env
+                )
+
+            # The final UPDATE should include markdown_content
+            md_updates = [
+                (sql, params)
+                for sql, params in db.executed
+                if "markdown_content" in sql and "UPDATE" in sql
+            ]
+            assert len(md_updates) >= 1, (
+                f"No UPDATE with markdown_content when audio_status={audio_status!r}"
+            )
+
+    async def test_processing_stores_metadata_json_regardless_of_audio_status(
+        self,
+    ) -> None:
+        """metadata.json is stored in R2 for both Save and Save Audio paths."""
+        for audio_status in [None, "pending"]:
+
+            def make_result_fn(status):
+                def result_fn(sql, params):
+                    if "SELECT audio_status" in sql:
+                        return [{"audio_status": status, "user_id": "user_001"}]
+                    return []
+
+                return result_fn
+
+            db = TrackingD1(result_fn=make_result_fn(audio_status))
+            r2 = MockR2()
+            queue = MockQueue()
+            env = _browser_env(MockEnv(db=db, content=r2, article_queue=queue))
+
+            mock_client = _make_mock_http_fetch()
+
+            with (
+                patch("articles.processing.http_fetch", mock_client),
+                patch("articles.images.http_fetch", mock_client),
+                patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+            ):
+                from articles.processing import process_article
+
+                art_id = f"art_meta_{audio_status}"
+                await process_article(art_id, "https://example.com/article", env)
+
+            assert f"articles/{art_id}/metadata.json" in r2._store, (
+                f"metadata.json missing in R2 when audio_status={audio_status!r}"
+            )
+
+    async def test_processing_with_audio_pending_stores_content_and_enqueues_tts(
+        self,
+    ) -> None:
+        """When audio_status='pending', both content storage AND TTS enqueue happen."""
+
+        def result_fn(sql, params):
+            if "SELECT audio_status" in sql:
+                return [{"audio_status": "pending", "user_id": "user_001"}]
+            return []
+
+        db = TrackingD1(result_fn=result_fn)
+        r2 = MockR2()
+        queue = MockQueue()
+        env = _browser_env(MockEnv(db=db, content=r2, article_queue=queue))
+
+        mock_client = _make_mock_http_fetch()
+
+        with (
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
+            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
+        ):
+            from articles.processing import process_article
+
+            await process_article("art_both", "https://example.com/article", env)
+
+        # Content stored in R2
+        assert "articles/art_both/content.html" in r2._store
+        assert "articles/art_both/metadata.json" in r2._store
+
+        # Markdown stored in D1
+        md_updates = [
+            (sql, params)
+            for sql, params in db.executed
+            if "markdown_content" in sql and "UPDATE" in sql
+        ]
+        assert len(md_updates) >= 1
+
+        # TTS enqueued
+        tts_msgs = [m for m in queue.messages if m.get("type") == "tts_generation"]
+        assert len(tts_msgs) == 1
+        assert tts_msgs[0]["article_id"] == "art_both"
