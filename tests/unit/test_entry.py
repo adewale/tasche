@@ -559,6 +559,7 @@ class TestConfigCheck:
         env.GITHUB_CLIENT_SECRET = "test-secret"
         env.CF_ACCOUNT_ID = "test-account"
         env.CF_API_TOKEN = "test-token"
+        env.READABILITY = "mock-readability-binding"
 
         client = self._make_client(env)
         resp = client.get("/api/health/config")

@@ -109,10 +109,11 @@ async def health_config(request: Request) -> dict:
         ("SESSIONS", True, "KV namespace for auth sessions"),
         ("ARTICLE_QUEUE", True, "Queue for async processing"),
         ("AI", True, "Workers AI binding for TTS"),
+        ("READABILITY", False, "Better content extraction (optional — falls back to built-in parser)"),
     ]
     _VARS = [
         ("SITE_URL", False, "Base URL for auth callbacks (auto-detected if empty)"),
-        ("ALLOWED_EMAILS", True, "Comma-separated list of allowed emails"),
+        ("ALLOWED_EMAILS", True, "Your GitHub email address (comma-separated for multiple users)"),
         ("GITHUB_CLIENT_ID", True, "GitHub OAuth app client ID"),
         ("GITHUB_CLIENT_SECRET", True, "GitHub OAuth app client secret"),
         ("CF_ACCOUNT_ID", False, "Cloudflare account ID for Browser Rendering"),

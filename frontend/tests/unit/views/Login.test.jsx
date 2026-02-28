@@ -72,9 +72,9 @@ describe('Login', () => {
     });
     render(<Login />);
     await waitFor(() => {
-      expect(screen.getByText('Create a GitHub OAuth App at github.com/settings/developers')).toBeInTheDocument();
+      expect(screen.getByText(/Create a GitHub OAuth App at github\.com\/settings\/developers/)).toBeInTheDocument();
     });
-    expect(screen.getByText('Set your email address so you can log in')).toBeInTheDocument();
+    expect(screen.getByText(/Set this to the email on your GitHub account/)).toBeInTheDocument();
   });
 
   it('does not show help text for items with ok status', async () => {

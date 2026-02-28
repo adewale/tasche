@@ -2,13 +2,13 @@ import { useState, useEffect } from 'preact/hooks';
 import { getHealthConfig } from '../api.js';
 
 var HELP_TEXT = {
-  GITHUB_CLIENT_ID: 'Create a GitHub OAuth App at github.com/settings/developers',
-  GITHUB_CLIENT_SECRET: 'Create a GitHub OAuth App at github.com/settings/developers',
-  ALLOWED_EMAILS: 'Set your email address so you can log in',
-  SITE_URL: 'Set the base URL for auth callbacks and bookmarklet',
-  READABILITY: 'Deploy the readability-worker for better content extraction',
-  CF_ACCOUNT_ID: 'Set this for JS-heavy page screenshots via Browser Rendering',
-  CF_API_TOKEN: 'Set this for JS-heavy page screenshots via Browser Rendering',
+  GITHUB_CLIENT_ID: 'Create a GitHub OAuth App at github.com/settings/developers — set the callback URL to this site\'s URL + /api/auth/callback',
+  GITHUB_CLIENT_SECRET: 'From your GitHub OAuth App at github.com/settings/developers',
+  ALLOWED_EMAILS: 'Set this to the email on your GitHub account — run: npx wrangler secret put ALLOWED_EMAILS',
+  SITE_URL: 'Auto-detected from your URL. Only set this if using a custom domain.',
+  READABILITY: 'Optional — improves content extraction. Without it, the built-in parser handles most pages.',
+  CF_ACCOUNT_ID: 'Optional — enables screenshots of JS-heavy pages via Browser Rendering',
+  CF_API_TOKEN: 'Optional — enables screenshots of JS-heavy pages via Browser Rendering',
 };
 
 function SetupChecklist({ checks }) {

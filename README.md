@@ -16,7 +16,28 @@ A self-hosted read-it-later service built on Cloudflare Python Workers. Save art
 
 ## Quick Start (< 5 minutes)
 
-### Option A: Deploy to workers.dev (fastest)
+### Option A: Deploy button (fastest)
+
+Click the **Deploy to Cloudflare** button above. After the deploy completes, your instance will be live at `https://tasche-<id>.workers.dev`. Visit it and you'll see a setup checklist. Three manual steps are needed:
+
+1. **Create a GitHub OAuth App** at [github.com/settings/developers](https://github.com/settings/developers):
+   - **Homepage URL:** your workers.dev URL (shown after deploy)
+   - **Authorization callback URL:** `<your-url>/api/auth/callback`
+
+2. **Set the OAuth secrets:**
+   ```bash
+   npx wrangler secret put GITHUB_CLIENT_ID
+   npx wrangler secret put GITHUB_CLIENT_SECRET
+   ```
+
+3. **Set your email whitelist** (use the email on your GitHub account):
+   ```bash
+   npx wrangler secret put ALLOWED_EMAILS
+   ```
+
+Reload the page — the checklist clears and you can sign in.
+
+### Option B: Deploy to workers.dev (CLI)
 
 ```bash
 git clone https://github.com/adewale/tasche.git
@@ -40,7 +61,7 @@ Create a GitHub OAuth App at [github.com/settings/developers](https://github.com
 - **Homepage URL:** `https://tasche.<your-subdomain>.workers.dev`
 - **Callback URL:** `https://tasche.<your-subdomain>.workers.dev/api/auth/callback`
 
-### Option B: Deploy to a custom domain
+### Option C: Deploy to a custom domain
 
 ```bash
 git clone https://github.com/adewale/tasche.git
@@ -130,7 +151,7 @@ Tasche runs entirely on the Cloudflare Developer Platform:
 | **R2** | `CONTENT` | Archived HTML, markdown, images, audio |
 | **KV** | `SESSIONS` | Auth sessions with 7-day TTL |
 | **Queues** | `ARTICLE_QUEUE` | Async article processing and TTS |
-| **Workers AI** | -- | Text-to-speech (@cf/deepgram/aura-2-en) |
+| **Workers AI** | -- | Text-to-speech (configurable via `TTS_MODEL`, default: MeloTTS) |
 
 **Data flow:** Save URL > API creates article (pending) > Queue consumer fetches page > Readability extracts content > Images converted to WebP > HTML + Markdown stored in R2 > FTS5 indexed in D1.
 
