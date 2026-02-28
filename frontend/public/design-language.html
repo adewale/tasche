@@ -1,0 +1,1577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tasche — Design Language</title>
+<style>
+/* ── Reset ── */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+/* ── Utility ── */
+.text-secondary { color: #6e6e73; }
+[data-theme='dark'] .text-secondary { color: #aeaeb2; }
+
+/* ── Page ── */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background: #f5f5f7;
+  color: #1d1d1f;
+  line-height: 1.5;
+}
+[data-theme='dark'] {
+  background: #141416;
+  color: #f5f5f7;
+}
+
+/* ── Layout ── */
+.page { max-width: 960px; margin: 0 auto; padding: 32px 24px 64px; }
+
+.page-header {
+  border-bottom: 2px solid currentColor;
+  padding-bottom: 12px;
+  margin-bottom: 40px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.page-title {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.page-subtitle {
+  font-size: 0.8125rem;
+  color: #6e6e73;
+}
+[data-theme='dark'] .page-subtitle { color: #aeaeb2; }
+
+.theme-toggle {
+  padding: 6px 14px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  border: 1px solid;
+  border-radius: 2px;
+  cursor: pointer;
+  background: transparent;
+  color: inherit;
+  border-color: currentColor;
+}
+
+/* ── Section ── */
+section { margin-bottom: 48px; }
+
+.section-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding-bottom: 4px;
+  border-bottom: 2px solid currentColor;
+  margin-bottom: 16px;
+}
+[data-theme='dark'] .section-title { color: #aeaeb2; }
+
+.section-note {
+  font-size: 0.8125rem;
+  color: #6e6e73;
+  margin-bottom: 16px;
+}
+[data-theme='dark'] .section-note { color: #aeaeb2; }
+
+.subsection-title {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6e6e73;
+  margin: 20px 0 8px;
+}
+[data-theme='dark'] .subsection-title { color: #aeaeb2; }
+
+/* ── Colour Swatches ── */
+.swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+.swatch-card {
+  border: 1px solid #e5e5e7;
+  border-radius: 2px;
+  overflow: hidden;
+}
+[data-theme='dark'] .swatch-card { border-color: #333336; }
+
+.swatch-color {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.swatch-info {
+  padding: 8px 10px;
+  font-size: 0.75rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #fff;
+}
+[data-theme='dark'] .swatch-info { background: #1e1e20; }
+
+.swatch-name { font-weight: 600; }
+.swatch-hex { font-family: 'SF Mono', Menlo, Consolas, monospace; color: #6e6e73; }
+[data-theme='dark'] .swatch-hex { color: #aeaeb2; }
+
+/* ── Status Badges (inline) ── */
+.badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 2px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border: 1px solid;
+  letter-spacing: 0.02em;
+}
+.badge-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+
+/* ── Buttons ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  text-decoration: none;
+  min-height: 40px;
+  transition: all 0.2s ease;
+}
+.btn-primary {
+  background: #1d1d1f;
+  color: #fff;
+  border-color: #1d1d1f;
+}
+[data-theme='dark'] .btn-primary {
+  background: #f5f5f7;
+  color: #141416;
+  border-color: #f5f5f7;
+}
+.btn-secondary {
+  background: #f5f5f7;
+  color: #1d1d1f;
+  border-color: #e5e5e7;
+}
+[data-theme='dark'] .btn-secondary {
+  background: #1e1e20;
+  color: #f5f5f7;
+  border-color: #333336;
+}
+.btn-danger {
+  background: transparent;
+  color: #915550;
+  border-color: #915550;
+}
+[data-theme='dark'] .btn-danger {
+  color: #b89490;
+  border-color: #b89490;
+}
+.btn-sm {
+  padding: 6px 14px;
+  font-size: 0.8125rem;
+  min-height: 36px;
+}
+.btn-icon {
+  padding: 8px;
+  width: 36px;
+  height: 36px;
+  border-radius: 2px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+
+/* ── Form inputs ── */
+.input {
+  padding: 10px 14px;
+  border: 1px solid #e5e5e7;
+  border-radius: 2px;
+  background: #fff;
+  color: #1d1d1f;
+  font-size: 0.9375rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+[data-theme='dark'] .input {
+  background: #141416;
+  color: #f5f5f7;
+  border-color: #333336;
+}
+.input:focus-visible {
+  border-color: currentColor;
+  border-width: 2px;
+}
+.input-group { display: flex; gap: 8px; }
+.input-group .input { flex: 1; }
+
+/* ── Tag chips ── */
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 2px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  background: transparent;
+  color: inherit;
+  border: 1px solid #e5e5e7;
+  white-space: nowrap;
+  font-variant: small-caps;
+  letter-spacing: 0.03em;
+  text-decoration: none;
+}
+[data-theme='dark'] .tag-chip { border-color: #333336; }
+
+/* ── Article Card ── */
+.demo-card {
+  background: #fff;
+  border: 1px solid #e5e5e7;
+  border-radius: 2px;
+  padding: 16px;
+  position: relative;
+  overflow: hidden;
+  max-width: 480px;
+}
+[data-theme='dark'] .demo-card {
+  background: #1e1e20;
+  border-color: #333336;
+}
+.demo-card-title {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 1.0625rem;
+  font-weight: 500;
+  line-height: 1.4;
+  margin-bottom: 4px;
+}
+.demo-card-meta {
+  font-size: 0.8125rem;
+  color: #6e6e73;
+  font-variant: small-caps;
+  letter-spacing: 0.03em;
+}
+[data-theme='dark'] .demo-card-meta { color: #aeaeb2; }
+.demo-card-meta span + span::before { content: '\00b7'; margin: 0 6px; color: #aeaeb2; }
+[data-theme='dark'] .demo-card-meta span + span::before { color: #9a9a9f; }
+.demo-card-excerpt {
+  font-size: 0.875rem;
+  color: #6e6e73;
+  line-height: 1.5;
+  margin-top: 8px;
+  font-style: italic;
+}
+[data-theme='dark'] .demo-card-excerpt { color: #aeaeb2; }
+.demo-card-tags { display: flex; gap: 4px; margin-top: 10px; }
+.demo-card-tags .tag-chip { padding: 2px 8px; font-size: 0.6875rem; }
+.demo-card-actions {
+  display: flex;
+  gap: 2px;
+  margin-top: 10px;
+}
+.demo-card-actions button {
+  padding: 8px;
+  border-radius: 2px;
+  color: #9a9a9f;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  min-height: 36px;
+}
+[data-theme='dark'] .demo-card-actions button { color: #a8a8ad; }
+.demo-card-label {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 0.6875rem;
+  color: #6e6e73;
+  background: #f5f5f7;
+  padding: 2px 8px;
+  border-radius: 2px;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+}
+[data-theme='dark'] .demo-card-label { background: #333336; color: #d1d1d6; }
+
+/* ── Card states ── */
+.demo-card--processing {
+  filter: saturate(0.15) opacity(0.5);
+}
+.demo-march {
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  pointer-events: none;
+}
+.demo-march rect {
+  fill: none;
+  stroke: rgba(29, 29, 31, 0.2);
+  stroke-width: 2;
+  stroke-dasharray: 8 6;
+  animation: demo-march 3s linear infinite;
+}
+[data-theme='dark'] .demo-march rect {
+  stroke: rgba(245, 245, 247, 0.25);
+}
+@keyframes demo-march { to { stroke-dashoffset: -14; } }
+.demo-card--selected {
+  border-color: currentColor;
+  border-width: 2px;
+}
+[data-theme='dark'] .demo-card--selected { background: #333336; }
+
+/* ── Card grid ── */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+.card-grid .demo-card { max-width: none; }
+
+/* ── Toast demos ── */
+.toast-demo {
+  padding: 12px 16px;
+  border-radius: 2px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border: 1px solid #e5e5e7;
+  max-width: 360px;
+  margin-bottom: 8px;
+  background: #fff;
+}
+[data-theme='dark'] .toast-demo { background: #1e1e20; border-color: #333336; }
+.toast-demo--success { border-color: #5a7068; }
+[data-theme='dark'] .toast-demo--success { border-color: #8aab94; }
+.toast-demo--error { border-color: #915550; }
+[data-theme='dark'] .toast-demo--error { border-color: #b89490; }
+.toast-demo--info { border-color: #aeaeb2; }
+[data-theme='dark'] .toast-demo--info { border-color: #6e6e73; }
+
+/* ── Toggle switch ── */
+.toggle {
+  position: relative;
+  flex-shrink: 0;
+  width: 44px;
+  height: 24px;
+  border-radius: 2px;
+  background: transparent;
+  border: 1px solid #e5e5e7;
+  cursor: pointer;
+  padding: 0;
+}
+[data-theme='dark'] .toggle { border-color: #333336; }
+.toggle--on { background: #1d1d1f; border-color: #1d1d1f; }
+[data-theme='dark'] .toggle--on { background: #f5f5f7; border-color: #f5f5f7; }
+.toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 1px;
+  background: #aeaeb2;
+  transition: transform 0.2s;
+}
+.toggle--on .toggle-knob {
+  background: #fff;
+  transform: translateX(20px);
+}
+[data-theme='dark'] .toggle--on .toggle-knob { background: #141416; }
+
+/* ── Spinner ── */
+.spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid #e5e5e7;
+  border-top-color: #1d1d1f;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+[data-theme='dark'] .spinner { border-color: #333336; border-top-color: #f5f5f7; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Skeleton ── */
+.skeleton-card {
+  padding: 16px;
+  border: 1px solid #e5e5e7;
+  border-radius: 2px;
+  display: flex;
+  gap: 12px;
+  max-width: 480px;
+}
+[data-theme='dark'] .skeleton-card { border-color: #333336; }
+.skeleton-thumb {
+  width: 72px;
+  height: 72px;
+  border-radius: 1px;
+  flex-shrink: 0;
+  background: #f5f5f7;
+}
+[data-theme='dark'] .skeleton-thumb { background: #333336; }
+.skeleton-lines { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+.skeleton-line {
+  height: 14px;
+  border-radius: 1px;
+  background: #f5f5f7;
+}
+[data-theme='dark'] .skeleton-line { background: #333336; }
+
+/* ── Kbd ── */
+.kbd {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #f5f5f7;
+  border: 1px solid #e5e5e7;
+  border-radius: 1px;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  font-weight: 600;
+  min-width: 24px;
+  text-align: center;
+}
+[data-theme='dark'] .kbd { background: #1e1e20; border-color: #333336; }
+
+/* ── Modal demo ── */
+.modal-demo {
+  background: #fff;
+  border-radius: 2px;
+  padding: 24px;
+  max-width: 400px;
+  border: 1px solid #e5e5e7;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+[data-theme='dark'] .modal-demo { background: #1e1e20; border-color: #333336; }
+.modal-demo-title {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.modal-demo-text {
+  font-size: 0.875rem;
+  color: #6e6e73;
+  margin-bottom: 16px;
+}
+[data-theme='dark'] .modal-demo-text { color: #aeaeb2; }
+.modal-demo-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* ── Icon grid ── */
+.icon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 8px;
+}
+.icon-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 4px;
+  border: 1px solid #e5e5e7;
+  border-radius: 2px;
+}
+[data-theme='dark'] .icon-cell { border-color: #333336; }
+.icon-cell svg { flex-shrink: 0; }
+.icon-cell-label {
+  font-size: 0.625rem;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  color: #6e6e73;
+  text-align: center;
+  word-break: break-all;
+}
+[data-theme='dark'] .icon-cell-label { color: #aeaeb2; }
+
+/* ── Typography samples ── */
+.type-sample-serif {
+  font-family: Georgia, 'Times New Roman', serif;
+}
+.type-sample-sans {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+.type-sample-mono {
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+}
+.type-row {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid #e5e5e7;
+}
+[data-theme='dark'] .type-row { border-color: #333336; }
+.type-label {
+  flex-shrink: 0;
+  width: 140px;
+  font-size: 0.6875rem;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  color: #6e6e73;
+}
+[data-theme='dark'] .type-label { color: #aeaeb2; }
+.type-example { flex: 1; }
+
+/* ── Spacing demo ── */
+.spacing-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.spacing-block {
+  height: 24px;
+  background: #1d1d1f;
+  border-radius: 1px;
+}
+[data-theme='dark'] .spacing-block { background: #f5f5f7; }
+.spacing-label {
+  flex-shrink: 0;
+  width: 60px;
+  font-size: 0.75rem;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  color: #6e6e73;
+}
+[data-theme='dark'] .spacing-label { color: #aeaeb2; }
+
+/* ── Reading progress bar ── */
+.progress-demo {
+  position: relative;
+  height: 3px;
+  background: #e5e5e7;
+  margin-top: 8px;
+}
+[data-theme='dark'] .progress-demo { background: #333336; }
+.progress-fill {
+  height: 100%;
+  background: #1d1d1f;
+}
+[data-theme='dark'] .progress-fill { background: #f5f5f7; }
+
+/* ── Filter tabs ── */
+.filter-tabs { display: flex; gap: 4px; }
+.filter-tab {
+  padding: 8px 16px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #6e6e73;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+}
+[data-theme='dark'] .filter-tab { color: #aeaeb2; }
+.filter-tab--active { color: #1d1d1f; border-bottom-color: #1d1d1f; }
+[data-theme='dark'] .filter-tab--active { color: #f5f5f7; border-bottom-color: #f5f5f7; }
+
+/* ── Divider ── */
+.divider { border: none; border-top: 1px solid #e5e5e7; margin: 24px 0; }
+[data-theme='dark'] .divider { border-color: #333336; }
+
+/* ── Empty state ── */
+.empty-state-demo {
+  text-align: center;
+  padding: 32px 16px;
+  color: #6e6e73;
+  border: 1px dashed #e5e5e7;
+  border-radius: 2px;
+  max-width: 480px;
+}
+[data-theme='dark'] .empty-state-demo { border-color: #333336; color: #aeaeb2; }
+.empty-state-demo svg { margin-bottom: 12px; opacity: 0.4; }
+.empty-state-demo-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: #1d1d1f;
+}
+[data-theme='dark'] .empty-state-demo-title { color: #f5f5f7; }
+.empty-state-demo-text { font-size: 0.875rem; }
+
+/* ── Stat card ── */
+.stat-card-demo {
+  background: #fff;
+  border: 1px solid #e5e5e7;
+  border-radius: 2px;
+  padding: 20px 16px;
+  text-align: center;
+}
+[data-theme='dark'] .stat-card-demo { background: #1e1e20; border-color: #333336; }
+.stat-number {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.stat-unit {
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: #6e6e73;
+  margin-left: 2px;
+}
+[data-theme='dark'] .stat-unit { color: #aeaeb2; }
+.stat-label {
+  font-size: 0.8125rem;
+  color: #6e6e73;
+  margin-top: 4px;
+  font-variant: small-caps;
+  letter-spacing: 0.03em;
+}
+[data-theme='dark'] .stat-label { color: #aeaeb2; }
+.stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; max-width: 480px; }
+
+/* ── Inline select ── */
+.inline-select {
+  padding: 4px 10px;
+  font-size: 0.8125rem;
+  border: 1px solid #e5e5e7;
+  border-radius: 2px;
+  background: #fff;
+  color: inherit;
+  font-family: inherit;
+}
+[data-theme='dark'] .inline-select { background: #141416; border-color: #333336; }
+
+/* ── Ink Favicon demo ── */
+.favicon-demo-row { display: flex; gap: 32px; align-items: flex-start; }
+.favicon-demo-item { text-align: center; }
+.favicon-demo-item .demo-label {
+  font-size: 0.6875rem;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  color: #6e6e73;
+  margin-top: 6px;
+}
+[data-theme='dark'] .favicon-demo-item .demo-label { color: #aeaeb2; }
+.favicon-dithered {
+  width: 16px;
+  height: 16px;
+  image-rendering: pixelated;
+  display: block;
+  margin: 0 auto;
+}
+.favicon-letter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 0.75rem;
+  font-style: italic;
+  color: #6e6e73;
+  line-height: 1;
+  margin: 0 auto;
+}
+[data-theme='dark'] .favicon-letter { color: #aeaeb2; }
+
+/* ── Ink-Wash Thumbnail demo ── */
+.inkwash-demo {
+  position: relative;
+  width: 176px;
+  height: 132px;
+  overflow: hidden;
+  border: 1px solid #e5e5e7;
+  border-radius: 1px;
+}
+[data-theme='dark'] .inkwash-demo { border-color: #333336; }
+.inkwash-ink {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  filter: grayscale(1) contrast(1.4);
+}
+.inkwash-color {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.inkwash-demo:hover .inkwash-color { opacity: 1; }
+
+/* ── Sidenotes & Breath Marks demo ── */
+.sidenote-demo {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 32px;
+  max-width: 640px;
+}
+.sidenote-margin {
+  position: relative;
+  padding-top: 4px;
+}
+.sidenote-item {
+  font-size: 0.75rem;
+  color: #aeaeb2;
+  font-variant: small-caps;
+  letter-spacing: 0.03em;
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+[data-theme='dark'] .sidenote-item { color: #aeaeb2; }
+.breath-mark-demo {
+  position: absolute;
+  left: 0;
+  width: 1px;
+  height: 8px;
+  background: #1d1d1f;
+}
+[data-theme='dark'] .breath-mark-demo { background: #f5f5f7; }
+.sidenote-content {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 1.125rem;
+  line-height: 1.8;
+  color: #1d1d1f;
+}
+[data-theme='dark'] .sidenote-content { color: #f5f5f7; }
+
+/* ── Audio Player demo ── */
+.audioplayer-demo {
+  background: #fff;
+  border-top: 2px solid #1d1d1f;
+  padding: 10px 16px;
+  max-width: 640px;
+  border: 1px solid #e5e5e7;
+  border-top: 2px solid #1d1d1f;
+  border-radius: 2px;
+}
+[data-theme='dark'] .audioplayer-demo {
+  background: #1e1e20;
+  border-color: #333336;
+  border-top-color: #f5f5f7;
+}
+.audioplayer-inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.audioplayer-info { flex: 1; min-width: 0; }
+.audioplayer-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.audioplayer-time {
+  font-size: 0.6875rem;
+  color: #6e6e73;
+}
+[data-theme='dark'] .audioplayer-time { color: #aeaeb2; }
+.audioplayer-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.audioplayer-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #e5e5e7;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.8125rem;
+}
+[data-theme='dark'] .audioplayer-btn { border-color: #333336; }
+.audioplayer-play {
+  width: 42px;
+  height: 42px;
+  background: #1d1d1f;
+  color: #fff;
+  border-color: #1d1d1f;
+  font-size: 1.25rem;
+}
+[data-theme='dark'] .audioplayer-play {
+  background: #f5f5f7;
+  color: #141416;
+  border-color: #f5f5f7;
+}
+.audioplayer-speed {
+  font-size: 0.75rem;
+  font-weight: 600;
+  width: auto;
+  padding: 4px 8px;
+  border-radius: 1px;
+}
+.audioplayer-progress {
+  width: 100%;
+  height: 4px;
+  background: #e5e5e7;
+  margin-top: 6px;
+}
+[data-theme='dark'] .audioplayer-progress { background: #333336; }
+.audioplayer-progress-fill {
+  height: 100%;
+  width: 45%;
+  background: #1d1d1f;
+}
+[data-theme='dark'] .audioplayer-progress-fill { background: #f5f5f7; }
+
+/* ── Offline indicator demo ── */
+.offline-demo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 2px;
+  background: #5a7068;
+  color: #fff;
+  font-size: 0.625rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* ── Tag rule demo ── */
+.tagrule-demo {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  max-width: 640px;
+  margin-bottom: 12px;
+}
+.tagrule-input {
+  flex: 1;
+  min-width: 120px;
+  padding: 6px 10px;
+  font-size: 0.8125rem;
+  border: 1px solid #e5e5e7;
+  border-radius: 2px;
+  background: #fff;
+  color: inherit;
+  font-family: inherit;
+}
+[data-theme='dark'] .tagrule-input { background: #141416; border-color: #333336; }
+.tagrule-select {
+  flex: 0 0 auto;
+  min-width: 140px;
+  padding: 6px 10px;
+  font-size: 0.8125rem;
+  border: 1px solid #e5e5e7;
+  border-radius: 2px;
+  background: #fff;
+  color: inherit;
+  font-family: inherit;
+}
+[data-theme='dark'] .tagrule-select { background: #141416; border-color: #333336; }
+.tagrule-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 0;
+  border-bottom: 1px solid #e5e5e7;
+  max-width: 640px;
+}
+[data-theme='dark'] .tagrule-row { border-color: #333336; }
+.tagrule-match {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #6e6e73;
+  white-space: nowrap;
+}
+[data-theme='dark'] .tagrule-match { color: #aeaeb2; }
+.tagrule-pattern {
+  font-size: 0.875rem;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tagrule-chip {
+  display: inline-block;
+  padding: 3px 10px;
+  border: 1px solid #e5e5e7;
+  border-radius: 2px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-variant: small-caps;
+  letter-spacing: 0.03em;
+}
+[data-theme='dark'] .tagrule-chip { border-color: #333336; }
+</style>
+</head>
+<body>
+
+<div class="page">
+
+<!-- ══════════════════════════════════════════════ -->
+<header class="page-header">
+  <div>
+    <h1 class="page-title">Tasche</h1>
+    <p class="page-subtitle">Design Language Reference</p>
+  </div>
+  <button class="theme-toggle" onclick="toggleTheme()">Toggle theme</button>
+</header>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Colour Palette</h2>
+
+  <div class="subsection-title">Core</div>
+  <div class="swatch-grid">
+    <div class="swatch-card"><div class="swatch-color" style="background:#1d1d1f;"></div><div class="swatch-info"><span class="swatch-name">text</span><span class="swatch-hex" data-light="#1d1d1f" data-dark="#f5f5f7">#1d1d1f</span></div></div>
+    <div class="swatch-card"><div class="swatch-color" style="background:#6e6e73;"></div><div class="swatch-info"><span class="swatch-name">text-secondary</span><span class="swatch-hex" data-light="#6e6e73" data-dark="#aeaeb2">#6e6e73</span></div></div>
+    <div class="swatch-card"><div class="swatch-color" style="background:#aeaeb2;"></div><div class="swatch-info"><span class="swatch-name">text-muted</span><span class="swatch-hex" data-light="#aeaeb2" data-dark="#6e6e73">#aeaeb2</span></div></div>
+    <div class="swatch-card"><div class="swatch-color" style="background:#ffffff; border-bottom: 1px solid #e5e5e7;"></div><div class="swatch-info"><span class="swatch-name">bg</span><span class="swatch-hex" data-light="#ffffff" data-dark="#141416">#ffffff</span></div></div>
+    <div class="swatch-card"><div class="swatch-color" style="background:#f5f5f7;"></div><div class="swatch-info"><span class="swatch-name">bg-secondary</span><span class="swatch-hex" data-light="#f5f5f7" data-dark="#1e1e20">#f5f5f7</span></div></div>
+    <div class="swatch-card"><div class="swatch-color" style="background:#e5e5e7;"></div><div class="swatch-info"><span class="swatch-name">border</span><span class="swatch-hex" data-light="#e5e5e7" data-dark="#333336">#e5e5e7</span></div></div>
+  </div>
+
+  <div class="subsection-title">Semantic</div>
+  <div class="swatch-grid">
+    <div class="swatch-card"><div class="swatch-color" style="background:#5a7068;"></div><div class="swatch-info"><span class="swatch-name">success</span><span class="swatch-hex" data-light="#5a7068" data-dark="#8aab94">#5a7068</span></div></div>
+    <div class="swatch-card"><div class="swatch-color" style="background:#9a7030;"></div><div class="swatch-info"><span class="swatch-name">warning</span><span class="swatch-hex" data-light="#9a7030" data-dark="#c49850">#9a7030</span></div></div>
+    <div class="swatch-card"><div class="swatch-color" style="background:#915550;"></div><div class="swatch-info"><span class="swatch-name">danger</span><span class="swatch-hex" data-light="#915550" data-dark="#b89490">#915550</span></div></div>
+    <div class="swatch-card"><div class="swatch-color" style="background:#906050;"></div><div class="swatch-info"><span class="swatch-name">gone</span><span class="swatch-hex" data-light="#906050" data-dark="#b08560">#906050</span></div></div>
+  </div>
+
+  <div class="subsection-title">Reader — Sepia Theme</div>
+  <div class="swatch-grid">
+    <div class="swatch-card"><div class="swatch-color" style="background:#f4ecd8;"></div><div class="swatch-info"><span class="swatch-name">bg</span><span class="swatch-hex">#f4ecd8</span></div></div>
+    <div class="swatch-card"><div class="swatch-color" style="background:#5b4636;"></div><div class="swatch-info"><span class="swatch-name">text</span><span class="swatch-hex">#5b4636</span></div></div>
+    <div class="swatch-card"><div class="swatch-color" style="background:#7a6652;"></div><div class="swatch-info"><span class="swatch-name">text-secondary</span><span class="swatch-hex">#7a6652</span></div></div>
+    <div class="swatch-card"><div class="swatch-color" style="background:#d4c9b5;"></div><div class="swatch-info"><span class="swatch-name">border</span><span class="swatch-hex">#d4c9b5</span></div></div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Status Badges</h2>
+  <div class="badge-row">
+    <span class="badge" style="background:#eff1f0; color:#5a7068; border-color:#dde0de;">Available</span>
+    <span class="badge" style="background:#f5f0e8; color:#9a7030; border-color:#e5dcc8;">Paywalled</span>
+    <span class="badge" style="background:#f4f0ed; color:#906050; border-color:#e3ddd5;">Gone</span>
+    <span class="badge" style="background:#f4efee; color:#915550; border-color:#e3dcdb;">Dead</span>
+  </div>
+  <p class="section-note">Dark mode counterparts use lighter text on darker badge backgrounds.</p>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Typography</h2>
+
+  <div class="type-row">
+    <span class="type-label">Page title</span>
+    <span class="type-example type-sample-serif" style="font-size:1.75rem; font-weight:700; letter-spacing:-0.02em;">Tasche</span>
+  </div>
+  <div class="type-row">
+    <span class="type-label">Section title</span>
+    <span class="type-example" style="font-size:0.75rem; font-weight:700; text-transform:uppercase; letter-spacing:0.1em;">Library</span>
+  </div>
+  <div class="type-row">
+    <span class="type-label">Card title</span>
+    <span class="type-example type-sample-serif" style="font-size:1.0625rem; font-weight:500; line-height:1.4;">How the Web Became Unreadable</span>
+  </div>
+  <div class="type-row">
+    <span class="type-label">Card meta</span>
+    <span class="type-example text-secondary" style="font-size:0.8125rem; font-variant:small-caps; letter-spacing:0.03em;">wired.com · 8 min · 28 feb 2026</span>
+  </div>
+  <div class="type-row">
+    <span class="type-label">Card excerpt</span>
+    <span class="type-example text-secondary" style="font-size:0.875rem; font-style:italic;">I thought my eyesight was going bad. Then I realised...</span>
+  </div>
+  <div class="type-row">
+    <span class="type-label">Body (reader)</span>
+    <span class="type-example type-sample-serif" style="font-size:1.125rem; line-height:1.8;">The quick brown fox jumps over the lazy dog.</span>
+  </div>
+  <div class="type-row">
+    <span class="type-label">Code</span>
+    <span class="type-example type-sample-mono" style="font-size:0.875rem;">const article = await fetch('/api/articles')</span>
+  </div>
+
+  <div class="subsection-title" style="margin-top:24px;">Font Stacks</div>
+  <div class="type-row">
+    <span class="type-label">--font-sans</span>
+    <span class="type-example type-sample-sans" style="font-size:0.875rem;">-apple-system, BlinkMacSystemFont, Segoe UI, Roboto</span>
+  </div>
+  <div class="type-row">
+    <span class="type-label">--font-serif</span>
+    <span class="type-example type-sample-serif" style="font-size:0.875rem;">Georgia, Times New Roman, serif</span>
+  </div>
+  <div class="type-row">
+    <span class="type-label">--font-mono</span>
+    <span class="type-example type-sample-mono" style="font-size:0.875rem;">SF Mono, Menlo, Consolas, monospace</span>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Buttons</h2>
+
+  <div class="btn-row">
+    <button class="btn btn-primary">Primary</button>
+    <button class="btn btn-secondary">Secondary</button>
+    <button class="btn btn-danger">Danger</button>
+    <button class="btn btn-primary" disabled>Disabled</button>
+  </div>
+  <div class="btn-row">
+    <button class="btn btn-primary btn-sm">Small primary</button>
+    <button class="btn btn-secondary btn-sm">Small secondary</button>
+  </div>
+  <div class="btn-row">
+    <button class="btn-icon" title="Icon button">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+    </button>
+    <button class="btn-icon" title="Delete">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+    </button>
+    <button class="btn-icon" title="Archive">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+    </button>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Form Elements</h2>
+
+  <div class="subsection-title">Text input</div>
+  <div style="max-width:480px; margin-bottom:16px;">
+    <input class="input" type="text" placeholder="Paste a URL to save..." style="width:100%;">
+  </div>
+
+  <div class="subsection-title">Input group</div>
+  <div class="input-group" style="max-width:480px; margin-bottom:16px;">
+    <input class="input" type="text" placeholder="New tag name...">
+    <button class="btn btn-primary">Create</button>
+  </div>
+
+  <div class="subsection-title">Inline select</div>
+  <select class="inline-select">
+    <option>Newest first</option>
+    <option>Oldest first</option>
+    <option>Title A-Z</option>
+  </select>
+
+  <div class="subsection-title" style="margin-top:16px;">Toggle switch</div>
+  <div style="display:flex; gap:16px; align-items:center;">
+    <button class="toggle"><span class="toggle-knob"></span></button>
+    <span class="text-secondary" style="font-size:0.8125rem;">Off</span>
+    <button class="toggle toggle--on"><span class="toggle-knob"></span></button>
+    <span class="text-secondary" style="font-size:0.8125rem;">On</span>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Tags</h2>
+  <div style="display:flex; gap:6px; flex-wrap:wrap;">
+    <span class="tag-chip">design</span>
+    <span class="tag-chip">typography</span>
+    <span class="tag-chip">web development</span>
+    <span class="tag-chip">accessibility</span>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Filter Tabs</h2>
+  <div class="filter-tabs">
+    <button class="filter-tab filter-tab--active">Unread</button>
+    <button class="filter-tab">Archived</button>
+    <button class="filter-tab">Favourites</button>
+    <button class="filter-tab">All</button>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Article Cards</h2>
+
+  <div class="card-grid">
+    <div>
+      <div class="subsection-title">Default</div>
+      <div class="demo-card">
+        <div class="demo-card-title">How the Web Became Unreadable</div>
+        <div class="demo-card-meta"><span>wired.com</span><span>8 min</span><span>28 Feb 2026</span></div>
+        <div class="demo-card-excerpt">I thought my eyesight was going bad. Then I realised it was the web's font choices...</div>
+        <div class="demo-card-tags">
+          <span class="tag-chip">design</span>
+          <span class="tag-chip">accessibility</span>
+        </div>
+        <div class="demo-card-actions">
+          <button><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0118 0v6"/><path d="M21 19a2 2 0 01-2 2h-1a2 2 0 01-2-2v-3a2 2 0 012-2h3zM3 19a2 2 0 002 2h1a2 2 0 002-2v-3a2 2 0 00-2-2H3z"/></svg></button>
+          <button><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg></button>
+          <button><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></button>
+          <button><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
+        </div>
+        <div class="progress-demo"><div class="progress-fill" style="width:35%;"></div></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="subsection-title">Processing (washed + marching ants)</div>
+      <div class="demo-card demo-card--processing">
+        <div class="demo-card-label">processing</div>
+        <svg class="demo-march" width="100%" height="100%"><rect x="1" y="1" width="calc(100% - 2px)" height="calc(100% - 2px)" rx="2"/></svg>
+        <div class="demo-card-title">How the Web Became Unreadable</div>
+        <div class="demo-card-meta"><span>wired.com</span><span>8 min</span><span>28 Feb 2026</span></div>
+        <div class="demo-card-excerpt">I thought my eyesight was going bad. Then I realised it was the web's font choices...</div>
+        <div class="demo-card-actions"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="subsection-title">Selected (bulk mode)</div>
+      <div class="demo-card demo-card--selected">
+        <div class="demo-card-label">selected</div>
+        <div class="demo-card-title">How the Web Became Unreadable</div>
+        <div class="demo-card-meta"><span>wired.com</span><span>8 min</span><span>28 Feb 2026</span></div>
+        <div class="demo-card-excerpt">I thought my eyesight was going bad. Then I realised it was the web's font choices...</div>
+        <div class="demo-card-actions">
+          <button><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></button>
+          <button><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Toasts</h2>
+  <div class="toast-demo toast-demo--success">Article saved successfully</div>
+  <div class="toast-demo toast-demo--error">Export failed: network timeout</div>
+  <div class="toast-demo toast-demo--info">Audio generation queued</div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Modal</h2>
+  <div class="modal-demo">
+    <div class="modal-demo-title">Delete article?</div>
+    <div class="modal-demo-text">This action cannot be undone. The article and all associated data will be permanently removed.</div>
+    <div class="modal-demo-actions">
+      <button class="btn btn-secondary btn-sm">Cancel</button>
+      <button class="btn btn-danger btn-sm">Delete</button>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Loading States</h2>
+
+  <div style="display:flex; gap:32px; align-items:center; margin-bottom:20px;">
+    <div>
+      <div class="subsection-title">Pagination spinner</div>
+      <div class="spinner"></div>
+    </div>
+  </div>
+
+  <div class="subsection-title">Skeleton card</div>
+  <div class="skeleton-card">
+    <div class="skeleton-thumb skeleton"></div>
+    <div class="skeleton-lines">
+      <div class="skeleton-line skeleton" style="width:80%;"></div>
+      <div class="skeleton-line skeleton" style="width:60%;"></div>
+      <div class="skeleton-line skeleton" style="width:40%;"></div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Empty State</h2>
+  <div class="empty-state-demo">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
+    <div class="empty-state-demo-title">No articles yet</div>
+    <div class="empty-state-demo-text">Paste a URL above to save your first article.</div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Stat Cards</h2>
+  <div class="stat-grid">
+    <div class="stat-card-demo"><div class="stat-number">142</div><div class="stat-label">articles</div></div>
+    <div class="stat-card-demo"><div class="stat-number">23<span class="stat-unit">h</span></div><div class="stat-label">reading time</div></div>
+    <div class="stat-card-demo"><div class="stat-number">87</div><div class="stat-label">unread</div></div>
+    <div class="stat-card-demo"><div class="stat-number">14</div><div class="stat-label">tags</div></div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Keyboard Shortcuts</h2>
+  <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+    <kbd class="kbd">?</kbd>
+    <kbd class="kbd">j</kbd>
+    <kbd class="kbd">k</kbd>
+    <kbd class="kbd">/</kbd>
+    <kbd class="kbd">Esc</kbd>
+    <kbd class="kbd">Enter</kbd>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Icons</h2>
+  <div class="icon-grid">
+    <div class="icon-cell"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><span class="icon-cell-label">Search</span></div>
+    <div class="icon-cell"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg><span class="icon-cell-label">Tag</span></div>
+    <div class="icon-cell"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1.08-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1.08 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1.08z"/></svg><span class="icon-cell-label">Settings</span></div>
+    <div class="icon-cell"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg><span class="icon-cell-label">ArrowLeft</span></div>
+    <div class="icon-cell"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg><span class="icon-cell-label">ExternalLink</span></div>
+    <div class="icon-cell"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg><span class="icon-cell-label">Star</span></div>
+    <div class="icon-cell"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg><span class="icon-cell-label">Star (filled)</span></div>
+    <div class="icon-cell"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg><span class="icon-cell-label">Trash</span></div>
+    <div class="icon-cell"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0118 0v6"/><path d="M21 19a2 2 0 01-2 2h-1a2 2 0 01-2-2v-3a2 2 0 012-2h3zM3 19a2 2 0 002 2h1a2 2 0 002-2v-3a2 2 0 00-2-2H3z"/></svg><span class="icon-cell-label">Headphones</span></div>
+    <div class="icon-cell"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3"/></svg><span class="icon-cell-label">Play</span></div>
+    <div class="icon-cell"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg><span class="icon-cell-label">Pause</span></div>
+    <div class="icon-cell"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/></svg><span class="icon-cell-label">SkipBack</span></div>
+    <div class="icon-cell"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/></svg><span class="icon-cell-label">SkipForward</span></div>
+    <div class="icon-cell"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg><span class="icon-cell-label">X</span></div>
+    <div class="icon-cell"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span class="icon-cell-label">Download</span></div>
+    <div class="icon-cell"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span class="icon-cell-label">Check</span></div>
+    <div class="icon-cell"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg><span class="icon-cell-label">CheckSquare</span></div>
+    <div class="icon-cell"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" fill="currentColor"/><polyline points="9 11 12 14 22 4" stroke="#fff"/></svg><span class="icon-cell-label">CheckSquare (on)</span></div>
+    <div class="icon-cell"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><span class="icon-cell-label">Clock</span></div>
+    <div class="icon-cell"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg><span class="icon-cell-label">Bookmark</span></div>
+    <div class="icon-cell"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg><span class="icon-cell-label">Camera</span></div>
+    <div class="icon-cell"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg><span class="icon-cell-label">Refresh</span></div>
+    <div class="icon-cell"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg><span class="icon-cell-label">Archive</span></div>
+    <div class="icon-cell"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg><span class="icon-cell-label">Copy</span></div>
+    <div class="icon-cell"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg><span class="icon-cell-label">BookOpen</span></div>
+    <div class="icon-cell"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg><span class="icon-cell-label">Pencil</span></div>
+    <div class="icon-cell"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2" ry="2"/><line x1="6" y1="8" x2="6" y2="8"/><line x1="10" y1="8" x2="10" y2="8"/><line x1="14" y1="8" x2="14" y2="8"/><line x1="18" y1="8" x2="18" y2="8"/><line x1="6" y1="12" x2="6" y2="12"/><line x1="10" y1="12" x2="10" y2="12"/><line x1="14" y1="12" x2="14" y2="12"/><line x1="18" y1="12" x2="18" y2="12"/><line x1="8" y1="16" x2="16" y2="16"/></svg><span class="icon-cell-label">Keyboard</span></div>
+    <div class="icon-cell"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg><span class="icon-cell-label">BarChart</span></div>
+    <div class="icon-cell"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span class="icon-cell-label">HelpCircle</span></div>
+    <div class="icon-cell"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg><span class="icon-cell-label">Moon</span></div>
+    <div class="icon-cell"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg><span class="icon-cell-label">Sun</span></div>
+    <div class="icon-cell"><svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor" stroke="none"><path d="M8 1.5C8 1.5 3.5 7 3.5 10.5a4.5 4.5 0 009 0C12.5 7 8 1.5 8 1.5z"/></svg><span class="icon-cell-label">InkDrop</span></div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Spacing Scale</h2>
+  <div class="spacing-row"><span class="spacing-label">4px</span><div class="spacing-block" style="width:4px;"></div></div>
+  <div class="spacing-row"><span class="spacing-label">8px</span><div class="spacing-block" style="width:8px;"></div></div>
+  <div class="spacing-row"><span class="spacing-label">12px</span><div class="spacing-block" style="width:12px;"></div></div>
+  <div class="spacing-row"><span class="spacing-label">16px</span><div class="spacing-block" style="width:16px;"></div></div>
+  <div class="spacing-row"><span class="spacing-label">24px</span><div class="spacing-block" style="width:24px;"></div></div>
+  <div class="spacing-row"><span class="spacing-label">32px</span><div class="spacing-block" style="width:32px;"></div></div>
+  <div class="spacing-row"><span class="spacing-label">40px</span><div class="spacing-block" style="width:40px;"></div></div>
+  <div class="spacing-row"><span class="spacing-label">48px</span><div class="spacing-block" style="width:48px;"></div></div>
+
+  <div class="subsection-title" style="margin-top:20px;">Border radii</div>
+  <div style="display:flex; gap:16px; align-items:flex-end;">
+    <div style="text-align:center;">
+      <div style="width:48px; height:48px; border:2px solid currentColor; border-radius:1px;"></div>
+      <span class="text-secondary" style="font-size:0.6875rem; font-family:monospace;">1px</span>
+    </div>
+    <div style="text-align:center;">
+      <div style="width:48px; height:48px; border:2px solid currentColor; border-radius:2px;"></div>
+      <span class="text-secondary" style="font-size:0.6875rem; font-family:monospace;">2px</span>
+    </div>
+  </div>
+  <p class="section-note" style="margin-top:8px;">Near-zero radii throughout. No rounded corners — the aesthetic is sharp, printed.</p>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Ink Favicons</h2>
+  <div class="favicon-demo-row">
+    <div class="favicon-demo-item">
+      <canvas class="favicon-dithered" id="favicon-dithered-demo" width="16" height="16"></canvas>
+      <div class="demo-label">Floyd-Steinberg dithered</div>
+    </div>
+    <div class="favicon-demo-item">
+      <div class="favicon-letter">T</div>
+      <div class="demo-label">Serif initial fallback</div>
+    </div>
+  </div>
+  <p class="section-note" style="margin-top:12px;">Domain favicons are loaded at 32px, converted to greyscale (ITU-R: 0.299R + 0.587G + 0.114B), then Floyd-Steinberg dithered to 1-bit monochrome. The result renders at 16&times;16 with <code style="font-size:0.8125em;">image-rendering: pixelated</code>. When the favicon fails to load, a serif italic initial letter is shown instead.</p>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Ink-Wash Thumbnails</h2>
+  <div style="display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap;">
+    <div>
+      <div class="inkwash-demo">
+        <img class="inkwash-ink" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='176' height='132'%3E%3Crect width='176' height='132' fill='%23aaa'/%3E%3Crect x='20' y='20' width='60' height='40' fill='%23555'/%3E%3Crect x='90' y='50' width='50' height='60' fill='%23333'/%3E%3Ccircle cx='50' cy='90' r='25' fill='%23777'/%3E%3Crect x='120' y='10' width='40' height='30' fill='%23444'/%3E%3C/svg%3E" alt="Posterised greyscale">
+        <img class="inkwash-color" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='176' height='132'%3E%3Crect width='176' height='132' fill='%2387CEEB'/%3E%3Crect x='20' y='20' width='60' height='40' fill='%23228B22'/%3E%3Crect x='90' y='50' width='50' height='60' fill='%23CD853F'/%3E%3Ccircle cx='50' cy='90' r='25' fill='%23DAA520'/%3E%3Crect x='120' y='10' width='40' height='30' fill='%23DC143C'/%3E%3C/svg%3E" alt="Full colour">
+      </div>
+      <p class="section-note" style="margin-top:6px; max-width:176px; font-size:0.6875rem;">Hover to reveal colour</p>
+    </div>
+    <div style="max-width:360px;">
+      <p class="section-note">Thumbnails are rendered to a canvas at max 176px width, desaturated to greyscale, then posterised to four tonal levels: <code style="font-size:0.8125em;">[0, 85, 170, 255]</code>. A 1px CSS blur softens the banding. The original full-colour image sits on top with <code style="font-size:0.8125em;">opacity: 0</code>, fading in on hover over 0.3s.</p>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Reader Sidenotes &amp; Breath Marks</h2>
+  <div class="sidenote-demo">
+    <div class="sidenote-margin" style="min-height:160px;">
+      <div class="sidenote-item">saved 14 feb 2026</div>
+      <div class="sidenote-item">1,240 words</div>
+      <div class="sidenote-item">6 min read</div>
+      <div class="breath-mark-demo" style="top:15%; opacity:0.12;"></div>
+      <div class="breath-mark-demo" style="top:38%; opacity:0.18;"></div>
+      <div class="breath-mark-demo" style="top:55%; opacity:0.23;"></div>
+      <div class="breath-mark-demo" style="top:72%; opacity:0.28;"></div>
+      <div class="breath-mark-demo" style="top:88%; opacity:0.34;"></div>
+    </div>
+    <div class="sidenote-content">
+      <p style="margin-bottom:12px;">The reader view uses a Tuftean margin layout. Metadata sits in the left column at small-caps, 0.75rem, in a muted colour. The main content column uses Georgia at 1.125rem with 1.8 line-height.</p>
+      <p>Breath marks are tiny 1px &times; 8px vertical ticks in the margin, recording where the reader paused. Opacity ranges from 0.12 (oldest) to 0.34 (most recent), with a maximum of five marks per article. Hidden on mobile; the grid activates at &ge;1080px.</p>
+    </div>
+  </div>
+  <p class="section-note" style="margin-top:12px;">Marks are stored per-article in localStorage as scroll-position percentages (0&ndash;1). A new mark is saved on unmount if the reader paused &ge;2% away from the last mark.</p>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Audio Player</h2>
+  <div class="audioplayer-demo">
+    <div class="audioplayer-inner">
+      <div class="audioplayer-info">
+        <div class="audioplayer-title">The Architecture of Quiet Software</div>
+        <div class="audioplayer-time">2:34 / 8:12</div>
+      </div>
+      <div class="audioplayer-controls">
+        <button class="audioplayer-btn" title="Back 15s">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+        </button>
+        <button class="audioplayer-btn audioplayer-play" title="Play">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+        </button>
+        <button class="audioplayer-btn" title="Forward 15s">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10"/></svg>
+        </button>
+        <button class="audioplayer-btn audioplayer-speed">1.25&times;</button>
+      </div>
+    </div>
+    <div class="audioplayer-progress"><div class="audioplayer-progress-fill"></div></div>
+  </div>
+  <p class="section-note" style="margin-top:12px;">Fixed to the viewport bottom at <code style="font-size:0.8125em;">z-index: 200</code>. Play button is 42&times;42 with accent fill; skip buttons are 36&times;36. Progress bar is 4px tall, no border-radius. Speed cycles through <code style="font-size:0.8125em;">[0.75, 1, 1.25, 1.5, 1.75, 2]&times;</code>. Integrates with the OS Media Session API.</p>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Reading Progress</h2>
+  <div style="max-width:480px;">
+    <div class="modal-demo" style="position:relative; padding:16px;">
+      <div style="font-family:Georgia,'Times New Roman',serif; font-size:0.875rem; font-weight:600; margin-bottom:4px;">Sample article title</div>
+      <div class="text-secondary" style="font-size:0.75rem; font-variant:small-caps; letter-spacing:0.03em;">example.com &middot; 4 min</div>
+      <div class="progress-demo" style="position:absolute; bottom:0; left:0; right:0; margin-top:0;">
+        <div class="progress-fill" style="width:45%; transition:width 0.3s ease;"></div>
+      </div>
+    </div>
+  </div>
+  <p class="section-note" style="margin-top:12px;">A 3px accent-coloured bar at the very bottom of each article card. Width maps to <code style="font-size:0.8125em;">reading_progress</code> (0&ndash;1). The fill transitions with <code style="font-size:0.8125em;">width 0.3s ease</code>. Track background is <code style="font-size:0.8125em;">#e5e5e7</code> (light) / <code style="font-size:0.8125em;">#333336</code> (dark).</p>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Offline Indicator</h2>
+  <div style="display:flex; align-items:center; gap:12px;">
+    <div class="offline-demo">
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="square"><polyline points="20 6 9 17 4 12"/></svg>
+    </div>
+    <span class="text-secondary" style="font-size:0.8125rem;">Saved offline</span>
+  </div>
+  <p class="section-note" style="margin-top:12px;">18&times;18 badge with 2px border-radius. Background is <code style="font-size:0.8125em;">#5a7068</code> (the desaturated success green), white check icon. Appears on article cards when the article is cached by the service worker.</p>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Tag Rules</h2>
+  <div class="tagrule-demo">
+    <select class="tagrule-select"><option>tech</option></select>
+    <select class="tagrule-select"><option>Domain</option><option>Title contains</option><option>URL contains</option></select>
+    <input class="tagrule-input" type="text" value="arstechnica.com" readonly>
+    <button class="btn btn-sm" style="white-space:nowrap;">Add rule</button>
+  </div>
+  <div class="tagrule-row">
+    <span class="tagrule-chip">tech</span>
+    <span class="tagrule-match">Domain</span>
+    <span class="tagrule-pattern">arstechnica.com</span>
+  </div>
+  <div class="tagrule-row">
+    <span class="tagrule-chip">essays</span>
+    <span class="tagrule-match">Title contains</span>
+    <span class="tagrule-pattern">on writing</span>
+  </div>
+  <p class="section-note" style="margin-top:12px;">Auto-tagging form: tag select + match-type select + pattern input, flex-wrapped. On mobile (&le;639px), the form stacks vertically. Each existing rule displays as a row: tag chip (small-caps) + secondary match-type label + monospace pattern.</p>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Processing States</h2>
+  <p class="section-note">Cards in <code>pending</code> or <code>processing</code> status show a desaturated overlay with a marching-ants border. All action buttons (star, delete, archive, audio) are hidden until the article resolves to <code>ready</code> or <code>failed</code>. The app polls every 5 seconds and restores buttons automatically on resolution.</p>
+
+  <div class="card-grid">
+    <div>
+      <div class="subsection-title">During processing</div>
+      <div class="demo-card demo-card--processing">
+        <div class="demo-card-label">processing</div>
+        <svg class="demo-march" width="100%" height="100%"><rect x="1" y="1" width="calc(100% - 2px)" height="calc(100% - 2px)" rx="2"/></svg>
+        <div class="demo-card-title">How the Web Became Unreadable</div>
+        <div class="demo-card-meta"><span>wired.com</span><span>28 Feb 2026</span></div>
+        <div class="demo-card-excerpt">I thought my eyesight was going bad. Then I realised it was the web's font choices...</div>
+        <div class="demo-card-tags">
+          <span class="tag-chip">design</span>
+        </div>
+        <div class="demo-card-actions"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="subsection-title">After processing (ready)</div>
+      <div class="demo-card">
+        <div class="demo-card-title">How the Web Became Unreadable</div>
+        <div class="demo-card-meta"><span>wired.com</span><span>8 min</span><span>28 Feb 2026</span></div>
+        <div class="demo-card-excerpt">I thought my eyesight was going bad. Then I realised it was the web's font choices...</div>
+        <div class="demo-card-tags">
+          <span class="tag-chip">design</span>
+        </div>
+        <div class="demo-card-actions">
+          <button><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0118 0v6"/><path d="M21 19a2 2 0 01-2 2h-1a2 2 0 01-2-2v-3a2 2 0 012-2h3zM3 19a2 2 0 002 2h1a2 2 0 002-2v-3a2 2 0 00-2-2H3z"/></svg></button>
+          <button><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg></button>
+          <button><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></button>
+          <button><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Design Principles</h2>
+  <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap:16px;">
+    <div>
+      <strong style="font-size:0.875rem;">Near-monochrome ink</strong>
+      <p class="section-note" style="margin-bottom:0;">Almost no saturated colour. Light theme is near-black on white, dark theme inverts. Semantic colours are desaturated earth tones.</p>
+    </div>
+    <div>
+      <strong style="font-size:0.875rem;">Printed, not digital</strong>
+      <p class="section-note" style="margin-bottom:0;">Sharp corners (2px radius), no shadows, heavy typographic borders, small-caps metadata, serif headlines. The UI reads like a broadsheet.</p>
+    </div>
+    <div>
+      <strong style="font-size:0.875rem;">British English</strong>
+      <p class="section-note" style="margin-bottom:0;">All user-facing text uses British spelling: favourite, colour, organisation. CSS class names remain American (industry convention).</p>
+    </div>
+    <div>
+      <strong style="font-size:0.875rem;">Content first</strong>
+      <p class="section-note" style="margin-bottom:0;">Reader view uses Georgia at 1.125rem/1.8 line-height with hanging punctuation and optical kerning. The UI disappears when reading.</p>
+    </div>
+  </div>
+</section>
+
+</div>
+
+<script>
+function toggleTheme() {
+  var root = document.documentElement;
+  var isDark = root.getAttribute('data-theme') === 'dark';
+  root.setAttribute('data-theme', isDark ? 'light' : 'dark');
+
+  // Swap swatch hex labels
+  document.querySelectorAll('.swatch-hex[data-light]').forEach(function(el) {
+    el.textContent = isDark ? el.dataset.light : el.dataset.dark;
+  });
+
+  // Swap marching ants stroke colour
+  document.querySelectorAll('.demo-march rect').forEach(function(el) {
+    el.style.stroke = isDark
+      ? 'rgba(245,245,247,0.25)'
+      : 'rgba(29,29,31,0.2)';
+  });
+}
+
+// Draw a dithered favicon demo
+(function() {
+  var c = document.getElementById('favicon-dithered-demo');
+  if (!c) return;
+  var ctx = c.getContext('2d');
+  // Simple 16x16 pattern simulating Floyd-Steinberg dithered output
+  var pattern = [
+    1,1,0,1,0,0,0,0,0,0,0,1,0,1,1,1,
+    1,0,0,0,0,1,0,1,0,1,0,0,0,0,1,0,
+    0,0,1,0,0,0,0,0,0,0,1,0,1,0,0,0,
+    0,1,0,0,1,0,1,0,1,0,0,0,0,1,0,1,
+    1,0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,
+    0,0,1,0,1,0,0,0,0,1,0,0,1,0,1,0,
+    0,0,0,0,0,1,0,0,1,0,0,0,0,0,0,1,
+    1,0,1,0,0,0,0,1,0,0,1,0,1,0,0,0,
+    0,0,0,1,0,0,1,0,0,0,0,1,0,0,1,0,
+    0,1,0,0,0,0,0,0,1,0,0,0,0,1,0,0,
+    1,0,0,0,1,0,1,0,0,1,0,0,1,0,0,1,
+    0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,
+    0,0,0,1,0,1,0,1,0,0,0,0,1,0,1,0,
+    1,0,0,0,0,0,0,0,1,0,1,0,0,0,0,1,
+    0,1,0,1,0,0,1,0,0,0,0,1,0,1,0,0,
+    0,0,0,0,1,0,0,1,0,1,0,0,0,0,1,0,
+  ];
+  var id = ctx.createImageData(16, 16);
+  for (var i = 0; i < 256; i++) {
+    var v = pattern[i] ? 0 : 255;
+    id.data[i*4] = v; id.data[i*4+1] = v; id.data[i*4+2] = v; id.data[i*4+3] = 255;
+  }
+  ctx.putImageData(id, 0, 0);
+})();
+</script>
+
+</body>
+</html>

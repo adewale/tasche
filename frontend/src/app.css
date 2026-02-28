@@ -264,6 +264,8 @@ textarea {
   border: none;
   cursor: pointer;
   text-align: left;
+  text-decoration: none;
+  font-family: inherit;
 }
 
 .help-menu-item:hover {

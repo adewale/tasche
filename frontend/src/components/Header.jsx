@@ -9,6 +9,7 @@ import {
   IconKeyboard,
   IconMoon,
   IconSun,
+  IconPencil,
 } from './Icons.jsx';
 
 export function Header() {
@@ -107,6 +108,16 @@ export function Header() {
                     {isDark ? <IconSun size={16} /> : <IconMoon size={16} />}
                     {isDark ? 'Light mode' : 'Dark mode'}
                   </button>
+                  <a
+                    class="help-menu-item"
+                    href="/design-language.html"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={function () { setMenuOpen(false); }}
+                  >
+                    <IconPencil size={16} />
+                    Design language
+                  </a>
                 </div>
               )}
             </div>
