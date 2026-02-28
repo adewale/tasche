@@ -19,7 +19,8 @@ body {
   color: #1d1d1f;
   line-height: 1.5;
 }
-[data-theme='dark'] {
+[data-theme='dark'],
+[data-theme='dark'] body {
   background: #141416;
   color: #f5f5f7;
 }
@@ -134,6 +135,14 @@ section { margin-bottom: 48px; }
   letter-spacing: 0.02em;
 }
 .badge-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.badge--available { background: #eff1f0; color: #5a7068; border-color: #dde0de; }
+.badge--paywalled { background: #f5f0e8; color: #9a7030; border-color: #e5dcc8; }
+.badge--gone { background: #f4f0ed; color: #906050; border-color: #e3ddd5; }
+.badge--dead { background: #f4efee; color: #915550; border-color: #e3dcdb; }
+[data-theme='dark'] .badge--available { background: #1c201e; color: #8aab94; border-color: #2a322e; }
+[data-theme='dark'] .badge--paywalled { background: #221e12; color: #c49850; border-color: #302a18; }
+[data-theme='dark'] .badge--gone { background: #201c18; color: #b08560; border-color: #2d2820; }
+[data-theme='dark'] .badge--dead { background: #201c1c; color: #b89490; border-color: #2d2828; }
 
 /* ── Buttons ── */
 .btn {
@@ -940,20 +949,20 @@ section { margin-bottom: 48px; }
 
   <div class="subsection-title">Core</div>
   <div class="swatch-grid">
-    <div class="swatch-card"><div class="swatch-color" style="background:#1d1d1f;"></div><div class="swatch-info"><span class="swatch-name">text</span><span class="swatch-hex" data-light="#1d1d1f" data-dark="#f5f5f7">#1d1d1f</span></div></div>
-    <div class="swatch-card"><div class="swatch-color" style="background:#6e6e73;"></div><div class="swatch-info"><span class="swatch-name">text-secondary</span><span class="swatch-hex" data-light="#6e6e73" data-dark="#aeaeb2">#6e6e73</span></div></div>
-    <div class="swatch-card"><div class="swatch-color" style="background:#aeaeb2;"></div><div class="swatch-info"><span class="swatch-name">text-muted</span><span class="swatch-hex" data-light="#aeaeb2" data-dark="#6e6e73">#aeaeb2</span></div></div>
-    <div class="swatch-card"><div class="swatch-color" style="background:#ffffff; border-bottom: 1px solid #e5e5e7;"></div><div class="swatch-info"><span class="swatch-name">bg</span><span class="swatch-hex" data-light="#ffffff" data-dark="#141416">#ffffff</span></div></div>
-    <div class="swatch-card"><div class="swatch-color" style="background:#f5f5f7;"></div><div class="swatch-info"><span class="swatch-name">bg-secondary</span><span class="swatch-hex" data-light="#f5f5f7" data-dark="#1e1e20">#f5f5f7</span></div></div>
-    <div class="swatch-card"><div class="swatch-color" style="background:#e5e5e7;"></div><div class="swatch-info"><span class="swatch-name">border</span><span class="swatch-hex" data-light="#e5e5e7" data-dark="#333336">#e5e5e7</span></div></div>
+    <div class="swatch-card"><div class="swatch-color" data-light="#1d1d1f" data-dark="#f5f5f7" style="background:#1d1d1f;"></div><div class="swatch-info"><span class="swatch-name">text</span><span class="swatch-hex" data-light="#1d1d1f" data-dark="#f5f5f7">#1d1d1f</span></div></div>
+    <div class="swatch-card"><div class="swatch-color" data-light="#6e6e73" data-dark="#aeaeb2" style="background:#6e6e73;"></div><div class="swatch-info"><span class="swatch-name">text-secondary</span><span class="swatch-hex" data-light="#6e6e73" data-dark="#aeaeb2">#6e6e73</span></div></div>
+    <div class="swatch-card"><div class="swatch-color" data-light="#aeaeb2" data-dark="#6e6e73" style="background:#aeaeb2;"></div><div class="swatch-info"><span class="swatch-name">text-muted</span><span class="swatch-hex" data-light="#aeaeb2" data-dark="#6e6e73">#aeaeb2</span></div></div>
+    <div class="swatch-card"><div class="swatch-color" data-light="#ffffff" data-dark="#141416" style="background:#ffffff; border-bottom: 1px solid #e5e5e7;"></div><div class="swatch-info"><span class="swatch-name">bg</span><span class="swatch-hex" data-light="#ffffff" data-dark="#141416">#ffffff</span></div></div>
+    <div class="swatch-card"><div class="swatch-color" data-light="#f5f5f7" data-dark="#1e1e20" style="background:#f5f5f7;"></div><div class="swatch-info"><span class="swatch-name">bg-secondary</span><span class="swatch-hex" data-light="#f5f5f7" data-dark="#1e1e20">#f5f5f7</span></div></div>
+    <div class="swatch-card"><div class="swatch-color" data-light="#e5e5e7" data-dark="#333336" style="background:#e5e5e7;"></div><div class="swatch-info"><span class="swatch-name">border</span><span class="swatch-hex" data-light="#e5e5e7" data-dark="#333336">#e5e5e7</span></div></div>
   </div>
 
   <div class="subsection-title">Semantic</div>
   <div class="swatch-grid">
-    <div class="swatch-card"><div class="swatch-color" style="background:#5a7068;"></div><div class="swatch-info"><span class="swatch-name">success</span><span class="swatch-hex" data-light="#5a7068" data-dark="#8aab94">#5a7068</span></div></div>
-    <div class="swatch-card"><div class="swatch-color" style="background:#9a7030;"></div><div class="swatch-info"><span class="swatch-name">warning</span><span class="swatch-hex" data-light="#9a7030" data-dark="#c49850">#9a7030</span></div></div>
-    <div class="swatch-card"><div class="swatch-color" style="background:#915550;"></div><div class="swatch-info"><span class="swatch-name">danger</span><span class="swatch-hex" data-light="#915550" data-dark="#b89490">#915550</span></div></div>
-    <div class="swatch-card"><div class="swatch-color" style="background:#906050;"></div><div class="swatch-info"><span class="swatch-name">gone</span><span class="swatch-hex" data-light="#906050" data-dark="#b08560">#906050</span></div></div>
+    <div class="swatch-card"><div class="swatch-color" data-light="#5a7068" data-dark="#8aab94" style="background:#5a7068;"></div><div class="swatch-info"><span class="swatch-name">success</span><span class="swatch-hex" data-light="#5a7068" data-dark="#8aab94">#5a7068</span></div></div>
+    <div class="swatch-card"><div class="swatch-color" data-light="#9a7030" data-dark="#c49850" style="background:#9a7030;"></div><div class="swatch-info"><span class="swatch-name">warning</span><span class="swatch-hex" data-light="#9a7030" data-dark="#c49850">#9a7030</span></div></div>
+    <div class="swatch-card"><div class="swatch-color" data-light="#915550" data-dark="#b89490" style="background:#915550;"></div><div class="swatch-info"><span class="swatch-name">danger</span><span class="swatch-hex" data-light="#915550" data-dark="#b89490">#915550</span></div></div>
+    <div class="swatch-card"><div class="swatch-color" data-light="#906050" data-dark="#b08560" style="background:#906050;"></div><div class="swatch-info"><span class="swatch-name">gone</span><span class="swatch-hex" data-light="#906050" data-dark="#b08560">#906050</span></div></div>
   </div>
 
   <div class="subsection-title">Reader — Sepia Theme</div>
@@ -970,10 +979,10 @@ section { margin-bottom: 48px; }
 <section>
   <h2 class="section-title">Status Badges</h2>
   <div class="badge-row">
-    <span class="badge" style="background:#eff1f0; color:#5a7068; border-color:#dde0de;">Available</span>
-    <span class="badge" style="background:#f5f0e8; color:#9a7030; border-color:#e5dcc8;">Paywalled</span>
-    <span class="badge" style="background:#f4f0ed; color:#906050; border-color:#e3ddd5;">Gone</span>
-    <span class="badge" style="background:#f4efee; color:#915550; border-color:#e3dcdb;">Dead</span>
+    <span class="badge badge--available">Available</span>
+    <span class="badge badge--paywalled">Paywalled</span>
+    <span class="badge badge--gone">Gone</span>
+    <span class="badge badge--dead">Dead</span>
   </div>
   <p class="section-note">Dark mode counterparts use lighter text on darker badge backgrounds.</p>
 </section>
@@ -1527,9 +1536,12 @@ function toggleTheme() {
   var isDark = root.getAttribute('data-theme') === 'dark';
   root.setAttribute('data-theme', isDark ? 'light' : 'dark');
 
-  // Swap swatch hex labels
+  // Swap swatch hex labels and colour previews
   document.querySelectorAll('.swatch-hex[data-light]').forEach(function(el) {
     el.textContent = isDark ? el.dataset.light : el.dataset.dark;
+  });
+  document.querySelectorAll('.swatch-color[data-light]').forEach(function(el) {
+    el.style.background = isDark ? el.dataset.light : el.dataset.dark;
   });
 
   // Swap marching ants stroke colour
