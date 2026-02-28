@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'preact/hooks';
 import { formatDate } from '../utils.js';
-import { addToast, articles } from '../state.js';
-import { getArticleTags, listenLater as apiListenLater, isOfflineCached } from '../api.js';
+import { addToast, articles, pollAudioStatus, pollArticleStatus } from '../state.js';
+import { getArticleTags, getArticle, listenLater as apiListenLater, isOfflineCached } from '../api.js';
 import { toggleArchive, toggleFavorite, removeArticle } from '../articleActions.js';
 import { nav } from '../nav.js';
 import { playAudio } from './AudioPlayer.jsx';
@@ -49,10 +49,13 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
         if (!cancelled) setOfflineSaved(status.hasContent);
       })
       .catch(function () {});
+    if (isProcessing) {
+      pollArticleStatus(a.id, getArticle);
+    }
     return function () {
       cancelled = true;
     };
-  }, [a.id]);
+  }, [a.id, isProcessing]);
 
   function handleClick(e) {
     if (selectMode) {
@@ -87,6 +90,7 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
         return art.id === a.id ? { ...art, audio_status: 'pending' } : art;
       });
       addToast('Audio generation queued', 'success');
+      pollAudioStatus(a.id, getArticle);
     } catch (err) {
       if (err.status === 409) {
         addToast('Audio generation is already in progress', 'info');
@@ -133,7 +137,9 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
     // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
     <div class={cardClass} onClick={handleClick}>
       {isProcessing && (
-        <div class="processing-overlay"></div>
+        <svg class="processing-march" width="100%" height="100%">
+          <rect x="1" y="1" width="calc(100% - 2px)" height="calc(100% - 2px)" rx="2" />
+        </svg>
       )}
       <div class="article-card-body">
         {selectMode && (
@@ -190,38 +196,44 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
           </div>
         )}
         <div class="article-card-actions">
-          {hasAudio && (
+          {!isProcessing && hasAudio && (
             <button class="audio-ready" title="Play audio" onClick={handlePlayAudio}>
               <IconPlay />
             </button>
           )}
-          {audioPending && (
+          {!isProcessing && audioPending && (
             <button class="audio-pending" title="Generating audio..." disabled>
               <IconClock />
             </button>
           )}
-          {canRequestAudio && (
+          {!isProcessing && canRequestAudio && (
             <button title="Listen later" onClick={handleListenLater} disabled={audioLoading}>
               {audioLoading ? <IconClock /> : <IconHeadphones />}
             </button>
           )}
-          <button
-            class={isArchived ? 'archived' : ''}
-            title={isArchived ? 'Move to unread' : 'Archive'}
-            onClick={handleArchiveToggle}
-          >
-            <IconArchive filled={isArchived} />
-          </button>
-          <button
-            class={'fav-btn' + (isFav ? ' favorited' : '')}
-            title="Toggle favourite"
-            onClick={handleFavorite}
-          >
-            <IconStar filled={!!isFav} />
-          </button>
-          <button class="delete-btn" title="Delete" onClick={handleDelete}>
-            <IconTrash />
-          </button>
+          {!isProcessing && (
+            <button
+              class={isArchived ? 'archived' : ''}
+              title={isArchived ? 'Move to unread' : 'Archive'}
+              onClick={handleArchiveToggle}
+            >
+              <IconArchive filled={isArchived} />
+            </button>
+          )}
+          {!isProcessing && (
+            <button
+              class={'fav-btn' + (isFav ? ' favorited' : '')}
+              title="Toggle favourite"
+              onClick={handleFavorite}
+            >
+              <IconStar filled={!!isFav} />
+            </button>
+          )}
+          {!isProcessing && (
+            <button class="delete-btn" title="Delete" onClick={handleDelete}>
+              <IconTrash />
+            </button>
+          )}
         </div>
       </div>
       {progress > 0 && (

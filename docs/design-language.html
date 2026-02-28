@@ -317,37 +317,30 @@ section { margin-bottom: 48px; }
 
 /* ── Card states ── */
 .demo-card--processing {
-  filter: saturate(0.3);
-  border-style: dashed;
+  filter: saturate(0.15) opacity(0.5);
 }
-[data-theme='dark'] .demo-card--processing {
-  border-color: rgba(245, 245, 247, 0.3);
+.demo-march {
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  pointer-events: none;
 }
-.demo-card--processing:not([data-theme='dark'] *) {
-  border-color: rgba(29, 29, 31, 0.25);
+.demo-march rect {
+  fill: none;
+  stroke: rgba(29, 29, 31, 0.2);
+  stroke-width: 2;
+  stroke-dasharray: 8 6;
+  animation: demo-march 3s linear infinite;
 }
+[data-theme='dark'] .demo-march rect {
+  stroke: rgba(245, 245, 247, 0.25);
+}
+@keyframes demo-march { to { stroke-dashoffset: -14; } }
 .demo-card--selected {
   border-color: currentColor;
   border-width: 2px;
 }
 [data-theme='dark'] .demo-card--selected { background: #3a3a3c; }
-.overlay-linen {
-  position: absolute;
-  inset: 0;
-  z-index: 10;
-  pointer-events: none;
-  border-radius: 2px;
-}
-.overlay-linen--light {
-  background:
-    repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(29,29,31,0.06) 3px, rgba(29,29,31,0.06) 4px),
-    repeating-linear-gradient(90deg, transparent, transparent 3px, rgba(29,29,31,0.06) 3px, rgba(29,29,31,0.06) 4px);
-}
-.overlay-linen--dark {
-  background:
-    repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(245,245,247,0.06) 3px, rgba(245,245,247,0.06) 4px),
-    repeating-linear-gradient(90deg, transparent, transparent 3px, rgba(245,245,247,0.06) 3px, rgba(245,245,247,0.06) 4px);
-}
 
 /* ── Card grid ── */
 .card-grid {
@@ -651,6 +644,271 @@ section { margin-bottom: 48px; }
   font-family: inherit;
 }
 [data-theme='dark'] .inline-select { background: #1c1c1e; border-color: #3a3a3c; }
+
+/* ── Ink Favicon demo ── */
+.favicon-demo-row { display: flex; gap: 32px; align-items: flex-start; }
+.favicon-demo-item { text-align: center; }
+.favicon-demo-item .demo-label {
+  font-size: 0.6875rem;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  color: #6e6e73;
+  margin-top: 6px;
+}
+.favicon-dithered {
+  width: 16px;
+  height: 16px;
+  image-rendering: pixelated;
+  display: block;
+  margin: 0 auto;
+}
+.favicon-letter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 0.75rem;
+  font-style: italic;
+  color: #6e6e73;
+  line-height: 1;
+  margin: 0 auto;
+}
+[data-theme='dark'] .favicon-letter { color: #aeaeb2; }
+
+/* ── Ink-Wash Thumbnail demo ── */
+.inkwash-demo {
+  position: relative;
+  width: 176px;
+  height: 132px;
+  overflow: hidden;
+  border: 1px solid #e5e5e7;
+  border-radius: 1px;
+}
+[data-theme='dark'] .inkwash-demo { border-color: #3a3a3c; }
+.inkwash-ink {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  filter: grayscale(1) contrast(1.4);
+}
+.inkwash-color {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.inkwash-demo:hover .inkwash-color { opacity: 1; }
+
+/* ── Sidenotes & Breath Marks demo ── */
+.sidenote-demo {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 32px;
+  max-width: 640px;
+}
+.sidenote-margin {
+  position: relative;
+  padding-top: 4px;
+}
+.sidenote-item {
+  font-size: 0.75rem;
+  color: #aeaeb2;
+  font-variant: small-caps;
+  letter-spacing: 0.03em;
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+[data-theme='dark'] .sidenote-item { color: #72727f; }
+.breath-mark-demo {
+  position: absolute;
+  left: 0;
+  width: 1px;
+  height: 8px;
+  background: #1d1d1f;
+}
+[data-theme='dark'] .breath-mark-demo { background: #f5f5f7; }
+.sidenote-content {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 1.125rem;
+  line-height: 1.8;
+  color: #1d1d1f;
+}
+[data-theme='dark'] .sidenote-content { color: #f5f5f7; }
+
+/* ── Audio Player demo ── */
+.audioplayer-demo {
+  background: #fff;
+  border-top: 2px solid #1d1d1f;
+  padding: 10px 16px;
+  max-width: 640px;
+  border: 1px solid #e5e5e7;
+  border-top: 2px solid #1d1d1f;
+  border-radius: 2px;
+}
+[data-theme='dark'] .audioplayer-demo {
+  background: #2c2c2e;
+  border-color: #3a3a3c;
+  border-top-color: #f5f5f7;
+}
+.audioplayer-inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.audioplayer-info { flex: 1; min-width: 0; }
+.audioplayer-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.audioplayer-time {
+  font-size: 0.6875rem;
+  color: #6e6e73;
+}
+[data-theme='dark'] .audioplayer-time { color: #aeaeb2; }
+.audioplayer-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.audioplayer-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #e5e5e7;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.8125rem;
+}
+[data-theme='dark'] .audioplayer-btn { border-color: #3a3a3c; }
+.audioplayer-play {
+  width: 42px;
+  height: 42px;
+  background: #1d1d1f;
+  color: #fff;
+  border-color: #1d1d1f;
+  font-size: 1.25rem;
+}
+[data-theme='dark'] .audioplayer-play {
+  background: #f5f5f7;
+  color: #1c1c1e;
+  border-color: #f5f5f7;
+}
+.audioplayer-speed {
+  font-size: 0.75rem;
+  font-weight: 600;
+  width: auto;
+  padding: 4px 8px;
+  border-radius: 1px;
+}
+.audioplayer-progress {
+  width: 100%;
+  height: 4px;
+  background: #e5e5e7;
+  margin-top: 6px;
+}
+[data-theme='dark'] .audioplayer-progress { background: #3a3a3c; }
+.audioplayer-progress-fill {
+  height: 100%;
+  width: 45%;
+  background: #1d1d1f;
+}
+[data-theme='dark'] .audioplayer-progress-fill { background: #f5f5f7; }
+
+/* ── Offline indicator demo ── */
+.offline-demo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 2px;
+  background: #5a7068;
+  color: #fff;
+  font-size: 0.625rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* ── Tag rule demo ── */
+.tagrule-demo {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  max-width: 640px;
+  margin-bottom: 12px;
+}
+.tagrule-input {
+  flex: 1;
+  min-width: 120px;
+  padding: 6px 10px;
+  font-size: 0.8125rem;
+  border: 1px solid #e5e5e7;
+  border-radius: 2px;
+  background: #fff;
+  color: inherit;
+  font-family: inherit;
+}
+[data-theme='dark'] .tagrule-input { background: #1c1c1e; border-color: #3a3a3c; }
+.tagrule-select {
+  flex: 0 0 auto;
+  min-width: 140px;
+  padding: 6px 10px;
+  font-size: 0.8125rem;
+  border: 1px solid #e5e5e7;
+  border-radius: 2px;
+  background: #fff;
+  color: inherit;
+  font-family: inherit;
+}
+[data-theme='dark'] .tagrule-select { background: #1c1c1e; border-color: #3a3a3c; }
+.tagrule-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 0;
+  border-bottom: 1px solid #e5e5e7;
+  max-width: 640px;
+}
+[data-theme='dark'] .tagrule-row { border-color: #3a3a3c; }
+.tagrule-match {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #6e6e73;
+  white-space: nowrap;
+}
+[data-theme='dark'] .tagrule-match { color: #aeaeb2; }
+.tagrule-pattern {
+  font-size: 0.875rem;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tagrule-chip {
+  display: inline-block;
+  padding: 3px 10px;
+  border: 1px solid #e5e5e7;
+  border-radius: 2px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-variant: small-caps;
+  letter-spacing: 0.03em;
+}
+[data-theme='dark'] .tagrule-chip { border-color: #3a3a3c; }
 </style>
 </head>
 <body>
@@ -871,17 +1129,14 @@ section { margin-bottom: 48px; }
     </div>
 
     <div>
-      <div class="subsection-title">Processing (linen + dashed border)</div>
-      <div class="demo-card demo-card--processing" style="border-color: rgba(29,29,31,0.25);">
+      <div class="subsection-title">Processing (washed + marching ants)</div>
+      <div class="demo-card demo-card--processing">
         <div class="demo-card-label">processing</div>
-        <div class="overlay-linen overlay-linen--light"></div>
+        <svg class="demo-march" width="100%" height="100%"><rect x="1" y="1" width="calc(100% - 2px)" height="calc(100% - 2px)" rx="2"/></svg>
         <div class="demo-card-title">How the Web Became Unreadable</div>
         <div class="demo-card-meta"><span>wired.com</span><span>8 min</span><span>28 Feb 2026</span></div>
         <div class="demo-card-excerpt">I thought my eyesight was going bad. Then I realised it was the web's font choices...</div>
-        <div class="demo-card-actions">
-          <button><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></button>
-          <button><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
-        </div>
+        <div class="demo-card-actions"></div>
       </div>
     </div>
 
@@ -931,7 +1186,7 @@ section { margin-bottom: 48px; }
 
   <div style="display:flex; gap:32px; align-items:center; margin-bottom:20px;">
     <div>
-      <div class="subsection-title">Spinner</div>
+      <div class="subsection-title">Pagination spinner</div>
       <div class="spinner"></div>
     </div>
   </div>
@@ -1054,6 +1309,186 @@ section { margin-bottom: 48px; }
 
 <!-- ══════════════════════════════════════════════ -->
 <section>
+  <h2 class="section-title">Ink Favicons</h2>
+  <div class="favicon-demo-row">
+    <div class="favicon-demo-item">
+      <canvas class="favicon-dithered" id="favicon-dithered-demo" width="16" height="16"></canvas>
+      <div class="demo-label">Floyd-Steinberg dithered</div>
+    </div>
+    <div class="favicon-demo-item">
+      <div class="favicon-letter">T</div>
+      <div class="demo-label">Serif initial fallback</div>
+    </div>
+  </div>
+  <p class="section-note" style="margin-top:12px;">Domain favicons are loaded at 32px, converted to greyscale (ITU-R: 0.299R + 0.587G + 0.114B), then Floyd-Steinberg dithered to 1-bit monochrome. The result renders at 16&times;16 with <code style="font-size:0.8125em;">image-rendering: pixelated</code>. When the favicon fails to load, a serif italic initial letter is shown instead.</p>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Ink-Wash Thumbnails</h2>
+  <div style="display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap;">
+    <div>
+      <div class="inkwash-demo">
+        <img class="inkwash-ink" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='176' height='132'%3E%3Crect width='176' height='132' fill='%23aaa'/%3E%3Crect x='20' y='20' width='60' height='40' fill='%23555'/%3E%3Crect x='90' y='50' width='50' height='60' fill='%23333'/%3E%3Ccircle cx='50' cy='90' r='25' fill='%23777'/%3E%3Crect x='120' y='10' width='40' height='30' fill='%23444'/%3E%3C/svg%3E" alt="Posterised greyscale">
+        <img class="inkwash-color" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='176' height='132'%3E%3Crect width='176' height='132' fill='%2387CEEB'/%3E%3Crect x='20' y='20' width='60' height='40' fill='%23228B22'/%3E%3Crect x='90' y='50' width='50' height='60' fill='%23CD853F'/%3E%3Ccircle cx='50' cy='90' r='25' fill='%23DAA520'/%3E%3Crect x='120' y='10' width='40' height='30' fill='%23DC143C'/%3E%3C/svg%3E" alt="Full colour">
+      </div>
+      <p class="section-note" style="margin-top:6px; max-width:176px; font-size:0.6875rem;">Hover to reveal colour</p>
+    </div>
+    <div style="max-width:360px;">
+      <p class="section-note">Thumbnails are rendered to a canvas at max 176px width, desaturated to greyscale, then posterised to four tonal levels: <code style="font-size:0.8125em;">[0, 85, 170, 255]</code>. A 1px CSS blur softens the banding. The original full-colour image sits on top with <code style="font-size:0.8125em;">opacity: 0</code>, fading in on hover over 0.3s.</p>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Reader Sidenotes &amp; Breath Marks</h2>
+  <div class="sidenote-demo">
+    <div class="sidenote-margin" style="min-height:160px;">
+      <div class="sidenote-item">saved 14 feb 2026</div>
+      <div class="sidenote-item">1,240 words</div>
+      <div class="sidenote-item">6 min read</div>
+      <div class="breath-mark-demo" style="top:15%; opacity:0.12;"></div>
+      <div class="breath-mark-demo" style="top:38%; opacity:0.18;"></div>
+      <div class="breath-mark-demo" style="top:55%; opacity:0.23;"></div>
+      <div class="breath-mark-demo" style="top:72%; opacity:0.28;"></div>
+      <div class="breath-mark-demo" style="top:88%; opacity:0.34;"></div>
+    </div>
+    <div class="sidenote-content">
+      <p style="margin-bottom:12px;">The reader view uses a Tuftean margin layout. Metadata sits in the left column at small-caps, 0.75rem, in a muted colour. The main content column uses Georgia at 1.125rem with 1.8 line-height.</p>
+      <p>Breath marks are tiny 1px &times; 8px vertical ticks in the margin, recording where the reader paused. Opacity ranges from 0.12 (oldest) to 0.34 (most recent), with a maximum of five marks per article. Hidden on mobile; the grid activates at &ge;1080px.</p>
+    </div>
+  </div>
+  <p class="section-note" style="margin-top:12px;">Marks are stored per-article in localStorage as scroll-position percentages (0&ndash;1). A new mark is saved on unmount if the reader paused &ge;2% away from the last mark.</p>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Audio Player</h2>
+  <div class="audioplayer-demo">
+    <div class="audioplayer-inner">
+      <div class="audioplayer-info">
+        <div class="audioplayer-title">The Architecture of Quiet Software</div>
+        <div class="audioplayer-time">2:34 / 8:12</div>
+      </div>
+      <div class="audioplayer-controls">
+        <button class="audioplayer-btn" title="Back 15s">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+        </button>
+        <button class="audioplayer-btn audioplayer-play" title="Play">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+        </button>
+        <button class="audioplayer-btn" title="Forward 15s">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10"/></svg>
+        </button>
+        <button class="audioplayer-btn audioplayer-speed">1.25&times;</button>
+      </div>
+    </div>
+    <div class="audioplayer-progress"><div class="audioplayer-progress-fill"></div></div>
+  </div>
+  <p class="section-note" style="margin-top:12px;">Fixed to the viewport bottom at <code style="font-size:0.8125em;">z-index: 200</code>. Play button is 42&times;42 with accent fill; skip buttons are 36&times;36. Progress bar is 4px tall, no border-radius. Speed cycles through <code style="font-size:0.8125em;">[0.75, 1, 1.25, 1.5, 1.75, 2]&times;</code>. Integrates with the OS Media Session API.</p>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Reading Progress</h2>
+  <div style="max-width:480px;">
+    <div class="modal-demo" style="position:relative; padding:16px;">
+      <div style="font-family:Georgia,'Times New Roman',serif; font-size:0.875rem; font-weight:600; margin-bottom:4px;">Sample article title</div>
+      <div style="font-size:0.75rem; color:#6e6e73; font-variant:small-caps; letter-spacing:0.03em;">example.com &middot; 4 min</div>
+      <div class="progress-demo" style="position:absolute; bottom:0; left:0; right:0; margin-top:0;">
+        <div class="progress-fill" style="width:45%; transition:width 0.3s ease;"></div>
+      </div>
+    </div>
+  </div>
+  <p class="section-note" style="margin-top:12px;">A 3px accent-coloured bar at the very bottom of each article card. Width maps to <code style="font-size:0.8125em;">reading_progress</code> (0&ndash;1). The fill transitions with <code style="font-size:0.8125em;">width 0.3s ease</code>. Track background is <code style="font-size:0.8125em;">#e5e5e7</code> (light) / <code style="font-size:0.8125em;">#3a3a3c</code> (dark).</p>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Offline Indicator</h2>
+  <div style="display:flex; align-items:center; gap:12px;">
+    <div class="offline-demo">
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="square"><polyline points="20 6 9 17 4 12"/></svg>
+    </div>
+    <span style="font-size:0.8125rem; color:#6e6e73;">Saved offline</span>
+  </div>
+  <p class="section-note" style="margin-top:12px;">18&times;18 badge with 2px border-radius. Background is <code style="font-size:0.8125em;">#5a7068</code> (the desaturated success green), white check icon. Appears on article cards when the article is cached by the service worker.</p>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Tag Rules</h2>
+  <div class="tagrule-demo">
+    <select class="tagrule-select"><option>tech</option></select>
+    <select class="tagrule-select"><option>Domain</option><option>Title contains</option><option>URL contains</option></select>
+    <input class="tagrule-input" type="text" value="arstechnica.com" readonly>
+    <button class="btn btn-sm" style="white-space:nowrap;">Add rule</button>
+  </div>
+  <div class="tagrule-row">
+    <span class="tagrule-chip">tech</span>
+    <span class="tagrule-match">Domain</span>
+    <span class="tagrule-pattern">arstechnica.com</span>
+  </div>
+  <div class="tagrule-row">
+    <span class="tagrule-chip">essays</span>
+    <span class="tagrule-match">Title contains</span>
+    <span class="tagrule-pattern">on writing</span>
+  </div>
+  <p class="section-note" style="margin-top:12px;">Auto-tagging form: tag select + match-type select + pattern input, flex-wrapped. On mobile (&le;639px), the form stacks vertically. Each existing rule displays as a row: tag chip (small-caps) + secondary match-type label + monospace pattern.</p>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Processing States</h2>
+  <p class="section-note">Cards in <code>pending</code> or <code>processing</code> status show a desaturated overlay with a marching-ants border. All action buttons (star, delete, archive, audio) are hidden until the article resolves to <code>ready</code> or <code>failed</code>. The app polls every 5 seconds and restores buttons automatically on resolution.</p>
+
+  <div class="card-grid">
+    <div>
+      <div class="subsection-title">During processing</div>
+      <div class="demo-card demo-card--processing">
+        <div class="demo-card-label">processing</div>
+        <svg class="demo-march" width="100%" height="100%"><rect x="1" y="1" width="calc(100% - 2px)" height="calc(100% - 2px)" rx="2"/></svg>
+        <div class="demo-card-title">How the Web Became Unreadable</div>
+        <div class="demo-card-meta"><span>wired.com</span><span>28 Feb 2026</span></div>
+        <div class="demo-card-excerpt">I thought my eyesight was going bad. Then I realised it was the web's font choices...</div>
+        <div class="demo-card-tags">
+          <span class="tag-chip">design</span>
+        </div>
+        <div class="demo-card-actions"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="subsection-title">After processing (ready)</div>
+      <div class="demo-card">
+        <div class="demo-card-title">How the Web Became Unreadable</div>
+        <div class="demo-card-meta"><span>wired.com</span><span>8 min</span><span>28 Feb 2026</span></div>
+        <div class="demo-card-excerpt">I thought my eyesight was going bad. Then I realised it was the web's font choices...</div>
+        <div class="demo-card-tags">
+          <span class="tag-chip">design</span>
+        </div>
+        <div class="demo-card-actions">
+          <button><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0118 0v6"/><path d="M21 19a2 2 0 01-2 2h-1a2 2 0 01-2-2v-3a2 2 0 012-2h3zM3 19a2 2 0 002 2h1a2 2 0 002-2v-3a2 2 0 00-2-2H3z"/></svg></button>
+          <button><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg></button>
+          <button><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></button>
+          <button><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
   <h2 class="section-title">Design Principles</h2>
   <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap:16px;">
     <div>
@@ -1088,21 +1523,45 @@ function toggleTheme() {
     el.textContent = isDark ? el.dataset.light : el.dataset.dark;
   });
 
-  // Swap linen overlay
-  var linen = document.querySelector('.overlay-linen');
-  if (linen) {
-    linen.classList.toggle('overlay-linen--light', isDark);
-    linen.classList.toggle('overlay-linen--dark', !isDark);
-  }
-
-  // Swap processing card border
-  var procCard = document.querySelector('.demo-card--processing');
-  if (procCard) {
-    procCard.style.borderColor = isDark
-      ? 'rgba(29,29,31,0.25)'
-      : 'rgba(245,245,247,0.3)';
-  }
+  // Swap marching ants stroke colour
+  document.querySelectorAll('.demo-march rect').forEach(function(el) {
+    el.style.stroke = isDark
+      ? 'rgba(245,245,247,0.25)'
+      : 'rgba(29,29,31,0.2)';
+  });
 }
+
+// Draw a dithered favicon demo
+(function() {
+  var c = document.getElementById('favicon-dithered-demo');
+  if (!c) return;
+  var ctx = c.getContext('2d');
+  // Simple 16x16 pattern simulating Floyd-Steinberg dithered output
+  var pattern = [
+    1,1,0,1,0,0,0,0,0,0,0,1,0,1,1,1,
+    1,0,0,0,0,1,0,1,0,1,0,0,0,0,1,0,
+    0,0,1,0,0,0,0,0,0,0,1,0,1,0,0,0,
+    0,1,0,0,1,0,1,0,1,0,0,0,0,1,0,1,
+    1,0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,
+    0,0,1,0,1,0,0,0,0,1,0,0,1,0,1,0,
+    0,0,0,0,0,1,0,0,1,0,0,0,0,0,0,1,
+    1,0,1,0,0,0,0,1,0,0,1,0,1,0,0,0,
+    0,0,0,1,0,0,1,0,0,0,0,1,0,0,1,0,
+    0,1,0,0,0,0,0,0,1,0,0,0,0,1,0,0,
+    1,0,0,0,1,0,1,0,0,1,0,0,1,0,0,1,
+    0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,
+    0,0,0,1,0,1,0,1,0,0,0,0,1,0,1,0,
+    1,0,0,0,0,0,0,0,1,0,1,0,0,0,0,1,
+    0,1,0,1,0,0,1,0,0,0,0,1,0,1,0,0,
+    0,0,0,0,1,0,0,1,0,1,0,0,0,0,1,0,
+  ];
+  var id = ctx.createImageData(16, 16);
+  for (var i = 0; i < 256; i++) {
+    var v = pattern[i] ? 0 : 255;
+    id.data[i*4] = v; id.data[i*4+1] = v; id.data[i*4+2] = v; id.data[i*4+3] = 255;
+  }
+  ctx.putImageData(id, 0, 0);
+})();
 </script>
 
 </body>

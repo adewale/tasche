@@ -5,6 +5,7 @@ import { ArticleCard } from '../../../src/components/ArticleCard.jsx';
 // Mock dependencies
 vi.mock('../../../src/api.js', () => ({
   getArticleTags: vi.fn(() => Promise.resolve([])),
+  getArticle: vi.fn(() => Promise.resolve({})),
   listenLater: vi.fn(() => Promise.resolve()),
   isOfflineCached: vi.fn(() =>
     Promise.resolve({ cached: false, hasContent: false, hasAudio: false }),
@@ -32,6 +33,8 @@ vi.mock('../../../src/components/AudioPlayer.jsx', () => ({
 vi.mock('../../../src/state.js', () => ({
   articles: { value: [] },
   addToast: vi.fn(),
+  pollAudioStatus: vi.fn(),
+  pollArticleStatus: vi.fn(),
 }));
 
 vi.mock('../../../src/utils.js', () => ({
@@ -132,18 +135,94 @@ describe('ArticleCard', () => {
 
   it('shows processing overlay for pending articles', () => {
     const { container } = render(<ArticleCard article={makeArticle({ status: 'pending' })} />);
-    expect(container.querySelector('.processing-overlay')).toBeInTheDocument();
+    expect(container.querySelector('.processing-march')).toBeInTheDocument();
     expect(container.querySelector('.article-card--processing')).toBeInTheDocument();
   });
 
   it('shows processing overlay for processing articles', () => {
     const { container } = render(<ArticleCard article={makeArticle({ status: 'processing' })} />);
-    expect(container.querySelector('.processing-overlay')).toBeInTheDocument();
+    expect(container.querySelector('.processing-march')).toBeInTheDocument();
     expect(container.querySelector('.article-card--processing')).toBeInTheDocument();
   });
 
   it('renders excerpt', () => {
     render(<ArticleCard article={makeArticle()} />);
     expect(screen.getByText('A test excerpt')).toBeInTheDocument();
+  });
+
+  // ── Processing state: button visibility ──
+
+  it('hides star and delete when status is pending', () => {
+    render(<ArticleCard article={makeArticle({ status: 'pending' })} />);
+    expect(screen.queryByTitle('Toggle favourite')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Delete')).not.toBeInTheDocument();
+  });
+
+  it('hides star and delete when status is processing', () => {
+    render(<ArticleCard article={makeArticle({ status: 'processing' })} />);
+    expect(screen.queryByTitle('Toggle favourite')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Delete')).not.toBeInTheDocument();
+  });
+
+  it('shows star and delete when status is ready', () => {
+    render(<ArticleCard article={makeArticle({ status: 'ready' })} />);
+    expect(screen.getByTitle('Toggle favourite')).toBeInTheDocument();
+    expect(screen.getByTitle('Delete')).toBeInTheDocument();
+  });
+
+  it('shows star and delete when status is failed', () => {
+    render(<ArticleCard article={makeArticle({ status: 'failed' })} />);
+    expect(screen.getByTitle('Toggle favourite')).toBeInTheDocument();
+    expect(screen.getByTitle('Delete')).toBeInTheDocument();
+  });
+
+  it('hides audio buttons when processing', () => {
+    render(<ArticleCard article={makeArticle({ status: 'pending' })} />);
+    expect(screen.queryByTitle('Listen later')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Play audio')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Generating audio...')).not.toBeInTheDocument();
+  });
+
+  it('hides archive button when processing', () => {
+    render(<ArticleCard article={makeArticle({ status: 'pending' })} />);
+    expect(screen.queryByTitle('Archive')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Move to unread')).not.toBeInTheDocument();
+  });
+
+  it('shows no action buttons during processing', () => {
+    const { container } = render(<ArticleCard article={makeArticle({ status: 'pending' })} />);
+    var buttons = container.querySelectorAll('.article-card-actions button');
+    expect(buttons.length).toBe(0);
+  });
+
+  it('shows all action buttons when ready', () => {
+    const { container } = render(<ArticleCard article={makeArticle({ status: 'ready' })} />);
+    var buttons = container.querySelectorAll('.article-card-actions button');
+    // Listen later + Archive + Star + Delete = 4
+    expect(buttons.length).toBe(4);
+  });
+
+  it('restores buttons when article transitions from processing to ready', () => {
+    const { container, rerender } = render(
+      <ArticleCard article={makeArticle({ status: 'processing' })} />,
+    );
+    expect(container.querySelectorAll('.article-card-actions button').length).toBe(0);
+
+    rerender(<ArticleCard article={makeArticle({ status: 'ready' })} />);
+    expect(screen.getByTitle('Toggle favourite')).toBeInTheDocument();
+    expect(screen.getByTitle('Delete')).toBeInTheDocument();
+    expect(screen.getByTitle('Archive')).toBeInTheDocument();
+    expect(screen.getByTitle('Listen later')).toBeInTheDocument();
+  });
+
+  it('restores buttons when article transitions from pending to failed', () => {
+    const { container, rerender } = render(
+      <ArticleCard article={makeArticle({ status: 'pending' })} />,
+    );
+    expect(container.querySelectorAll('.article-card-actions button').length).toBe(0);
+
+    rerender(<ArticleCard article={makeArticle({ status: 'failed' })} />);
+    expect(screen.getByTitle('Toggle favourite')).toBeInTheDocument();
+    expect(screen.getByTitle('Delete')).toBeInTheDocument();
   });
 });
