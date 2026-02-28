@@ -8,6 +8,10 @@
 /* ── Reset ── */
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* ── Utility ── */
+.text-secondary { color: #6e6e73; }
+[data-theme='dark'] .text-secondary { color: #aeaeb2; }
+
 /* ── Page ── */
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
@@ -74,7 +78,7 @@ section { margin-bottom: 48px; }
   color: #6e6e73;
   margin-bottom: 16px;
 }
-[data-theme='dark'] .section-note { color: #6e6e73; }
+[data-theme='dark'] .section-note { color: #aeaeb2; }
 
 .subsection-title {
   font-size: 0.6875rem;
@@ -84,7 +88,7 @@ section { margin-bottom: 48px; }
   color: #6e6e73;
   margin: 20px 0 8px;
 }
-[data-theme='dark'] .subsection-title { color: #6e6e73; }
+[data-theme='dark'] .subsection-title { color: #aeaeb2; }
 
 /* ── Colour Swatches ── */
 .swatch-grid {
@@ -117,6 +121,7 @@ section { margin-bottom: 48px; }
 
 .swatch-name { font-weight: 600; }
 .swatch-hex { font-family: 'SF Mono', Menlo, Consolas, monospace; color: #6e6e73; }
+[data-theme='dark'] .swatch-hex { color: #aeaeb2; }
 
 /* ── Status Badges (inline) ── */
 .badge {
@@ -272,7 +277,7 @@ section { margin-bottom: 48px; }
 }
 [data-theme='dark'] .demo-card-meta { color: #aeaeb2; }
 .demo-card-meta span + span::before { content: '\00b7'; margin: 0 6px; color: #aeaeb2; }
-[data-theme='dark'] .demo-card-meta span + span::before { color: #6e6e73; }
+[data-theme='dark'] .demo-card-meta span + span::before { color: #86868b; }
 .demo-card-excerpt {
   font-size: 0.875rem;
   color: #6e6e73;
@@ -291,7 +296,7 @@ section { margin-bottom: 48px; }
 .demo-card-actions button {
   padding: 8px;
   border-radius: 2px;
-  color: #aeaeb2;
+  color: #86868b;
   background: transparent;
   border: none;
   cursor: pointer;
@@ -301,7 +306,7 @@ section { margin-bottom: 48px; }
   min-width: 36px;
   min-height: 36px;
 }
-[data-theme='dark'] .demo-card-actions button { color: #6e6e73; }
+[data-theme='dark'] .demo-card-actions button { color: #98989d; }
 .demo-card-label {
   position: absolute;
   top: 8px;
@@ -313,7 +318,7 @@ section { margin-bottom: 48px; }
   border-radius: 2px;
   font-family: 'SF Mono', Menlo, Consolas, monospace;
 }
-[data-theme='dark'] .demo-card-label { background: #3a3a3c; color: #aeaeb2; }
+[data-theme='dark'] .demo-card-label { background: #3a3a3c; color: #d1d1d6; }
 
 /* ── Card states ── */
 .demo-card--processing {
@@ -501,6 +506,7 @@ section { margin-bottom: 48px; }
   text-align: center;
   word-break: break-all;
 }
+[data-theme='dark'] .icon-cell-label { color: #aeaeb2; }
 
 /* ── Typography samples ── */
 .type-sample-serif {
@@ -527,6 +533,7 @@ section { margin-bottom: 48px; }
   font-family: 'SF Mono', Menlo, Consolas, monospace;
   color: #6e6e73;
 }
+[data-theme='dark'] .type-label { color: #aeaeb2; }
 .type-example { flex: 1; }
 
 /* ── Spacing demo ── */
@@ -544,6 +551,7 @@ section { margin-bottom: 48px; }
   font-family: 'SF Mono', Menlo, Consolas, monospace;
   color: #6e6e73;
 }
+[data-theme='dark'] .spacing-label { color: #aeaeb2; }
 
 /* ── Reading progress bar ── */
 .progress-demo {
@@ -573,7 +581,7 @@ section { margin-bottom: 48px; }
   font-family: inherit;
   white-space: nowrap;
 }
-[data-theme='dark'] .filter-tab { color: #6e6e73; }
+[data-theme='dark'] .filter-tab { color: #aeaeb2; }
 .filter-tab--active { color: #1d1d1f; border-bottom-color: #1d1d1f; }
 [data-theme='dark'] .filter-tab--active { color: #f5f5f7; border-bottom-color: #f5f5f7; }
 
@@ -590,7 +598,7 @@ section { margin-bottom: 48px; }
   border-radius: 2px;
   max-width: 480px;
 }
-[data-theme='dark'] .empty-state-demo { border-color: #3a3a3c; color: #6e6e73; }
+[data-theme='dark'] .empty-state-demo { border-color: #3a3a3c; color: #aeaeb2; }
 .empty-state-demo svg { margin-bottom: 12px; opacity: 0.4; }
 .empty-state-demo-title {
   font-size: 1.125rem;
@@ -654,6 +662,7 @@ section { margin-bottom: 48px; }
   color: #6e6e73;
   margin-top: 6px;
 }
+[data-theme='dark'] .favicon-demo-item .demo-label { color: #aeaeb2; }
 .favicon-dithered {
   width: 16px;
   height: 16px;
@@ -723,7 +732,7 @@ section { margin-bottom: 48px; }
   line-height: 1.5;
   margin-bottom: 8px;
 }
-[data-theme='dark'] .sidenote-item { color: #72727f; }
+[data-theme='dark'] .sidenote-item { color: #aeaeb2; }
 .breath-mark-demo {
   position: absolute;
   left: 0;
@@ -988,11 +997,11 @@ section { margin-bottom: 48px; }
   </div>
   <div class="type-row">
     <span class="type-label">Card meta</span>
-    <span class="type-example" style="font-size:0.8125rem; font-variant:small-caps; letter-spacing:0.03em; color:#6e6e73;">wired.com · 8 min · 28 feb 2026</span>
+    <span class="type-example text-secondary" style="font-size:0.8125rem; font-variant:small-caps; letter-spacing:0.03em;">wired.com · 8 min · 28 feb 2026</span>
   </div>
   <div class="type-row">
     <span class="type-label">Card excerpt</span>
-    <span class="type-example" style="font-size:0.875rem; font-style:italic; color:#6e6e73;">I thought my eyesight was going bad. Then I realised...</span>
+    <span class="type-example text-secondary" style="font-size:0.875rem; font-style:italic;">I thought my eyesight was going bad. Then I realised...</span>
   </div>
   <div class="type-row">
     <span class="type-label">Body (reader)</span>
@@ -1072,9 +1081,9 @@ section { margin-bottom: 48px; }
   <div class="subsection-title" style="margin-top:16px;">Toggle switch</div>
   <div style="display:flex; gap:16px; align-items:center;">
     <button class="toggle"><span class="toggle-knob"></span></button>
-    <span style="font-size:0.8125rem; color:#6e6e73;">Off</span>
+    <span class="text-secondary" style="font-size:0.8125rem;">Off</span>
     <button class="toggle toggle--on"><span class="toggle-knob"></span></button>
-    <span style="font-size:0.8125rem; color:#6e6e73;">On</span>
+    <span class="text-secondary" style="font-size:0.8125rem;">On</span>
   </div>
 </section>
 
@@ -1296,11 +1305,11 @@ section { margin-bottom: 48px; }
   <div style="display:flex; gap:16px; align-items:flex-end;">
     <div style="text-align:center;">
       <div style="width:48px; height:48px; border:2px solid currentColor; border-radius:1px;"></div>
-      <span style="font-size:0.6875rem; font-family:monospace; color:#6e6e73;">1px</span>
+      <span class="text-secondary" style="font-size:0.6875rem; font-family:monospace;">1px</span>
     </div>
     <div style="text-align:center;">
       <div style="width:48px; height:48px; border:2px solid currentColor; border-radius:2px;"></div>
-      <span style="font-size:0.6875rem; font-family:monospace; color:#6e6e73;">2px</span>
+      <span class="text-secondary" style="font-size:0.6875rem; font-family:monospace;">2px</span>
     </div>
   </div>
   <p class="section-note" style="margin-top:8px;">Near-zero radii throughout. No rounded corners — the aesthetic is sharp, printed.</p>
@@ -1399,7 +1408,7 @@ section { margin-bottom: 48px; }
   <div style="max-width:480px;">
     <div class="modal-demo" style="position:relative; padding:16px;">
       <div style="font-family:Georgia,'Times New Roman',serif; font-size:0.875rem; font-weight:600; margin-bottom:4px;">Sample article title</div>
-      <div style="font-size:0.75rem; color:#6e6e73; font-variant:small-caps; letter-spacing:0.03em;">example.com &middot; 4 min</div>
+      <div class="text-secondary" style="font-size:0.75rem; font-variant:small-caps; letter-spacing:0.03em;">example.com &middot; 4 min</div>
       <div class="progress-demo" style="position:absolute; bottom:0; left:0; right:0; margin-top:0;">
         <div class="progress-fill" style="width:45%; transition:width 0.3s ease;"></div>
       </div>
@@ -1416,7 +1425,7 @@ section { margin-bottom: 48px; }
     <div class="offline-demo">
       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="square"><polyline points="20 6 9 17 4 12"/></svg>
     </div>
-    <span style="font-size:0.8125rem; color:#6e6e73;">Saved offline</span>
+    <span class="text-secondary" style="font-size:0.8125rem;">Saved offline</span>
   </div>
   <p class="section-note" style="margin-top:12px;">18&times;18 badge with 2px border-radius. Background is <code style="font-size:0.8125em;">#5a7068</code> (the desaturated success green), white check icon. Appears on article cards when the article is cached by the service worker.</p>
 </section>
