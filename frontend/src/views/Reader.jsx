@@ -4,7 +4,7 @@ import { EmptyState, LoadingSpinner } from '../components/EmptyState.jsx';
 import { TagPicker } from '../components/TagPicker.jsx';
 import { ReaderToolbar } from '../components/ReaderToolbar.jsx';
 import { playAudio, audioState, getAudio } from '../components/AudioPlayer.jsx';
-import { articles, addToast } from '../state.js';
+import { articles, addToast, pollAudioStatus } from '../state.js';
 import { toggleArchive, toggleFavorite, removeArticle } from '../articleActions.js';
 import { readerPrefs, getReaderStyle, updatePref } from '../readerPrefs.js';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts.js';
@@ -501,6 +501,11 @@ export function Reader({ id }) {
       await apiListenLater(id);
       addToast('Audio generation queued', 'success');
       setAudioRequested(true);
+      pollAudioStatus(id, async function (articleId) {
+        var updated = await getArticle(articleId);
+        setArticle(updated);
+        return updated;
+      });
     } catch (e) {
       if (e.status === 409) {
         addToast('Audio generation is already in progress', 'info');

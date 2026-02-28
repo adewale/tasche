@@ -6,6 +6,7 @@ pipeline (happy path and failure handling), and authentication enforcement.
 
 from __future__ import annotations
 
+import base64
 from typing import Any
 
 import pytest
@@ -316,8 +317,8 @@ class TestGetAudio:
 
 
 class TestTTSProcessing:
-    async def test_happy_path_from_d1_markdown(self) -> None:
-        """TTS processing fetches markdown from D1, calls AI, stores audio."""
+    async def test_happy_path_melotts_default(self) -> None:
+        """TTS processing uses MeloTTS by default, decoding base64 audio."""
         article = ArticleFactory.create(
             id="art_proc1",
             user_id="user_001",
@@ -327,17 +328,18 @@ class TestTTSProcessing:
         db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
         r2 = MockR2()
         fake_audio = b"\xff\xfb\x90\x00" + b"\x00" * 200
-        ai = MockAI(response=fake_audio)
+        ai = MockAI(response={"audio": base64.b64encode(fake_audio).decode()})
         env = MockEnv(db=db, content=r2, ai=ai)
 
         from tts.processing import process_tts
 
         await process_tts("art_proc1", env, user_id="user_001")
 
-        # Verify AI was called with the correct model
+        # Verify AI was called with the MeloTTS model and prompt key
         assert len(ai.calls) == 1
-        assert ai.calls[0]["model"] == "@cf/deepgram/aura-2-en"
-        assert "Hello World" in ai.calls[0]["text"]
+        assert ai.calls[0]["model"] == "@cf/myshell-ai/melotts"
+        assert "Hello World" in ai.calls[0]["prompt"]
+        assert ai.calls[0]["lang"] == "en"
 
         # Verify audio was stored in R2
         assert "articles/art_proc1/audio.mp3" in r2._store
@@ -355,6 +357,32 @@ class TestTTSProcessing:
         final_sql, final_params = ready_updates[-1]
         assert "articles/art_proc1/audio.mp3" in final_params
 
+    async def test_happy_path_aura_model(self) -> None:
+        """TTS processing uses Deepgram Aura when TTS_MODEL is set."""
+        article = ArticleFactory.create(
+            id="art_aura",
+            user_id="user_001",
+            markdown_content="# Hello World\n\nThis is test content.",
+        )
+
+        db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
+        r2 = MockR2()
+        fake_audio = b"\xff\xfb\x90\x00" + b"\x00" * 200
+        ai = MockAI(response=fake_audio)
+        env = MockEnv(db=db, content=r2, ai=ai, tts_model="aura-2-en")
+
+        from tts.processing import process_tts
+
+        await process_tts("art_aura", env, user_id="user_001")
+
+        # Verify AI was called with the Aura model and text key
+        assert len(ai.calls) == 1
+        assert ai.calls[0]["model"] == "@cf/deepgram/aura-2-en"
+        assert "Hello World" in ai.calls[0]["text"]
+
+        # Verify audio was stored in R2
+        assert "articles/art_aura/audio.mp3" in r2._store
+
     async def test_uses_d1_markdown_content(self) -> None:
         """TTS processing uses D1 markdown_content for speech generation."""
         article = ArticleFactory.create(
@@ -366,16 +394,16 @@ class TestTTSProcessing:
         db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
         r2 = MockR2()
         fake_audio = b"\xff\xfb\x90\x00" + b"\x00" * 100
-        ai = MockAI(response=fake_audio)
+        ai = MockAI(response={"audio": base64.b64encode(fake_audio).decode()})
         env = MockEnv(db=db, content=r2, ai=ai)
 
         from tts.processing import process_tts
 
         await process_tts("art_proc2", env, user_id="user_001")
 
-        # Verify AI was called with the D1 content
+        # Verify AI was called with the D1 content (MeloTTS uses "prompt" key)
         assert len(ai.calls) == 1
-        assert "Fallback Content" in ai.calls[0]["text"]
+        assert "Fallback Content" in ai.calls[0]["prompt"]
 
         # Verify audio was stored
         assert "articles/art_proc2/audio.mp3" in r2._store
@@ -390,7 +418,8 @@ class TestTTSProcessing:
 
         db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
         r2 = MockR2()
-        ai = MockAI(response=b"fake-audio")
+        fake_audio = b"fake-audio"
+        ai = MockAI(response={"audio": base64.b64encode(fake_audio).decode()})
         env = MockEnv(db=db, content=r2, ai=ai)
 
         from tts.processing import process_tts
@@ -552,7 +581,7 @@ class TestTTSTransientErrorRetry:
 
 class TestTTSEmptyAudioResponse:
     async def test_empty_audio_sets_failed(self) -> None:
-        """When Workers AI returns empty bytes, audio_status is set to 'failed'."""
+        """When Workers AI returns empty audio, audio_status is set to 'failed'."""
         article = ArticleFactory.create(
             id="art_empty_audio",
             user_id="user_001",
@@ -561,8 +590,8 @@ class TestTTSEmptyAudioResponse:
 
         db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
         r2 = MockR2()
-        # MockAI with empty bytes response
-        ai = MockAI(response=b"")
+        # MeloTTS with empty base64 audio
+        ai = MockAI(response={"audio": ""})
         env = MockEnv(db=db, content=r2, ai=ai)
 
         from tts.processing import process_tts
@@ -707,7 +736,7 @@ class TestTTSTextTruncation:
         db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
         r2 = MockR2()
         fake_audio = b"\xff\xfb\x90\x00" + b"\x00" * 100
-        ai = MockAI(response=fake_audio)
+        ai = MockAI(response={"audio": base64.b64encode(fake_audio).decode()})
         env = MockEnv(db=db, content=r2, ai=ai)
 
         from tts.processing import process_tts
@@ -715,9 +744,9 @@ class TestTTSTextTruncation:
         await process_tts("art_trunc", env, user_id="user_001")
 
         # Verify AI was called with chunked text (multiple calls) and
-        # the last chunk contains the truncation message
+        # the last chunk contains the truncation message (MeloTTS uses "prompt" key)
         assert len(ai.calls) >= 1
-        all_text = " ".join(call["text"] for call in ai.calls)
+        all_text = " ".join(call["prompt"] for call in ai.calls)
         assert "Content has been truncated" in all_text
         assert len(all_text) < len(long_markdown)
 
@@ -926,7 +955,7 @@ class TestTTSProcessingStoresTimingData:
         db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
         r2 = MockR2()
         fake_audio = b"\xff\xfb\x90\x00" + b"\x00" * 200
-        ai = MockAI(response=fake_audio)
+        ai = MockAI(response={"audio": base64.b64encode(fake_audio).decode()})
         env = MockEnv(db=db, content=r2, ai=ai)
 
         from tts.processing import process_tts
@@ -1135,7 +1164,8 @@ class TestMultiChunkTTS:
                 self.calls.append(call)
                 idx = min(call_idx["n"], len(chunk_responses) - 1)
                 call_idx["n"] += 1
-                return chunk_responses[idx]
+                # Return MeloTTS format (base64-encoded audio)
+                return {"audio": base64.b64encode(chunk_responses[idx]).decode()}
 
         ai = MultiResponseAI()
         env = MockEnv(db=db, content=r2, ai=ai)
@@ -1187,10 +1217,11 @@ class TestMultiChunkTTS:
                     call.update(inputs)
                 self.calls.append(call)
                 call_idx["n"] += 1
-                # Every other chunk returns empty
+                # Every other chunk returns empty (MeloTTS format)
                 if call_idx["n"] % 2 == 0:
-                    return b""
-                return b"\xff\xfb\x90\x00" + b"\x00" * 100
+                    return {"audio": ""}
+                audio = b"\xff\xfb\x90\x00" + b"\x00" * 100
+                return {"audio": base64.b64encode(audio).decode()}
 
         ai = SometimesEmptyAI()
         env = MockEnv(db=db, content=r2, ai=ai)

@@ -156,7 +156,7 @@ User clicks "Listen Later"
 │  3. Truncate to 100K chars      │
 │     (append "...truncated" note)│
 │  4. Call Workers AI:            │
-│     @cf/deepgram/aura-2-en      │
+│     TTS_MODEL (default: melotts)│
 │  5. Store audio.mp3 → R2        │
 │  6. Update D1:                  │
 │     - audio_key                 │
@@ -169,7 +169,7 @@ User clicks "Listen Later"
    on article card/view
 ```
 
-**Workers AI model:** `@cf/deepgram/aura-2-en` — Deepgram's context-aware TTS with natural pacing and expressiveness. Runs on Cloudflare's edge, no external API keys needed.
+**Workers AI model:** Configurable via `TTS_MODEL` env var. Default: `melotts` (`@cf/myshell-ai/melotts`). Also supports `aura-2-en`, `aura-2-es`, `aura-1` (Deepgram). See `docs/tts-models.md` for cost comparison and quality notes. All models run on Cloudflare's edge, no external API keys needed.
 
 **R2 storage:** Audio stored as `articles/{id}/audio.mp3`. Zero egress fees mean offline audio sync doesn't blow up costs.
 
@@ -713,7 +713,7 @@ The PWA is designed for true offline reading—users should be able to read save
 │                                                                     │
 │  ┌─────────────────────────────┐  ┌─────────────────────────────┐  │
 │  │   Browser Rendering API     │  │        Workers AI           │  │
-│  │  (JS-heavy site scraping)   │  │   (TTS: aura-2-en model)    │  │
+│  │  (JS-heavy site scraping)   │  │   (TTS: configurable model)  │  │
 │  └─────────────────────────────┘  └─────────────────────────────┘  │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
@@ -806,7 +806,7 @@ flowchart TB
 | Content Extraction | Browser Rendering REST API | Screenshot and HTML scraping |
 | Readability Extraction | Service Binding (`READABILITY`) | @mozilla/readability via separate JS Worker, BeautifulSoup fallback |
 | Authentication | Manual GitHub OAuth | OAuth flow with KV sessions |
-| Listen Later (TTS) | Workers AI | Text-to-speech via @cf/deepgram/aura-2-en |
+| Listen Later (TTS) | Workers AI | Text-to-speech via configurable `TTS_MODEL` (default: MeloTTS) |
 
 ---
 

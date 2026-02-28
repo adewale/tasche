@@ -4,10 +4,14 @@ Processes ``tts_generation`` queue messages by fetching markdown content,
 calling Workers AI for text-to-speech conversion, and storing the resulting
 audio in R2.
 
+The TTS model is configurable via the ``TTS_MODEL`` env var.  Supported
+values: ``melotts`` (default), ``aura-2-en``, ``aura-2-es``, ``aura-1``.
+A raw Workers AI model ID is also accepted.
+
 Steps:
  1. Update ``audio_status`` to ``'generating'`` in D1
  2. Fetch ``markdown_content`` from D1
- 3. Call Workers AI ``@cf/deepgram/aura-2-en`` with the text
+ 3. Call Workers AI with the configured TTS model
  4. Store the audio result to R2 at ``articles/{article_id}/audio.mp3``
  5. Update D1: ``audio_key``, ``audio_duration_seconds``, ``audio_status = 'ready'``
  6. On failure: set ``audio_status = 'failed'``
@@ -15,6 +19,7 @@ Steps:
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 import traceback
@@ -24,8 +29,27 @@ from utils import now_iso
 from wide_event import current_event
 from wrappers import consume_readable_stream
 
-# TTS model identifier
-_TTS_MODEL = "@cf/deepgram/aura-2-en"
+# Supported TTS models: short key → Workers AI model ID
+_TTS_MODELS = {
+    "melotts": "@cf/myshell-ai/melotts",
+    "aura-2-en": "@cf/deepgram/aura-2-en",
+    "aura-2-es": "@cf/deepgram/aura-2-es",
+    "aura-1": "@cf/deepgram/aura-1",
+}
+_DEFAULT_TTS_MODEL = "melotts"
+
+
+def _resolve_tts_model(env: object) -> tuple[str, str]:
+    """Return ``(model_id, model_key)`` from the ``TTS_MODEL`` env var.
+
+    Falls back to :data:`_DEFAULT_TTS_MODEL` when the var is unset.
+    If the value isn't a known key, it's treated as a raw model ID.
+    """
+    key = getattr(env, "TTS_MODEL", None) or _DEFAULT_TTS_MODEL
+    key = key.strip().lower()
+    model_id = _TTS_MODELS.get(key, key)  # allow raw model ID too
+    return model_id, key
+
 
 # Approximate speech rate: ~150 words per minute for TTS
 _WORDS_PER_MINUTE = 150
@@ -372,16 +396,31 @@ async def process_tts(
         if not chunks:
             raise ValueError("No text to convert to speech after stripping markdown")
 
+        model_id, model_key = _resolve_tts_model(env)
+        is_melotts = model_key == "melotts" or "melotts" in model_id
+
         evt = current_event()
         if evt:
             evt.set("tts_chunks", len(chunks))
+            evt.set("tts_model", model_id)
 
         audio_parts: list[bytes] = []
 
         for i, chunk in enumerate(chunks):
-            chunk_audio = await ai.run(_TTS_MODEL, {"text": chunk})
+            if is_melotts:
+                result = await ai.run(model_id, {"prompt": chunk, "lang": "en"})
+                # MeloTTS returns {"audio": "<base64>"} — decode it
+                audio_b64 = (
+                    result.get("audio", "")
+                    if hasattr(result, "get")
+                    else getattr(result, "audio", "")
+                )
+                chunk_bytes = base64.b64decode(audio_b64) if audio_b64 else b""
+            else:
+                # Deepgram Aura models return a ReadableStream
+                chunk_audio = await ai.run(model_id, {"text": chunk})
+                chunk_bytes = await consume_readable_stream(chunk_audio)
 
-            chunk_bytes = await consume_readable_stream(chunk_audio)
             if chunk_bytes:
                 as_bytes = chunk_bytes if isinstance(chunk_bytes, bytes) else bytes(chunk_bytes)
                 audio_parts.append(as_bytes)
