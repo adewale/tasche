@@ -85,6 +85,7 @@ export function Library({ tag }) {
   const moreAvailable = hasMoreSignal.value;
   const urlInputRef = useRef(null);
   const lastLoadTimeRef = useRef(0);
+  const hasLoadedOnce = useRef(false);
   useEffect(() => {
     loadingSignal.value = true;
     articles.value = [];
@@ -216,6 +217,7 @@ export function Library({ tag }) {
       hasMoreSignal.value = result.length >= limitSignal.value;
 
       lastLoadTimeRef.current = Date.now();
+      hasLoadedOnce.current = true;
 
       const unreadIds = result
         .filter(function (a) {
@@ -535,7 +537,7 @@ export function Library({ tag }) {
           })}
         </div>
 
-        {isLoading && articleList.length === 0 && (
+        {isLoading && articleList.length === 0 && !hasLoadedOnce.current && (
           <div class="article-list">{renderSkeletons()}</div>
         )}
 
