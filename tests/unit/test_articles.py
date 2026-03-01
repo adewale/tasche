@@ -1487,7 +1487,7 @@ class TestGetArticleImage:
 
         client, session_id = await _authenticated_client(env)
         resp = client.get(
-            "/api/articles/art_noimg/images/missing.webp",
+            "/api/articles/art_noimg/images/deadbeef.webp",
         )
 
         assert resp.status_code == 404
@@ -1512,6 +1512,22 @@ class TestGetArticleImage:
         resp = client.get("/api/articles/some-id/images/abc123.webp")
         assert resp.status_code == 401
 
+    async def test_rejects_non_hex_image_filename(self) -> None:
+        """GET /api/articles/{id}/images/{filename} rejects non-hex filenames."""
+        env = MockEnv()
+        client, session_id = await _authenticated_client(env)
+
+        resp = client.get("/api/articles/art_id/images/not-a-hash.webp")
+        assert resp.status_code == 400
+
+    async def test_rejects_disallowed_extension(self) -> None:
+        """GET /api/articles/{id}/images/{filename} rejects disallowed extensions."""
+        env = MockEnv()
+        client, session_id = await _authenticated_client(env)
+
+        resp = client.get("/api/articles/art_id/images/abc123.exe")
+        assert resp.status_code == 400
+
     async def test_returns_octet_stream_for_unknown_extension(self) -> None:
         """GET /api/articles/{id}/images/{filename} falls back to octet-stream."""
         article = ArticleFactory.create(id="art_bin", user_id="user_001")
@@ -1525,11 +1541,11 @@ class TestGetArticleImage:
         r2 = MockR2()
         env = MockEnv(db=db, content=r2)
 
-        await r2.put("articles/art_bin/images/file.bin", b"\x00BINARY_DATA")
+        await r2.put("articles/art_bin/images/deadbeef.bin", b"\x00BINARY_DATA")
 
         client, session_id = await _authenticated_client(env)
         resp = client.get(
-            "/api/articles/art_bin/images/file.bin",
+            "/api/articles/art_bin/images/deadbeef.bin",
         )
 
         assert resp.status_code == 200

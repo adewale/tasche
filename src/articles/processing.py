@@ -551,4 +551,10 @@ async def _fetch_page(
             f"Unexpected Content-Type '{mime}': expected text/html or application/xhtml+xml"
         )
 
-    return resp.text, str(resp.url)
+    body_bytes = resp.content
+    if len(body_bytes) > _MAX_CONTENT_LENGTH:
+        raise ValueError(
+            f"Response body too large: {len(body_bytes)} bytes exceeds "
+            f"limit of {_MAX_CONTENT_LENGTH} bytes"
+        )
+    return body_bytes.decode("utf-8", errors="replace"), str(resp.url)

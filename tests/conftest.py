@@ -615,7 +615,7 @@ def _make_mock_response(
     *,
     status_code: int = 200,
     text: str = SAMPLE_HTML,
-    content: bytes = b"fake-image-data",
+    content: bytes | None = None,
     url: str = "https://example.com/article",
     headers: dict[str, str] | None = None,
 ) -> MagicMock:
@@ -625,7 +625,8 @@ def _make_mock_response(
     resp = MagicMock()
     resp.status_code = status_code
     resp.text = text
-    resp.content = content
+    # Default content to encoded text so resp.content stays consistent with resp.text
+    resp.content = content if content is not None else text.encode("utf-8")
     resp.url = url
     resp.headers = headers or {"content-type": "text/html"}
     resp.raise_for_status = MagicMock()

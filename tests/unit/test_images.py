@@ -256,14 +256,14 @@ class TestDownloadImagesSSRF:
         assert len(result) == 0
 
     async def test_ssrf_check_on_redirect(self) -> None:
-        """SSRF check is also applied to the final URL after redirects."""
+        """SSRF check is also applied to each redirect hop."""
         html = _make_html_with_images(["https://cdn.example.com/redirect.jpg"])
 
-        # The response reports a redirect to a private IP
-        resp = _make_mock_response(content=b"redirected_data")
-        resp.url = "http://10.0.0.1/internal.jpg"
+        # First response is a 302 redirecting to a private IP
+        redirect_resp = _make_mock_response(status_code=302, content=b"")
+        redirect_resp.headers = {"content-type": "image/jpeg", "location": "http://10.0.0.1/internal.jpg"}
 
-        mock_fetch = AsyncMock(return_value=resp)
+        mock_fetch = AsyncMock(return_value=redirect_resp)
 
         with patch("articles.images.http_fetch", mock_fetch):
             result = await download_images(html)

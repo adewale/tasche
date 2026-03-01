@@ -629,3 +629,53 @@ class TestConfigCheck:
         assert "SESSIONS" in check_names
         assert "ARTICLE_QUEUE" in check_names
         assert "AI" in check_names
+
+
+# ---------------------------------------------------------------------------
+# DISABLE_AUTH guard
+# ---------------------------------------------------------------------------
+
+
+class TestDisableAuthGuard:
+    """DISABLE_AUTH must be blocked when SITE_URL is HTTPS (production)."""
+
+    def _make_client(self, env: MockEnv):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient as TC
+
+        from entry import app
+        from src.wrappers import SafeEnv
+
+        safe_env = SafeEnv(env)
+        test_app = FastAPI()
+
+        @test_app.middleware("http")
+        async def inject_env(request, call_next):
+            request.scope["env"] = safe_env
+            return await call_next(request)
+
+        for route in app.routes:
+            test_app.routes.append(route)
+
+        return TC(test_app, raise_server_exceptions=False)
+
+    def test_disable_auth_blocked_with_https_site_url(self) -> None:
+        """DISABLE_AUTH + HTTPS SITE_URL returns 500."""
+        env = MockEnv(
+            disable_auth="true",
+            site_url="https://tasche.example.com",
+        )
+        client = self._make_client(env)
+        resp = client.get("/api/articles")
+        assert resp.status_code == 500
+        assert "DISABLE_AUTH" in resp.json()["detail"]
+
+    def test_disable_auth_allowed_with_http_site_url(self) -> None:
+        """DISABLE_AUTH + HTTP SITE_URL is allowed (local dev)."""
+        env = MockEnv(
+            disable_auth="true",
+            site_url="http://localhost:8787",
+        )
+        client = self._make_client(env)
+        resp = client.get("/api/articles")
+        assert resp.status_code == 200

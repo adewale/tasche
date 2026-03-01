@@ -7,6 +7,8 @@ saved articles.  All endpoints require authentication via the
 
 from __future__ import annotations
 
+import json
+import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -709,6 +711,9 @@ _IMAGE_MEDIA_TYPES: dict[str, str] = {
     ".svg": "image/svg+xml",
 }
 
+# Images are content-addressed by hash — filenames must match this pattern.
+_IMAGE_FILENAME_RE = re.compile(r"^[a-f0-9]+\.(webp|jpg|jpeg|png|gif|svg|bin)$")
+
 
 @router.get("/{article_id}/images/{filename}")
 async def get_article_image(
@@ -726,6 +731,9 @@ async def get_article_image(
     db = env.DB
     r2 = env.CONTENT
     user_id = user["user_id"]
+
+    if not _IMAGE_FILENAME_RE.match(filename):
+        raise HTTPException(status_code=400, detail="Invalid image filename")
 
     await _get_user_article(db, article_id, user_id, fields="id")
 
@@ -915,8 +923,6 @@ async def process_now(
     Runs the full processing pipeline in the request handler so errors
     are returned directly instead of being lost in queue handler logs.
     """
-    import traceback
-
     from articles.processing import process_article
 
     env = request.scope["env"]
@@ -935,11 +941,18 @@ async def process_now(
         result = "success" if actual_status == "ready" else "error"
         return {"id": article_id, "result": result, "article": updated}
     except Exception as exc:
+        import traceback
+
+        tb = traceback.format_exc()[-500:]
+        print(json.dumps({
+            "event": "process_now_error",
+            "article_id": article_id,
+            "error": tb,
+        }))
         return {
             "id": article_id,
             "result": "error",
             "error": str(exc),
-            "traceback": traceback.format_exc(),
         }
 
 

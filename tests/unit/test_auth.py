@@ -242,7 +242,7 @@ class TestDisableAuth:
 
     def test_returns_dev_user_without_cookie(self) -> None:
         """DISABLE_AUTH=true returns a dev user with no session cookie."""
-        env = MockEnv(disable_auth="true")
+        env = MockEnv(disable_auth="true", site_url="http://localhost:8787")
         app = _make_app_with_env(env)
         client = TestClient(app)
         resp = client.get("/me")
@@ -270,7 +270,7 @@ class TestDisableAuth:
 
     def test_ignores_allowed_emails(self) -> None:
         """DISABLE_AUTH=true skips ALLOWED_EMAILS check."""
-        env = MockEnv(disable_auth="true", allowed_emails="")
+        env = MockEnv(disable_auth="true", allowed_emails="", site_url="http://localhost:8787")
         app = _make_app_with_env(env)
         client = TestClient(app)
         resp = client.get("/me")
@@ -281,7 +281,7 @@ class TestDisableAuth:
         import src.auth.dependencies as deps
 
         db = MockD1()
-        env = MockEnv(disable_auth="true", db=db)
+        env = MockEnv(disable_auth="true", db=db, site_url="http://localhost:8787")
         app = _make_app_with_env(env)
         client = TestClient(app)
 

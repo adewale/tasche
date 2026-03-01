@@ -83,13 +83,23 @@ async def download_images(
             continue
 
         try:
-            resp = await http_fetch(url, timeout=15.0, follow_redirects=True)
+            resp = await http_fetch(url, timeout=15.0, follow_redirects=False)
+            # Follow redirects manually, checking each hop for SSRF
+            hops = 0
+            while resp.status_code in (301, 302, 303, 307, 308) and hops < 5:
+                location = resp.headers.get("location")
+                if not location:
+                    break
+                redirect_parsed = urlparse(location)
+                if redirect_parsed.hostname and _is_private_hostname(
+                    redirect_parsed.hostname
+                ):
+                    break
+                resp = await http_fetch(
+                    location, timeout=15.0, follow_redirects=False
+                )
+                hops += 1
             if resp.status_code != 200:
-                continue
-
-            # SSRF protection: check final URL after redirects
-            resp_parsed = urlparse(str(resp.url))
-            if resp_parsed.hostname and _is_private_hostname(resp_parsed.hostname):
                 continue
         except Exception:
             continue
