@@ -11,7 +11,12 @@ lint:
 format:
 	uv run ruff format src/ tests/
 
-dev:
+setup:
+	@test -f .dev.vars || (cp .dev.vars.example .dev.vars && echo "Created .dev.vars from .dev.vars.example")
+	uv sync
+	cd frontend && npm install
+
+dev: setup frontend-build
 	npx wrangler d1 migrations apply DB --local
 	uv run pywrangler dev
 

@@ -113,29 +113,35 @@ uv run pywrangler secret put CF_API_TOKEN
 ## Development
 
 ```bash
-# Install Python dependencies
-uv sync
+git clone https://github.com/adewale/tasche.git
+cd tasche
+make dev
+```
 
-# Install frontend dependencies
-cd frontend && npm install && cd ..
+That's it. `make dev` will:
+1. Copy `.dev.vars.example` to `.dev.vars` (if it doesn't exist) with auth disabled
+2. Install Python and frontend dependencies
+3. Build the frontend
+4. Apply D1 migrations to the local database
+5. Start the dev server at `http://localhost:8787`
 
-# Build frontend (outputs to ./assets/)
-cd frontend && npm run build && cd ..
+Auth is disabled by default for local development (`DISABLE_AUTH=true` in `.dev.vars`). This creates a "dev" user automatically so you can use the app without setting up GitHub OAuth. The `.dev.vars` file is gitignored and never deployed.
 
-# Local development server (uses Miniflare for D1/R2/KV/Queues)
-uv run pywrangler dev
+**Safety guard:** `DISABLE_AUTH` is blocked when `SITE_URL` is HTTPS, so it cannot accidentally run in production.
 
-# Run all tests
-uv run pytest tests/ -x -q
+To test with real GitHub OAuth locally, edit `.dev.vars`: uncomment the OAuth lines, fill in credentials from a [GitHub OAuth App](https://github.com/settings/developers), and remove `DISABLE_AUTH=true`.
 
-# Run unit tests only
-uv run pytest tests/unit/ -x -q
+### Other commands
 
-# Lint
-uv run ruff check src/ tests/
-
-# Format
-uv run ruff format src/ tests/
+```bash
+make check              # Run all quality gates (lint, test, format, build)
+make test               # Backend unit tests
+make test-e2e           # Backend E2E tests
+make lint               # Backend lint + format check
+make format             # Auto-format backend code
+make frontend-build     # Build frontend (outputs to ./assets/)
+make deploy-staging     # Quality gates + deploy to staging
+make deploy-production  # Quality gates + deploy to production
 ```
 
 **Note:** Use `pywrangler` (not regular `wrangler`) for Python Workers with packages. Packages are defined in `pyproject.toml`, not `requirements.txt`.
