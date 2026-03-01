@@ -314,7 +314,7 @@ Both functions raise `BrowserRenderingError` on non-200 status. In the processin
 
 ### Model
 
-**`@cf/deepgram/aura-2-en`** via Cloudflare Workers AI. Called through the `AI` binding: `env.AI.run("@cf/deepgram/aura-2-en", {"text": chunk})`.
+Configurable via the `TTS_MODEL` env var (default: `melotts`). Supported values: `melotts` (`@cf/myshell-ai/melotts-en-default`), `aura-2-en` (`@cf/deepgram/aura-2-en`), `aura-2-es`, `aura-1`. Called through the `AI` binding: `env.AI.run(model_id, {"text": chunk})`.
 
 ### Pipeline
 
@@ -906,7 +906,7 @@ All configuration lives in `wrangler.jsonc`. Three environments:
 | Environment | URL | Auth | Notes |
 |-------------|-----|------|-------|
 | Local dev | `localhost:port` | DISABLE_AUTH=true in `.dev.vars` | Uses Miniflare for D1/R2/KV |
-| Staging | `tasche-staging.adewale-883.workers.dev` | DISABLE_AUTH=true | Full Cloudflare bindings |
+| Staging | `tasche-staging.adewale-883.workers.dev` | GitHub OAuth required | Full Cloudflare bindings |
 | Production | `tasche-production.adewale-883.workers.dev` | GitHub OAuth required | ALLOWED_EMAILS enforced |
 
 ### Bindings in wrangler.jsonc

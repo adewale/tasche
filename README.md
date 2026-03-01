@@ -46,20 +46,18 @@ cd tasche
 # Build frontend
 cd frontend && npm install && npm run build && cd ..
 
-# Set your SITE_URL to your workers.dev subdomain
-# Edit wrangler.jsonc: set vars.SITE_URL to "https://tasche.<your-subdomain>.workers.dev"
-
-# Set GitHub OAuth secrets
+# Set secrets (SITE_URL is auto-detected from your workers.dev URL)
 uv run pywrangler secret put GITHUB_CLIENT_ID
 uv run pywrangler secret put GITHUB_CLIENT_SECRET
+uv run pywrangler secret put ALLOWED_EMAILS    # your GitHub email
 
-# Deploy (uses workers.dev URL — no custom domain needed)
-uv run pywrangler deploy
+# Deploy
+make deploy-production
 ```
 
 Create a GitHub OAuth App at [github.com/settings/developers](https://github.com/settings/developers):
-- **Homepage URL:** `https://tasche.<your-subdomain>.workers.dev`
-- **Callback URL:** `https://tasche.<your-subdomain>.workers.dev/api/auth/callback`
+- **Homepage URL:** your workers.dev URL (shown after deploy)
+- **Callback URL:** `<your-workers-dev-url>/api/auth/callback`
 
 ### Option C: Deploy to a custom domain
 
@@ -69,16 +67,12 @@ cd tasche
 
 # Build frontend
 cd frontend && npm install && npm run build && cd ..
-
-# Configure your domain in wrangler.jsonc production env
-# Edit the "production" section: set SITE_URL and routes pattern
 ```
 
-Edit `wrangler.jsonc`:
+Edit `wrangler.jsonc` production section to add your custom domain:
 
 ```jsonc
 "production": {
-  "vars": { "SITE_URL": "https://tasche.yourdomain.com" },
   "routes": [{ "pattern": "tasche.yourdomain.com", "custom_domain": true }]
 }
 ```
@@ -87,9 +81,10 @@ Edit `wrangler.jsonc`:
 # Set secrets
 uv run pywrangler secret put GITHUB_CLIENT_ID --env production
 uv run pywrangler secret put GITHUB_CLIENT_SECRET --env production
+uv run pywrangler secret put ALLOWED_EMAILS --env production
 
 # Deploy
-uv run pywrangler deploy --env production
+make deploy-production
 ```
 
 Create a GitHub OAuth App with:

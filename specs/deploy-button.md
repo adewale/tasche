@@ -2,8 +2,8 @@
 
 > Make the "Deploy to Cloudflare" button produce a **working** Tasche instance with minimal post-deploy steps.
 
-**Status:** Draft
-**Date:** 2026-02-27
+**Status:** Implemented
+**Date:** 2026-02-27 (implemented 2026-03-01)
 
 ---
 
@@ -51,21 +51,21 @@ When a user clicks the button, Cloudflare's deploy flow performs these steps:
 
 ---
 
-## Current State — What's Broken
+## Previous State — What Was Broken (all fixed)
 
-The deploy button currently exists in the README but produces a broken instance:
+The deploy button previously produced a broken instance. All issues below have been resolved:
 
-| # | Gap | Impact | Severity |
-|---|-----|--------|----------|
-| 1 | **No root `package.json`** | No build/deploy scripts detected. The default `npx wrangler deploy` fails for Python Workers — `pywrangler` is required. | Critical |
-| 2 | **D1 migrations not applied** | Database is provisioned empty. Every query fails with "no such table". | Critical |
-| 3 | **`DISABLE_AUTH=true` in default env** | Deployed instance is open to everyone. The dev-mode bypass creates a "dev" user and skips OAuth entirely. | Critical |
-| 4 | **`SITE_URL` is a placeholder** | `wrangler.jsonc` has `"https://tasche.<your-subdomain>.workers.dev"`. OAuth redirect_uri uses this verbatim, causing callback mismatch. | Critical |
-| 5 | **`ALLOWED_EMAILS` is empty** | Even with auth enabled, the email whitelist check rejects everyone with 403. | Critical |
-| 6 | **READABILITY service binding in default env** | References `readability-worker` which isn't deployed. Binding resolution fails at runtime. | High |
-| 7 | **`deploy.json` is stale** | Missing AI binding. May conflict with `wrangler.jsonc`. Obsolete format. | Medium |
-| 8 | **`.dev.vars.example` incomplete** | Only lists `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`. Missing `ALLOWED_EMAILS`. | Medium |
-| 9 | **No first-boot guidance** | User lands on a broken app with no indication of what to configure next. | Medium |
+| # | Gap | Fix | Commit |
+|---|-----|-----|--------|
+| 1 | No root `package.json` | Created with build/deploy scripts | `4cbde1e` |
+| 2 | D1 migrations not applied | Deploy script runs migrations first | `4cbde1e` |
+| 3 | `DISABLE_AUTH=true` in default env | Removed from default and staging envs | `84bb779` |
+| 4 | `SITE_URL` is a placeholder | Auto-detection from Host header | `4cbde1e` |
+| 5 | `ALLOWED_EMAILS` is empty | Moved to secret, prompted during deploy | `dfa6bd5` |
+| 6 | READABILITY service binding in default env | Removed from default env | `4cbde1e` |
+| 7 | `deploy.json` is stale | Deleted | `4cbde1e` |
+| 8 | `.dev.vars.example` incomplete | Added ALLOWED_EMAILS, DISABLE_AUTH | `cf07ef6` |
+| 9 | No first-boot guidance | Setup checklist on login page via `/api/health/config` | `b830642` |
 
 ---
 
