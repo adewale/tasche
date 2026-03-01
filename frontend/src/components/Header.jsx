@@ -113,7 +113,9 @@ export function Header() {
                     href="/design-language.html"
                     target="_blank"
                     rel="noopener noreferrer"
-                    onClick={function () { setMenuOpen(false); }}
+                    onClick={function () {
+                      setMenuOpen(false);
+                    }}
                   >
                     <IconPencil size={16} />
                     Design language

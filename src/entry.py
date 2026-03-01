@@ -109,7 +109,7 @@ async def health_config(request: Request) -> dict:
         ("SESSIONS", True, "KV namespace for auth sessions"),
         ("ARTICLE_QUEUE", True, "Queue for async processing"),
         ("AI", True, "Workers AI binding for TTS"),
-        ("READABILITY", False, "Better content extraction (optional — falls back to built-in parser)"),
+        ("READABILITY", False, "Better content extraction (falls back to built-in parser)"),
     ]
     _VARS = [
         ("SITE_URL", False, "Base URL for auth callbacks (auto-detected if empty)"),
@@ -151,7 +151,9 @@ async def health_config(request: Request) -> dict:
     else:
         overall = "ok"
 
-    return {"status": overall, "checks": checks}
+    worker_env = getattr(env, "WORKER_ENV", None) or "" if env else ""
+
+    return {"status": overall, "checks": checks, "environment": worker_env}
 
 
 # ---------------------------------------------------------------------------

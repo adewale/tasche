@@ -518,7 +518,12 @@ export function Reader({ id }) {
   }
 
   function handlePlayAudio() {
-    playAudio(id, article ? article.title : '', article ? article.domain : '', article ? article.thumbnail_key : null);
+    playAudio(
+      id,
+      article ? article.title : '',
+      article ? article.domain : '',
+      article ? article.thumbnail_key : null,
+    );
   }
 
   async function handleDelete() {
@@ -644,7 +649,10 @@ export function Reader({ id }) {
               <span class="reader-meta-item">{article.word_count.toLocaleString()} words</span>
             )}
             {article._cachedAt && (
-              <span class="reader-meta-item cached-indicator" title={'Cached copy from ' + new Date(article._cachedAt).toLocaleString()}>
+              <span
+                class="reader-meta-item cached-indicator"
+                title={'Cached copy from ' + new Date(article._cachedAt).toLocaleString()}
+              >
                 <IconInkDrop size={10} /> saved copy · {formatDate(article._cachedAt)}
               </span>
             )}
@@ -817,17 +825,18 @@ export function Reader({ id }) {
                 </div>
               )}
               {/* Breath marks — tick marks at previous reading pauses */}
-              {breathMarks.length > 0 && breathMarks.map(function (pos, i) {
-                var opacity = 0.12 + ((i + 1) / breathMarks.length) * 0.22;
-                return (
-                  <div
-                    key={i}
-                    class="breath-mark"
-                    style={{ top: (pos * 100) + '%', opacity: opacity }}
-                    title={'Previous reading pause at ' + Math.round(pos * 100) + '%'}
-                  />
-                );
-              })}
+              {breathMarks.length > 0 &&
+                breathMarks.map(function (pos, i) {
+                  var opacity = 0.12 + ((i + 1) / breathMarks.length) * 0.22;
+                  return (
+                    <div
+                      key={i}
+                      class="breath-mark"
+                      style={{ top: pos * 100 + '%', opacity: opacity }}
+                      title={'Previous reading pause at ' + Math.round(pos * 100) + '%'}
+                    />
+                  );
+                })}
             </aside>
             <div class="reader-main">
               {(readerPrefs.value.contentMode === 'markdown' ||

@@ -174,10 +174,7 @@ describe('Library', () => {
 
     await waitFor(() => {
       expect(createArticle).toHaveBeenCalledWith('https://example.com', null, true);
-      expect(addToast).toHaveBeenCalledWith(
-        'Article saved! Audio will be generated.',
-        'success',
-      );
+      expect(addToast).toHaveBeenCalledWith('Article saved! Audio will be generated.', 'success');
     });
   });
 

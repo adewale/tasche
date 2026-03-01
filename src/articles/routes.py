@@ -193,10 +193,7 @@ async def create_article(
         article_id = generate_id()
         domain = extract_domain(url)
 
-        columns = (
-            "id, user_id, original_url, domain, title, "
-            "status, reading_status, is_favorite"
-        )
+        columns = "id, user_id, original_url, domain, title, status, reading_status, is_favorite"
         values = "?, ?, ?, ?, ?, 'pending', 'unread', 0"
         bind_params = [article_id, user_id, url, domain, title]
 
@@ -944,11 +941,15 @@ async def process_now(
         import traceback
 
         tb = traceback.format_exc()[-500:]
-        print(json.dumps({
-            "event": "process_now_error",
-            "article_id": article_id,
-            "error": tb,
-        }))
+        print(
+            json.dumps(
+                {
+                    "event": "process_now_error",
+                    "article_id": article_id,
+                    "error": tb,
+                }
+            )
+        )
         return {
             "id": article_id,
             "result": "error",

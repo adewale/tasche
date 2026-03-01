@@ -30,7 +30,14 @@ describe('Login', () => {
   it('shows sign-in button when health returns degraded', async () => {
     getHealthConfig.mockResolvedValue({
       status: 'degraded',
-      checks: [{ name: 'CF_ACCOUNT_ID', required: false, status: 'missing', description: 'Cloudflare account ID' }],
+      checks: [
+        {
+          name: 'CF_ACCOUNT_ID',
+          required: false,
+          status: 'missing',
+          description: 'Cloudflare account ID',
+        },
+      ],
     });
     render(<Login />);
     await waitFor(() => {
@@ -38,15 +45,77 @@ describe('Login', () => {
     });
   });
 
+  it('shows checklist below login button when status is degraded', async () => {
+    getHealthConfig.mockResolvedValue({
+      status: 'degraded',
+      checks: [
+        {
+          name: 'CF_ACCOUNT_ID',
+          required: false,
+          status: 'missing',
+          description: 'Cloudflare account ID',
+        },
+      ],
+    });
+    render(<Login />);
+    await waitFor(() => {
+      expect(screen.getByText('Sign in with GitHub')).toBeInTheDocument();
+    });
+    expect(screen.getByText('Configuration')).toBeInTheDocument();
+    expect(screen.getByText('CF_ACCOUNT_ID')).toBeInTheDocument();
+    expect(screen.getByText('Some optional items are not configured.')).toBeInTheDocument();
+  });
+
+  it('shows checklist below login button when status is ok with checks', async () => {
+    getHealthConfig.mockResolvedValue({
+      status: 'ok',
+      checks: [
+        { name: 'DB', required: true, status: 'ok', description: 'D1 database' },
+        {
+          name: 'GITHUB_CLIENT_ID',
+          required: true,
+          status: 'ok',
+          description: 'GitHub OAuth app client ID',
+        },
+      ],
+    });
+    render(<Login />);
+    await waitFor(() => {
+      expect(screen.getByText('Sign in with GitHub')).toBeInTheDocument();
+    });
+    expect(screen.getByText('Configuration')).toBeInTheDocument();
+    expect(screen.getByText('All items configured.')).toBeInTheDocument();
+  });
+
   it('shows setup checklist when health returns error', async () => {
     getHealthConfig.mockResolvedValue({
       status: 'error',
       checks: [
         { name: 'DB', required: true, status: 'ok', description: 'D1 database' },
-        { name: 'GITHUB_CLIENT_ID', required: true, status: 'missing', description: 'GitHub OAuth app client ID' },
-        { name: 'GITHUB_CLIENT_SECRET', required: true, status: 'missing', description: 'GitHub OAuth app client secret' },
-        { name: 'ALLOWED_EMAILS', required: true, status: 'missing', description: 'Comma-separated list of allowed emails' },
-        { name: 'CF_ACCOUNT_ID', required: false, status: 'missing', description: 'Cloudflare account ID for Browser Rendering' },
+        {
+          name: 'GITHUB_CLIENT_ID',
+          required: true,
+          status: 'missing',
+          description: 'GitHub OAuth app client ID',
+        },
+        {
+          name: 'GITHUB_CLIENT_SECRET',
+          required: true,
+          status: 'missing',
+          description: 'GitHub OAuth app client secret',
+        },
+        {
+          name: 'ALLOWED_EMAILS',
+          required: true,
+          status: 'missing',
+          description: 'Comma-separated list of allowed emails',
+        },
+        {
+          name: 'CF_ACCOUNT_ID',
+          required: false,
+          status: 'missing',
+          description: 'Cloudflare account ID for Browser Rendering',
+        },
       ],
     });
     render(<Login />);
@@ -62,19 +131,102 @@ describe('Login', () => {
     expect(screen.queryByText('Sign in with GitHub')).not.toBeInTheDocument();
   });
 
-  it('shows help text for missing required items', async () => {
+  it('shows progress summary for error status', async () => {
     getHealthConfig.mockResolvedValue({
       status: 'error',
       checks: [
-        { name: 'GITHUB_CLIENT_ID', required: true, status: 'missing', description: 'GitHub OAuth app client ID' },
-        { name: 'ALLOWED_EMAILS', required: true, status: 'missing', description: 'Comma-separated list of allowed emails' },
+        { name: 'DB', required: true, status: 'ok', description: 'D1 database' },
+        {
+          name: 'GITHUB_CLIENT_ID',
+          required: true,
+          status: 'missing',
+          description: 'GitHub OAuth app client ID',
+        },
+        {
+          name: 'GITHUB_CLIENT_SECRET',
+          required: true,
+          status: 'missing',
+          description: 'GitHub OAuth app client secret',
+        },
+        {
+          name: 'ALLOWED_EMAILS',
+          required: true,
+          status: 'ok',
+          description: 'Comma-separated list of allowed emails',
+        },
       ],
     });
     render(<Login />);
     await waitFor(() => {
-      expect(screen.getByText(/Create a GitHub OAuth App at github\.com\/settings\/developers/)).toBeInTheDocument();
+      expect(screen.getByText('2 of 4 required items configured.')).toBeInTheDocument();
+    });
+  });
+
+  it('shows help text for missing required items', async () => {
+    getHealthConfig.mockResolvedValue({
+      status: 'error',
+      environment: 'staging',
+      checks: [
+        {
+          name: 'GITHUB_CLIENT_ID',
+          required: true,
+          status: 'missing',
+          description: 'GitHub OAuth app client ID',
+        },
+        {
+          name: 'ALLOWED_EMAILS',
+          required: true,
+          status: 'missing',
+          description: 'Comma-separated list of allowed emails',
+        },
+      ],
+    });
+    render(<Login />);
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Create a GitHub OAuth App at github\.com\/settings\/developers/),
+      ).toBeInTheDocument();
     });
     expect(screen.getByText(/Set this to the email on your GitHub account/)).toBeInTheDocument();
+  });
+
+  it('includes --env flag in help text when environment is set', async () => {
+    getHealthConfig.mockResolvedValue({
+      status: 'error',
+      environment: 'staging',
+      checks: [
+        {
+          name: 'ALLOWED_EMAILS',
+          required: true,
+          status: 'missing',
+          description: 'Comma-separated list of allowed emails',
+        },
+      ],
+    });
+    render(<Login />);
+    await waitFor(() => {
+      expect(screen.getByText(/--env staging/)).toBeInTheDocument();
+    });
+  });
+
+  it('omits --env flag in help text when no environment is set', async () => {
+    getHealthConfig.mockResolvedValue({
+      status: 'error',
+      environment: '',
+      checks: [
+        {
+          name: 'ALLOWED_EMAILS',
+          required: true,
+          status: 'missing',
+          description: 'Comma-separated list of allowed emails',
+        },
+      ],
+    });
+    render(<Login />);
+    await waitFor(() => {
+      expect(screen.getByText(/npx wrangler secret put ALLOWED_EMAILS/)).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/--env/)).not.toBeInTheDocument();
   });
 
   it('does not show help text for items with ok status', async () => {
@@ -82,7 +234,12 @@ describe('Login', () => {
       status: 'error',
       checks: [
         { name: 'DB', required: true, status: 'ok', description: 'D1 database' },
-        { name: 'GITHUB_CLIENT_ID', required: true, status: 'missing', description: 'GitHub OAuth app client ID' },
+        {
+          name: 'GITHUB_CLIENT_ID',
+          required: true,
+          status: 'missing',
+          description: 'GitHub OAuth app client ID',
+        },
       ],
     });
     render(<Login />);
@@ -93,21 +250,58 @@ describe('Login', () => {
     expect(dbItem).toHaveClass('setup-item--ok');
   });
 
-  it('shows + indicator for ok items and - for missing', async () => {
+  it('shows check icon for ok items and x icon for missing', async () => {
     getHealthConfig.mockResolvedValue({
       status: 'error',
       checks: [
         { name: 'DB', required: true, status: 'ok', description: 'D1 database' },
-        { name: 'GITHUB_CLIENT_ID', required: true, status: 'missing', description: 'GitHub OAuth app client ID' },
+        {
+          name: 'GITHUB_CLIENT_ID',
+          required: true,
+          status: 'missing',
+          description: 'GitHub OAuth app client ID',
+        },
       ],
     });
     render(<Login />);
     await waitFor(() => {
       expect(screen.getByText('DB')).toBeInTheDocument();
     });
-    var indicators = screen.getAllByText('+');
-    expect(indicators.length).toBeGreaterThanOrEqual(1);
-    var missingIndicators = screen.getAllByText('-');
-    expect(missingIndicators.length).toBeGreaterThanOrEqual(1);
+    var okIndicator = screen
+      .getByText('DB')
+      .closest('.setup-item')
+      .querySelector('.setup-item-indicator--ok');
+    expect(okIndicator).toBeInTheDocument();
+    expect(okIndicator.querySelector('svg')).toBeInTheDocument();
+
+    var missingIndicator = screen
+      .getByText('GITHUB_CLIENT_ID')
+      .closest('.setup-item')
+      .querySelector('.setup-item-indicator--missing');
+    expect(missingIndicator).toBeInTheDocument();
+    expect(missingIndicator.querySelector('svg')).toBeInTheDocument();
+  });
+
+  it('uses optional indicator class for missing optional items', async () => {
+    getHealthConfig.mockResolvedValue({
+      status: 'degraded',
+      checks: [
+        {
+          name: 'CF_ACCOUNT_ID',
+          required: false,
+          status: 'missing',
+          description: 'Cloudflare account ID',
+        },
+      ],
+    });
+    render(<Login />);
+    await waitFor(() => {
+      expect(screen.getByText('CF_ACCOUNT_ID')).toBeInTheDocument();
+    });
+    var optionalIndicator = screen
+      .getByText('CF_ACCOUNT_ID')
+      .closest('.setup-item')
+      .querySelector('.setup-item-indicator--optional');
+    expect(optionalIndicator).toBeInTheDocument();
   });
 });

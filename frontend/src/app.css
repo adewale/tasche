@@ -641,7 +641,9 @@ textarea {
 }
 
 @keyframes march {
-  to { stroke-dashoffset: -14; }
+  to {
+    stroke-dashoffset: -14;
+  }
 }
 
 .article-card--processing {
@@ -1886,18 +1888,24 @@ mark {
 }
 
 .setup-item-indicator {
-  font-family: var(--font-mono);
-  font-size: 0.875rem;
-  line-height: 1.4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
   width: 16px;
-  text-align: center;
-  color: var(--text-muted);
+  height: 20px;
 }
 
-.setup-item--ok .setup-item-indicator {
-  color: var(--text);
-  font-weight: 700;
+.setup-item-indicator--ok {
+  color: var(--success);
+}
+
+.setup-item-indicator--missing {
+  color: var(--danger);
+}
+
+.setup-item-indicator--optional {
+  color: var(--warning);
 }
 
 .setup-item-content {
@@ -1926,6 +1934,18 @@ mark {
   font-size: 0.75rem;
   color: var(--text);
   margin-top: 2px;
+}
+
+.setup-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 32px 0 24px;
+  width: 100%;
+  max-width: 480px;
+}
+
+.setup-divider + .setup-checklist .setup-heading {
+  font-size: 1rem;
 }
 
 /* Section headings */

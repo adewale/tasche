@@ -3,7 +3,13 @@ import { useEffect, useCallback } from 'preact/hooks';
 import { Header } from '../components/Header.jsx';
 import { user, addToast } from '../state.js';
 import { useSWMessage } from '../hooks/useSWMessage.js';
-import { performLogout, exportData, getCacheStats, triggerAutoPrecache, clearAllCaches } from '../api.js';
+import {
+  performLogout,
+  exportData,
+  getCacheStats,
+  triggerAutoPrecache,
+  clearAllCaches,
+} from '../api.js';
 import { getBookmarkletCode } from '../utils.js';
 import { IconBookmark } from '../components/Icons.jsx';
 
@@ -121,13 +127,17 @@ export function Settings() {
               disabled={clearing.value}
               onClick={function () {
                 clearing.value = true;
-                clearAllCaches().then(function () {
-                  addToast('Caches cleared. Reloading...', 'success');
-                  setTimeout(function () { window.location.reload(); }, 500);
-                }).catch(function () {
-                  clearing.value = false;
-                  addToast('Failed to clear caches', 'error');
-                });
+                clearAllCaches()
+                  .then(function () {
+                    addToast('Caches cleared. Reloading...', 'success');
+                    setTimeout(function () {
+                      window.location.reload();
+                    }, 500);
+                  })
+                  .catch(function () {
+                    clearing.value = false;
+                    addToast('Failed to clear caches', 'error');
+                  });
               }}
             >
               {clearing.value ? 'Clearing...' : 'Clear cache & reload'}

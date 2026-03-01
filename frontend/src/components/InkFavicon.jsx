@@ -94,14 +94,7 @@ export function InkFavicon({ domain, size = 16 }) {
     <>
       <canvas ref={canvasRef} style="display:none" />
       {src ? (
-        <img
-          class="ink-favicon"
-          src={src}
-          alt=""
-          width={size}
-          height={size}
-          aria-hidden="true"
-        />
+        <img class="ink-favicon" src={src} alt="" width={size} height={size} aria-hidden="true" />
       ) : (
         <span class="ink-favicon ink-favicon--letter" aria-hidden="true">
           {domain.charAt(0).toUpperCase()}

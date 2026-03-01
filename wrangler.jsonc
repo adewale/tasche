@@ -36,7 +36,7 @@
   "env": {
     "production": {
       "workers_dev": true,
-      "vars": { "ALLOWED_EMAILS": "", "SITE_URL": "https://tasche-production.adewale-883.workers.dev", "TTS_MODEL": "melotts" },
+      "vars": { "ALLOWED_EMAILS": "", "SITE_URL": "https://tasche-production.adewale-883.workers.dev", "TTS_MODEL": "melotts", "WORKER_ENV": "production" },
       "ai": { "binding": "AI" },
       "services": [{ "binding": "READABILITY", "service": "readability-worker", "entrypoint": "ReadabilityService" }],
       "d1_databases": [{ "binding": "DB", "database_name": "tasche-production-db", "database_id": "58401394-d213-4749-ab04-bfa064dc7431" }],
@@ -49,7 +49,7 @@
     },
     "staging": {
       "workers_dev": true,
-      "vars": { "ALLOWED_EMAILS": "", "SITE_URL": "https://tasche-staging.adewale-883.workers.dev", "TTS_MODEL": "melotts" },
+      "vars": { "ALLOWED_EMAILS": "", "SITE_URL": "https://tasche-staging.adewale-883.workers.dev", "TTS_MODEL": "melotts", "WORKER_ENV": "staging" },
       "ai": { "binding": "AI" },
       "services": [{ "binding": "READABILITY", "service": "readability-worker", "entrypoint": "ReadabilityService" }],
       "d1_databases": [{ "binding": "DB", "database_name": "tasche-staging-db", "database_id": "4a1d5914-2446-4cfd-be0b-a1c78a7d495e" }],

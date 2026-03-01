@@ -477,9 +477,7 @@ class TestCreateArticle:
 # ---------------------------------------------------------------------------
 
 
-def _parse_insert_columns_and_params(
-    sql: str, params: list[Any]
-) -> dict[str, Any]:
+def _parse_insert_columns_and_params(sql: str, params: list[Any]) -> dict[str, Any]:
     """Parse an INSERT ... VALUES statement into a column→value mapping.
 
     Handles both parameterised (?) and inline ('pending') values.
@@ -592,9 +590,7 @@ class TestListenLaterBehaviour:
         assert resp.status_code == 201
 
         update_stmts = [
-            (sql, params)
-            for sql, params in db.executed
-            if "UPDATE articles SET" in sql
+            (sql, params) for sql, params in db.executed if "UPDATE articles SET" in sql
         ]
         assert len(update_stmts) == 1
 
@@ -626,9 +622,7 @@ class TestListenLaterBehaviour:
         assert resp.status_code == 201
 
         update_stmts = [
-            (sql, params)
-            for sql, params in db.executed
-            if "UPDATE articles SET" in sql
+            (sql, params) for sql, params in db.executed if "UPDATE articles SET" in sql
         ]
         assert len(update_stmts) == 1
 
@@ -653,9 +647,7 @@ class TestListenLaterBehaviour:
 
             assert resp.status_code == 201
 
-            processing_msgs = [
-                m for m in queue.messages if m.get("type") == "article_processing"
-            ]
+            processing_msgs = [m for m in queue.messages if m.get("type") == "article_processing"]
             assert len(processing_msgs) == 1, (
                 f"listen_later={listen_later} should enqueue exactly one "
                 f"article_processing message, got {len(processing_msgs)}"

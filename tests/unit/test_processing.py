@@ -1371,9 +1371,7 @@ class TestProcessArticleContentParity:
             ):
                 from articles.processing import process_article
 
-                await process_article(
-                    f"art_md_{audio_status}", "https://example.com/article", env
-                )
+                await process_article(f"art_md_{audio_status}", "https://example.com/article", env)
 
             # The final UPDATE should include markdown_content
             md_updates = [

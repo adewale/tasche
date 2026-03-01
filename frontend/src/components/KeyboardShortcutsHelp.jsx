@@ -39,16 +39,21 @@ function ShortcutRow({ shortcut }) {
 }
 
 export function KeyboardShortcutsHelp({ onClose }) {
-  useEffect(function () {
-    function handleEscape(e) {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
+  useEffect(
+    function () {
+      function handleEscape(e) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          onClose();
+        }
       }
-    }
-    window.addEventListener('keydown', handleEscape);
-    return function () { window.removeEventListener('keydown', handleEscape); };
-  }, [onClose]);
+      window.addEventListener('keydown', handleEscape);
+      return function () {
+        window.removeEventListener('keydown', handleEscape);
+      };
+    },
+    [onClose],
+  );
 
   function handleOverlayClick(e) {
     if (e.target === e.currentTarget) {

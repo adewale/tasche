@@ -746,7 +746,10 @@ test.describe('Save audio — UI form', () => {
     createdArticleIds.push(saveArticle.id);
 
     // Dismiss toast and save via Save Audio button
-    await page.locator('.toast').click().catch(() => {});
+    await page
+      .locator('.toast')
+      .click()
+      .catch(() => {});
     await page.waitForTimeout(500);
 
     await input.fill('https://example.com/e2e-parity-audio');
@@ -912,9 +915,7 @@ test.describe('Search', () => {
     await searchInput.press('Enter');
 
     // Should show empty state or "no results"
-    await expect(
-      page.locator('.empty-state').first(),
-    ).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('.empty-state').first()).toBeVisible({ timeout: 10000 });
 
     expect(errors).toEqual([]);
   });

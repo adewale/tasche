@@ -1,7 +1,12 @@
 import { useState, useEffect } from 'preact/hooks';
 import { formatDate } from '../utils.js';
 import { addToast, articles, pollAudioStatus, pollArticleStatus } from '../state.js';
-import { getArticleTags, getArticle, listenLater as apiListenLater, isOfflineCached } from '../api.js';
+import {
+  getArticleTags,
+  getArticle,
+  listenLater as apiListenLater,
+  isOfflineCached,
+} from '../api.js';
 import { toggleArchive, toggleFavorite, removeArticle } from '../articleActions.js';
 import { nav } from '../nav.js';
 import { playAudio } from './AudioPlayer.jsx';
@@ -149,10 +154,7 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
         )}
         {hasThumbnail ? (
           <div class="article-card-thumbnail">
-            <InkWashThumbnail
-              src={thumbnailSrc}
-              alt=""
-            />
+            <InkWashThumbnail src={thumbnailSrc} alt="" />
           </div>
         ) : a.domain ? (
           <div class="article-card-favicon">

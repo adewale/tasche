@@ -261,7 +261,10 @@ class TestDownloadImagesSSRF:
 
         # First response is a 302 redirecting to a private IP
         redirect_resp = _make_mock_response(status_code=302, content=b"")
-        redirect_resp.headers = {"content-type": "image/jpeg", "location": "http://10.0.0.1/internal.jpg"}
+        redirect_resp.headers = {
+            "content-type": "image/jpeg",
+            "location": "http://10.0.0.1/internal.jpg",
+        }
 
         mock_fetch = AsyncMock(return_value=redirect_resp)
 

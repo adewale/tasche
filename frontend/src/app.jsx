@@ -109,7 +109,9 @@ export function App() {
           syncStatus.value = event.data.status;
           if (event.data.status === 'synced') {
             addToast('All changes synced', 'success');
-            setTimeout(function () { syncStatus.value = null; }, 3000);
+            setTimeout(function () {
+              syncStatus.value = null;
+            }, 3000);
           } else if (event.data.status === 'error') {
             addToast('Some changes failed to sync', 'error');
           }
