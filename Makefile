@@ -12,6 +12,7 @@ format:
 	uv run ruff format src/ tests/
 
 dev:
+	npx wrangler d1 migrations apply DB --local
 	uv run pywrangler dev
 
 frontend-build:
