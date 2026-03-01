@@ -303,42 +303,49 @@ export function saveAudioOffline(articleId) {
   sendToSW({ type: 'SAVE_AUDIO_OFFLINE', articleId: articleId });
 }
 
-// Check if an article is cached for offline reading
-// Returns a Promise that resolves with { cached, hasContent, hasAudio }
-export function isOfflineCached(articleId) {
+// Query the service worker and wait for a response message.
+// sendMsg: message to post, responseType: expected event.data.type,
+// fallback: value if SW unavailable, extract: event.data → result,
+// match: optional extra predicate on event.data, timeoutMs: max wait.
+function swQuery(sendMsg, responseType, fallback, extract, match, timeoutMs) {
   return new Promise(function (resolve) {
     if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) {
-      resolve({ cached: false, hasContent: false, hasAudio: false });
+      resolve(fallback);
       return;
     }
 
     var timeout = setTimeout(function () {
       navigator.serviceWorker.removeEventListener('message', handler);
-      resolve({ cached: false, hasContent: false, hasAudio: false });
-    }, 2000);
+      resolve(fallback);
+    }, timeoutMs || 5000);
 
     function handler(event) {
-      if (
-        event.data &&
-        event.data.type === 'OFFLINE_STATUS' &&
-        event.data.articleId === articleId
-      ) {
+      if (event.data && event.data.type === responseType && (!match || match(event.data))) {
         clearTimeout(timeout);
         navigator.serviceWorker.removeEventListener('message', handler);
-        resolve({
-          cached: event.data.cached,
-          hasContent: event.data.hasContent,
-          hasAudio: event.data.hasAudio,
-        });
+        resolve(extract(event.data));
       }
     }
 
     navigator.serviceWorker.addEventListener('message', handler);
-    navigator.serviceWorker.controller.postMessage({
-      type: 'CHECK_OFFLINE_STATUS',
-      articleId: articleId,
-    });
+    navigator.serviceWorker.controller.postMessage(sendMsg);
   });
+}
+
+// Check if an article is cached for offline reading
+export function isOfflineCached(articleId) {
+  return swQuery(
+    { type: 'CHECK_OFFLINE_STATUS', articleId: articleId },
+    'OFFLINE_STATUS',
+    { cached: false, hasContent: false, hasAudio: false },
+    function (d) {
+      return { cached: d.cached, hasContent: d.hasContent, hasAudio: d.hasAudio };
+    },
+    function (d) {
+      return d.articleId === articleId;
+    },
+    2000,
+  );
 }
 
 // Trigger auto-precaching of recent unread articles
@@ -347,60 +354,21 @@ export function triggerAutoPrecache(limit) {
 }
 
 // Request cache stats from the service worker
-// Returns a Promise that resolves with { articleCount, totalSize }
 export function getCacheStats() {
-  return new Promise(function (resolve) {
-    if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) {
-      resolve({ articleCount: 0, totalSize: 0 });
-      return;
-    }
-
-    var timeout = setTimeout(function () {
-      navigator.serviceWorker.removeEventListener('message', handler);
-      resolve({ articleCount: 0, totalSize: 0 });
-    }, 5000);
-
-    function handler(event) {
-      if (event.data && event.data.type === 'CACHE_STATS') {
-        clearTimeout(timeout);
-        navigator.serviceWorker.removeEventListener('message', handler);
-        resolve({
-          articleCount: event.data.articleCount,
-          totalSize: event.data.totalSize,
-        });
-      }
-    }
-
-    navigator.serviceWorker.addEventListener('message', handler);
-    navigator.serviceWorker.controller.postMessage({
-      type: 'GET_CACHE_STATS',
-    });
-  });
+  return swQuery(
+    { type: 'GET_CACHE_STATS' },
+    'CACHE_STATS',
+    { articleCount: 0, totalSize: 0 },
+    function (d) {
+      return { articleCount: d.articleCount, totalSize: d.totalSize };
+    },
+  );
 }
 
 // Clear SW caches (force refresh)
 export function clearAllCaches() {
-  return new Promise(function (resolve) {
-    if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) {
-      resolve(false);
-      return;
-    }
-
-    var timeout = setTimeout(function () {
-      navigator.serviceWorker.removeEventListener('message', handler);
-      resolve(false);
-    }, 5000);
-
-    function handler(event) {
-      if (event.data && event.data.type === 'CACHES_CLEARED') {
-        clearTimeout(timeout);
-        navigator.serviceWorker.removeEventListener('message', handler);
-        resolve(true);
-      }
-    }
-
-    navigator.serviceWorker.addEventListener('message', handler);
-    navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_CACHES' });
+  return swQuery({ type: 'CLEAR_CACHES' }, 'CACHES_CLEARED', false, function () {
+    return true;
   });
 }
 

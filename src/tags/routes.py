@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from articles.routes import _get_user_article
 from auth.dependencies import get_current_user
-from utils import generate_id, now_iso
+from utils import generate_id, get_user_entity, now_iso
 
 router = APIRouter()
 article_tags_router = APIRouter()
@@ -43,14 +43,14 @@ async def _get_user_tag(
     user_id: str,
 ) -> dict[str, Any]:
     """Fetch a tag by ID for a user, or raise 404."""
-    tag = await (
-        db.prepare("SELECT id, user_id, name, created_at FROM tags WHERE id = ? AND user_id = ?")
-        .bind(tag_id, user_id)
-        .first()
+    return await get_user_entity(
+        db,
+        table="tags",
+        entity_id=tag_id,
+        user_id=user_id,
+        fields="id, user_id, name, created_at",
+        not_found="Tag not found",
     )
-    if tag is None:
-        raise HTTPException(status_code=404, detail="Tag not found")
-    return tag
 
 
 # ---------------------------------------------------------------------------

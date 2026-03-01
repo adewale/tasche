@@ -166,7 +166,7 @@ The repository includes placeholder PWA icons at `frontend/public/static/icon-19
 
 ## Cost
 
-Approximately **$5/month** on the Cloudflare Workers Paid plan, paid directly to Cloudflare. The free tier (100K requests/day) covers light personal use.
+Requires the [Cloudflare Workers Paid plan](https://developers.cloudflare.com/workers/platform/pricing/) ($5/month as of early 2026), paid directly to Cloudflare. The free tier (100K requests/day) covers light personal use.
 
 ## License
 

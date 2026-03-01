@@ -23,7 +23,7 @@ from articles.storage import (
 )
 from articles.urls import check_duplicate, extract_domain, validate_url
 from auth.dependencies import get_current_user
-from utils import generate_id, now_iso
+from utils import generate_id, get_user_entity, now_iso
 from wrappers import _to_py_safe, stream_r2_body
 
 router = APIRouter()
@@ -100,28 +100,37 @@ def _validate_reading_status(value: str) -> None:
         )
 
 
+def _validate_batch_ids(
+    ids: Any,
+    *,
+    label: str = "article_ids",
+    max_count: int = 100,
+) -> None:
+    """Raise 422 if *ids* is not a non-empty list within *max_count*."""
+    if not isinstance(ids, list) or not ids:
+        raise HTTPException(status_code=422, detail=f"{label} must be a non-empty list")
+    if len(ids) > max_count:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Cannot process more than {max_count} articles at once",
+        )
+
+
 async def _get_user_article(
     db: Any,
     article_id: str,
     user_id: str,
     fields: str = "*",
 ) -> dict[str, Any]:
-    """Fetch an article by ID for a user, or raise 404.
-
-    .. warning::
-
-        The *fields* parameter is interpolated directly into the SQL query.
-        It must **never** contain user-supplied input.  Only pass hard-coded
-        column lists defined in this module.
-    """
-    article = await (
-        db.prepare(f"SELECT {fields} FROM articles WHERE id = ? AND user_id = ?")
-        .bind(article_id, user_id)
-        .first()
+    """Fetch an article by ID for a user, or raise 404."""
+    return await get_user_entity(
+        db,
+        table="articles",
+        entity_id=article_id,
+        user_id=user_id,
+        fields=fields,
+        not_found="Article not found",
     )
-    if article is None:
-        raise HTTPException(status_code=404, detail="Article not found")
-    return article
 
 
 @router.post("", status_code=201)
@@ -407,10 +416,7 @@ async def batch_update_articles(
     article_ids = body.get("article_ids", [])
     updates = body.get("updates", {})
 
-    if not isinstance(article_ids, list) or not article_ids:
-        raise HTTPException(status_code=422, detail="article_ids must be a non-empty list")
-    if len(article_ids) > 100:
-        raise HTTPException(status_code=422, detail="Cannot update more than 100 articles at once")
+    _validate_batch_ids(article_ids)
     if not isinstance(updates, dict) or not updates:
         raise HTTPException(status_code=422, detail="updates must be a non-empty object")
 
@@ -474,10 +480,7 @@ async def batch_delete_articles(
     body = await request.json()
     article_ids = body.get("article_ids", [])
 
-    if not isinstance(article_ids, list) or not article_ids:
-        raise HTTPException(status_code=422, detail="article_ids must be a non-empty list")
-    if len(article_ids) > 100:
-        raise HTTPException(status_code=422, detail="Cannot delete more than 100 articles at once")
+    _validate_batch_ids(article_ids)
 
     env = request.scope["env"]
     db = env.DB

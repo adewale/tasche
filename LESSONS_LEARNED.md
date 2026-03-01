@@ -1,5 +1,7 @@
 # Lessons Learned — Tasche Implementation
 
+> **Historical document.** The phase summaries and commit statistics below reflect the initial development period (2026-02-15 to 2026-02-25). Specific counts, metrics, and file modification tallies are snapshots from that window — consult `git log` for current state. The lessons and patterns remain relevant.
+
 ## Implement→Audit Loop Summary
 
 Each phase was implemented by a sub-agent, then audited by a separate sub-agent. If the audit failed, fixes were applied and the audit was re-run. Below is a summary of each phase's loop.
@@ -438,9 +440,9 @@ The `_is_js_null_or_undefined()` helper existed in `wrappers.py` but was never c
 
 ---
 
-## Commit History Analysis — Patterns of Rework
+## Commit History Analysis — Patterns of Rework (2026-02-15 to 2026-02-25)
 
-An analysis of 53 commits over 11 days (2026-02-15 to 2026-02-25) reveals systematic patterns of rework that could be prevented with better tooling and processes.
+An analysis of the initial 53 commits reveals systematic patterns of rework that could be prevented with better tooling and processes.
 
 ### Rework Statistics
 

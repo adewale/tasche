@@ -198,27 +198,27 @@ When `DISABLE_AUTH=true` in env vars, the `get_current_user()` dependency bypass
 
 The full pipeline from URL save to content ready, executed by the queue consumer.
 
-### Step-by-Step
+### Pipeline Steps
 
 | Step | Action | Binding | Error Handling |
 |------|--------|---------|----------------|
-| 1 | `UPDATE status='processing'` | D1 | — |
-| 2 | Check R2 for `raw.html` (bookmarklet pre-supplied content) | R2 | Skip fetch if found |
-| 3 | `_fetch_page(url)` with 30s timeout, 10 MB limit, content-type validation | HTTP | HttpError, TimeoutError |
-| 4 | Post-redirect SSRF check on final URL hostname | — | ValueError if private |
-| 5 | `_is_js_heavy(html)` → `scrape()` via Browser Rendering REST API | HTTP | Non-fatal catch |
-| 6 | `extract_canonical_url(html)` + `extract_domain(final_url)` | — | — |
-| 7 | Thumbnail screenshot (1200x630) via Browser Rendering | HTTP, R2 | Non-fatal catch |
-| 8 | Full-page screenshot (1200x800, full_page=True) via Browser Rendering | HTTP, R2 | Non-fatal catch |
-| 9 | Content extraction: Readability Service Binding, then BS4 fallback | Service Binding | Fallback on any error |
-| 10 | `download_images()` + `store_images()` — WebP conversion, SSRF-checked | HTTP, R2 | Per-image catch |
-| 11 | `rewrite_image_paths()` to `/api/articles/{id}/images/{hash}.ext` | — | — |
-| 12 | `html_to_markdown()` via markdownify, `count_words()`, `calculate_reading_time()` | — | — |
-| 13 | Store content.html + metadata.json to R2 | R2 | — |
-| 14 | UPDATE D1 with 15 columns including `status='ready'` | D1 | — |
-| 15 | FTS5 indexing via D1 triggers (automatic) | D1 | — |
-| 16 | `apply_auto_tags()` — evaluate tag rules | D1 | Non-fatal catch |
-| 17 | If `audio_status='pending'`, enqueue TTS generation | Queue | Non-fatal catch |
+| Mark processing | `UPDATE status='processing'` | D1 | — |
+| Check pre-supplied content | Check R2 for `raw.html` (bookmarklet) | R2 | Skip fetch if found |
+| Fetch page | `_fetch_page(url)` with 30s timeout, 10 MB limit, content-type validation | HTTP | HttpError, TimeoutError |
+| SSRF check | Post-redirect SSRF check on final URL hostname | — | ValueError if private |
+| JS-heavy detection | `_is_js_heavy(html)` → `scrape()` via Browser Rendering REST API | HTTP | Non-fatal catch |
+| URL extraction | `extract_canonical_url(html)` + `extract_domain(final_url)` | — | — |
+| Thumbnail | Screenshot (1200x630) via Browser Rendering | HTTP, R2 | Non-fatal catch |
+| Full screenshot | Screenshot (1200x800, full_page=True) via Browser Rendering | HTTP, R2 | Non-fatal catch |
+| Content extraction | Readability Service Binding, then BS4 fallback | Service Binding | Fallback on any error |
+| Image processing | `download_images()` + `store_images()` — WebP conversion, SSRF-checked | HTTP, R2 | Per-image catch |
+| Image path rewrite | `rewrite_image_paths()` to `/api/articles/{id}/images/{hash}.ext` | — | — |
+| Markdown conversion | `html_to_markdown()` via markdownify, `count_words()`, `calculate_reading_time()` | — | — |
+| Store content | Store content.html + metadata.json to R2 | R2 | — |
+| Update D1 | UPDATE D1 with extracted columns, `status='ready'` | D1 | — |
+| FTS5 indexing | Automatic via D1 triggers | D1 | — |
+| Auto-tagging | `apply_auto_tags()` — evaluate tag rules | D1 | Non-fatal catch |
+| TTS enqueue | If `audio_status='pending'`, enqueue TTS generation | Queue | Non-fatal catch |
 
 ### Error Classification
 
@@ -394,7 +394,7 @@ Tag names: max 100 characters, validated for uniqueness per user.
 
 ### Auto-Tagging Rules
 
-Rules are evaluated during article processing (step 16, non-fatal). Each rule has a `tag_id`, `match_type`, and `pattern`.
+Rules are evaluated during article processing (auto-tagging step, non-fatal). Each rule has a `tag_id`, `match_type`, and `pattern`.
 
 | Match Type | Evaluation | Example |
 |-----------|------------|---------|

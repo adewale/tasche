@@ -6,7 +6,6 @@ audio.  All endpoints require authentication via ``get_current_user``.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -16,6 +15,7 @@ from starlette.responses import Response
 from articles.routes import _enqueue_or_fail, _get_user_article
 from articles.storage import article_key, get_content
 from auth.dependencies import get_current_user
+from utils import now_iso
 
 router = APIRouter()
 
@@ -60,7 +60,7 @@ async def listen_later(
         )
 
     # Only enqueue if audio_status is NULL or 'failed'
-    now = datetime.now(UTC).isoformat()
+    now = now_iso()
 
     # Update D1: set audio_status
     await (

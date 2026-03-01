@@ -74,78 +74,58 @@ export function removeToast(id) {
   toasts.value = toasts.value.filter((t) => t.id !== id);
 }
 
-// Audio polling — shared across Library, ArticleCard, Reader
-var audioPollTimers = new Map();
+// Generic status polling — used for both article processing and audio generation
+function createPoller(intervalMs, field, toasts) {
+  var timers = new Map();
 
-export function pollAudioStatus(articleId, fetchArticle) {
-  if (audioPollTimers.has(articleId)) return;
-  var startTime = Date.now();
-  var intervalId = setInterval(async function () {
-    if (Date.now() - startTime > 600000) {
-      stopAudioPoll(articleId);
-      return;
+  function stop(articleId) {
+    var timerId = timers.get(articleId);
+    if (timerId) {
+      clearInterval(timerId);
+      timers.delete(articleId);
     }
-    try {
-      var article = await fetchArticle(articleId);
-      if (article.audio_status === 'ready' || article.audio_status === 'failed') {
-        articles.value = articles.value.map(function (a) {
-          return a.id === articleId ? { ...a, ...article } : a;
-        });
-        if (article.audio_status === 'ready') {
-          addToast('Audio is ready!', 'success');
-        } else {
-          addToast('Audio generation failed', 'error');
-        }
-        stopAudioPoll(articleId);
-      }
-    } catch (_e) {
-      // Network error — keep polling until timeout
-    }
-  }, 10000);
-  audioPollTimers.set(articleId, intervalId);
-}
-
-export function stopAudioPoll(articleId) {
-  var timerId = audioPollTimers.get(articleId);
-  if (timerId) {
-    clearInterval(timerId);
-    audioPollTimers.delete(articleId);
   }
-}
 
-// Article-status polling — detect processing → ready/failed transitions
-var articlePollTimers = new Map();
-
-export function pollArticleStatus(articleId, fetchArticle) {
-  if (articlePollTimers.has(articleId)) return;
-  var startTime = Date.now();
-  var intervalId = setInterval(async function () {
-    if (Date.now() - startTime > 600000) {
-      stopArticlePoll(articleId);
-      return;
-    }
-    try {
-      var article = await fetchArticle(articleId);
-      if (article.status === 'ready' || article.status === 'failed') {
-        articles.value = articles.value.map(function (a) {
-          return a.id === articleId ? { ...a, ...article } : a;
-        });
-        if (article.status === 'failed') {
-          addToast('Article processing failed', 'error');
-        }
-        stopArticlePoll(articleId);
+  function start(articleId, fetchArticle) {
+    if (timers.has(articleId)) return;
+    var startTime = Date.now();
+    var intervalId = setInterval(async function () {
+      if (Date.now() - startTime > 600000) {
+        stop(articleId);
+        return;
       }
-    } catch (_e) {
-      // Network error — keep polling until timeout
-    }
-  }, 5000);
-  articlePollTimers.set(articleId, intervalId);
+      try {
+        var article = await fetchArticle(articleId);
+        var value = article[field];
+        if (value === 'ready' || value === 'failed') {
+          articles.value = articles.value.map(function (a) {
+            return a.id === articleId ? { ...a, ...article } : a;
+          });
+          if (toasts[value]) {
+            addToast(toasts[value][0], toasts[value][1]);
+          }
+          stop(articleId);
+        }
+      } catch (_e) {
+        // Network error — keep polling until timeout
+      }
+    }, intervalMs);
+    timers.set(articleId, intervalId);
+  }
+
+  return { start: start, stop: stop };
 }
 
-export function stopArticlePoll(articleId) {
-  var timerId = articlePollTimers.get(articleId);
-  if (timerId) {
-    clearInterval(timerId);
-    articlePollTimers.delete(articleId);
-  }
-}
+var audioPoller = createPoller(10000, 'audio_status', {
+  ready: ['Audio is ready!', 'success'],
+  failed: ['Audio generation failed', 'error'],
+});
+
+var articlePoller = createPoller(5000, 'status', {
+  failed: ['Article processing failed', 'error'],
+});
+
+export var pollAudioStatus = audioPoller.start;
+export var stopAudioPoll = audioPoller.stop;
+export var pollArticleStatus = articlePoller.start;
+export var stopArticlePoll = articlePoller.stop;

@@ -9,27 +9,15 @@ Tasche is a single-user, self-hosted read-it-later service built entirely on the
 ## Development Commands
 
 ```bash
-# Run unit tests
-uv run pytest tests/unit/ -x -q
+make dev                # Local dev server (installs deps, builds frontend, applies migrations)
+make check              # All quality gates (lint, test, format, build)
+make test               # Backend unit tests only
+make deploy-staging     # Quality gates + deploy to staging
+make deploy-production  # Quality gates + deploy to production
 
-# Run a single test file
+# Run a single test file or test
 uv run pytest tests/unit/test_articles.py -x -q
-
-# Run a single test
 uv run pytest tests/unit/test_articles.py::TestCreateArticle::test_creates_article -x -q
-
-# Lint
-uv run ruff check src/ tests/
-
-# Format
-uv run ruff format src/ tests/
-
-# Local development (uses Miniflare for D1/R2/KV/Queues)
-uv run pywrangler dev
-
-# Deploy (applies pending D1 migrations first, then deploys code)
-make deploy-staging
-make deploy-production
 ```
 
 **Important:** Use `pywrangler` (not regular `wrangler`) — regular wrangler cannot deploy Python Workers with packages. Packages are defined in `pyproject.toml`, not `requirements.txt`. Always deploy via `make deploy-*` targets so D1 migrations are applied automatically before code goes out.
@@ -81,7 +69,7 @@ Wide events pattern: emit one JSON log line per request (not many small lines). 
 - **FFI boundary:** All JS↔Python conversion happens in `src/wrappers.py`. Use `d1_first()` for `.first()` results, `d1_rows()` for `.all()` results, `_to_js_value()` for Python→JS, `_to_py_safe()` for JS→Python. Never expose JsProxy to business logic.
 - **Status enums:** `reading_status`: unread/archived. `audio_status`: pending/generating/ready/failed. `article.status`: pending/processing/ready/failed. These match D1 CHECK constraints exactly.
 - **IDs:** `secrets.token_urlsafe(16)` for article/tag IDs, `secrets.token_urlsafe(32)` for session IDs.
-- **Timestamps:** `datetime.now(UTC).isoformat()` everywhere.
+- **Timestamps:** `now_iso()` from `utils.py` everywhere.
 - **R2 keys:** `articles/{article_id}/{suffix}` (e.g., `content.html`, `content.md`, `audio.mp3`, `thumbnail.webp`). Helper: `articles.storage.article_key()`.
 - **Duplicate URL detection:** Checks `original_url`, `final_url`, AND `canonical_url`.
 - **Two tag routers:** `tags.routes.router` (CRUD at `/api/tags`) and `tags.routes.article_tags_router` (associations at `/api/articles/{id}/tags`).
@@ -94,5 +82,5 @@ Wide events pattern: emit one JSON log line per request (not many small lines). 
 Use these skills when working on this project:
 
 - **`/cloudflare`** — General Cloudflare platform reference (Workers, D1, R2, KV, Queues, AI, Browser Rendering, etc.). Covers configuration, patterns, and decision trees for all Cloudflare services. Source: [dmmulroy/cloudflare-skill](https://github.com/dmmulroy/cloudflare-skill)
-- **Python Workers skill** — Python/Pyodide-specific reference for Cloudflare Workers. Covers the JS/Python FFI boundary, JsProxy conversion, async constraints, package compatibility, testing strategies, and 14 documented gotchas. Draft at: [planet_cf PR #7](https://github.com/adewale/planet_cf/pull/7) (files under `docs/tmp/`)
+- **Python Workers skill** — Python/Pyodide-specific reference for Cloudflare Workers. Covers the JS/Python FFI boundary, JsProxy conversion, async constraints, package compatibility, and testing strategies. Draft at: [planet_cf PR #7](https://github.com/adewale/planet_cf/pull/7) (files under `docs/tmp/`)
 - **`logging-best-practices`** — Wide events / canonical log lines pattern for observability

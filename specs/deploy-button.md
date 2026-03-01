@@ -55,17 +55,17 @@ When a user clicks the button, Cloudflare's deploy flow performs these steps:
 
 The deploy button previously produced a broken instance. All issues below have been resolved:
 
-| # | Gap | Fix | Commit |
-|---|-----|-----|--------|
-| 1 | No root `package.json` | Created with build/deploy scripts | `4cbde1e` |
-| 2 | D1 migrations not applied | Deploy script runs migrations first | `4cbde1e` |
-| 3 | `DISABLE_AUTH=true` in default env | Removed from default and staging envs | `84bb779` |
-| 4 | `SITE_URL` is a placeholder | Auto-detection from Host header | `4cbde1e` |
-| 5 | `ALLOWED_EMAILS` is empty | Moved to secret, prompted during deploy | `dfa6bd5` |
-| 6 | READABILITY service binding in default env | Removed from default env | `4cbde1e` |
-| 7 | `deploy.json` is stale | Deleted | `4cbde1e` |
-| 8 | `.dev.vars.example` incomplete | Added ALLOWED_EMAILS, DISABLE_AUTH | `cf07ef6` |
-| 9 | No first-boot guidance | Setup checklist on login page via `/api/health/config` | `b830642` |
+| # | Gap | Fix |
+|---|-----|-----|
+| 1 | No root `package.json` | Created with build/deploy scripts |
+| 2 | D1 migrations not applied | Deploy script runs migrations first |
+| 3 | `DISABLE_AUTH=true` in default env | Removed from default and staging envs |
+| 4 | `SITE_URL` is a placeholder | Auto-detection from Host header |
+| 5 | `ALLOWED_EMAILS` is empty | Moved to secret, prompted during deploy |
+| 6 | READABILITY service binding in default env | Removed from default env |
+| 7 | `deploy.json` is stale | Deleted |
+| 8 | `.dev.vars.example` incomplete | Added ALLOWED_EMAILS, DISABLE_AUTH |
+| 9 | No first-boot guidance | Setup checklist on login page via `/api/health/config` |
 
 ---
 
