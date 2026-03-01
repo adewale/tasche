@@ -908,7 +908,7 @@ GitHub OAuth requires these endpoints:
 
 ### 5.2 Whitelist Configuration
 
-`ALLOWED_EMAILS` must be set in `wrangler.jsonc` as a comma-separated list of authorized email addresses.
+`ALLOWED_EMAILS` must be set as a secret (`npx wrangler secret put ALLOWED_EMAILS`) as a comma-separated list of authorized email addresses.
 
 If `ALLOWED_EMAILS` is empty or not set, authentication is rejected with a 403 error. This prevents accidental open access.
 
@@ -946,9 +946,8 @@ uv run pywrangler deploy --env staging
   "compatibility_flags": ["python_workers"],
   
   // Shared configuration (base)
-  "vars": {
-    "ALLOWED_EMAILS": ""
-  },
+  // ALLOWED_EMAILS set via: npx wrangler secret put ALLOWED_EMAILS
+  "vars": {},
   
   "d1_databases": [{ "binding": "DB" }],
   "r2_buckets": [{ "binding": "CONTENT" }],

@@ -7,10 +7,11 @@
   // Default config works with workers.dev — deploy without --env for quick setup.
   // Use --env production for custom domain deployments.
   "workers_dev": true,
-  // Required secrets (set via `pywrangler secret put`):
+  // Required secrets (set via `npx wrangler secret put`):
+  // - ALLOWED_EMAILS (your GitHub email, comma-separated for multiple)
   // - GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET (GitHub OAuth)
-  // - CF_ACCOUNT_ID, CF_API_TOKEN (Browser Rendering REST API)
-  "vars": { "ALLOWED_EMAILS": "", "SITE_URL": "", "TTS_MODEL": "melotts" },
+  // - CF_ACCOUNT_ID, CF_API_TOKEN (Browser Rendering REST API — optional)
+  "vars": { "SITE_URL": "", "TTS_MODEL": "melotts" },
   "ai": { "binding": "AI" },
   "d1_databases": [{ "binding": "DB", "database_name": "tasche-db", "database_id": "7f0dfc00-1891-4d8a-9876-03dbd8cf6804" }],
   "r2_buckets": [{ "binding": "CONTENT", "bucket_name": "tasche-content" }],
@@ -36,7 +37,7 @@
   "env": {
     "production": {
       "workers_dev": true,
-      "vars": { "ALLOWED_EMAILS": "", "SITE_URL": "https://tasche-production.adewale-883.workers.dev", "TTS_MODEL": "melotts", "WORKER_ENV": "production" },
+      "vars": { "SITE_URL": "https://tasche-production.adewale-883.workers.dev", "TTS_MODEL": "melotts", "WORKER_ENV": "production" },
       "ai": { "binding": "AI" },
       "services": [{ "binding": "READABILITY", "service": "readability-worker", "entrypoint": "ReadabilityService" }],
       "d1_databases": [{ "binding": "DB", "database_name": "tasche-production-db", "database_id": "58401394-d213-4749-ab04-bfa064dc7431" }],
@@ -49,7 +50,7 @@
     },
     "staging": {
       "workers_dev": true,
-      "vars": { "ALLOWED_EMAILS": "", "SITE_URL": "https://tasche-staging.adewale-883.workers.dev", "TTS_MODEL": "melotts", "WORKER_ENV": "staging" },
+      "vars": { "SITE_URL": "https://tasche-staging.adewale-883.workers.dev", "TTS_MODEL": "melotts", "WORKER_ENV": "staging" },
       "ai": { "binding": "AI" },
       "services": [{ "binding": "READABILITY", "service": "readability-worker", "entrypoint": "ReadabilityService" }],
       "d1_databases": [{ "binding": "DB", "database_name": "tasche-staging-db", "database_id": "4a1d5914-2446-4cfd-be0b-a1c78a7d495e" }],

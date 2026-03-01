@@ -183,7 +183,7 @@ async def callback(request: Request) -> RedirectResponse:
     if not allowed_emails:
         raise HTTPException(
             status_code=403,
-            detail="ALLOWED_EMAILS is not configured. Set it in wrangler.jsonc.",
+            detail="ALLOWED_EMAILS is not configured. Run: npx wrangler secret put ALLOWED_EMAILS",
         )
     if email.lower() not in allowed_emails:
         raise HTTPException(status_code=403, detail="Email not authorized")

@@ -138,7 +138,7 @@ ALLOWED_EMAILS=your@email.com
 # CF_API_TOKEN=your_api_token
 ```
 
-**Note:** `ALLOWED_EMAILS` is currently a `var` in `wrangler.jsonc`, not a secret. But it still needs a clear prompt during deploy. Adding it to `.dev.vars.example` ensures the user is prompted. The deploy button will treat values from `.dev.vars.example` as secrets (encrypted at rest, not visible in dashboard after setting).
+**Note:** `ALLOWED_EMAILS` is a secret (set via `npx wrangler secret put ALLOWED_EMAILS`), not a var in `wrangler.jsonc`. Adding it to `.dev.vars.example` ensures local dev works and the deploy button prompts the user.
 
 ### 3. Update `wrangler.jsonc` default environment
 
@@ -155,12 +155,12 @@ Current default env has three problems:
 |-------|---------|-----|-----|
 | `DISABLE_AUTH` | `"true"` | **Remove** | Deploy-button users need auth enabled. Keep only in staging env. |
 | `SITE_URL` | Placeholder | `""` (empty) | Auto-detection fills it in from the Host header (see §4). |
-| `ALLOWED_EMAILS` | `""` | `""` | Stays empty; user sets it during deploy or via secret. |
+| `ALLOWED_EMAILS` | `""` | **Remove from vars** | Now a secret; user sets via `npx wrangler secret put ALLOWED_EMAILS`. |
 | `services` (READABILITY) | Present | **Remove** from default env | Undeployed Worker causes binding error. Keep in production/staging only. |
 
 ```jsonc
 // NEW:
-"vars": { "ALLOWED_EMAILS": "", "SITE_URL": "" }
+"vars": { "SITE_URL": "" }
 ```
 
 The staging env retains `DISABLE_AUTH: "true"` and the READABILITY service binding. The production env retains the READABILITY service binding.
