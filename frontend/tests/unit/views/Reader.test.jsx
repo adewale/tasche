@@ -211,6 +211,33 @@ describe('Reader', () => {
     });
   });
 
+  it('shows Listen Later when audio_status is generating (stuck)', async () => {
+    const { getArticle } = await import('../../../src/api.js');
+    getArticle.mockResolvedValueOnce({
+      id: 'art-1',
+      title: 'Test Article',
+      domain: 'example.com',
+      original_url: 'https://example.com/test',
+      excerpt: 'An excerpt',
+      reading_status: 'unread',
+      reading_time_minutes: 5,
+      is_favorite: 0,
+      audio_status: 'generating',
+      status: 'ready',
+      original_status: 'unknown',
+      scroll_position: 0,
+      word_count: 1000,
+      markdown_content: null,
+    });
+
+    render(<Reader id="art-1" />);
+    await waitFor(() => {
+      expect(screen.getByText('Listen Later')).toBeInTheDocument();
+    });
+    // Should NOT show a disabled "Generating audio..." button
+    expect(screen.queryByText('Generating audio...')).not.toBeInTheDocument();
+  });
+
   it('renders Favourite button', async () => {
     render(<Reader id="art-1" />);
     await waitFor(() => {

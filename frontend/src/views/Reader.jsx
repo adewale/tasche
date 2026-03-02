@@ -619,12 +619,8 @@ export function Reader({ id }) {
   const ostatus = article.original_status || 'unknown';
   const hasAudio = article.audio_status === 'ready';
   const canRequestAudio =
-    !audioRequested &&
-    article.audio_status !== 'pending' &&
-    article.audio_status !== 'generating' &&
-    article.audio_status !== 'ready';
-  const audioPending =
-    audioRequested || article.audio_status === 'pending' || article.audio_status === 'generating';
+    !audioRequested && article.audio_status !== 'pending' && article.audio_status !== 'ready';
+  const audioPending = audioRequested || article.audio_status === 'pending';
 
   return (
     <>
