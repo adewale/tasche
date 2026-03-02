@@ -83,35 +83,10 @@ export function highlightTerms(text, query) {
 
 export function getBookmarkletCode() {
   var origin = window.location.origin;
-  // The bookmarklet captures the page's HTML content and POSTs it to the API.
-  // This enables saving paywalled articles that the user can see in their
-  // browser but the server cannot fetch.  Falls back to URL-only save if the
-  // HTML exceeds 2 MB.
-  var code =
-    '(function(){' +
-    "var o='" +
+  return (
+    "javascript:void(open('" +
     origin +
-    "';" +
-    'var u=location.href;' +
-    'var t=document.title;' +
-    'var h=document.documentElement.outerHTML;' +
-    'var b={url:u,title:t};' +
-    'if(h.length<=2097152){b.content=h;}' +
-    "var d=document.createElement('div');" +
-    "d.style.cssText='position:fixed;top:16px;right:16px;z-index:2147483647;" +
-    'padding:12px 20px;background:#1d1d1f;color:#fff;border-radius:2px;' +
-    "font:14px/1.4 -apple-system,sans-serif;border:1px solid #333';" +
-    "d.textContent='Saving to Tasche...';" +
-    'document.body.appendChild(d);' +
-    "fetch(o+'/api/articles',{method:'POST'," +
-    "headers:{'Content-Type':'application/json'}," +
-    "body:JSON.stringify(b),credentials:'include'})" +
-    '.then(function(r){' +
-    "if(r.ok){d.textContent='Saved to Tasche!';d.style.background='#1d1d1f'}" +
-    "else{d.textContent='Error saving ('+r.status+')';d.style.background='#c0392b'}" +
-    '}).catch(function(){' +
-    "d.textContent='Network error';d.style.background='#c0392b'" +
-    '}).finally(function(){setTimeout(function(){d.remove()},2500)});' +
-    '})()';
-  return 'javascript:void(' + encodeURIComponent(code) + ')';
+    "/bookmarklet?url='+encodeURIComponent(location.href)+'&title='+encodeURIComponent(document.title),'" +
+    "Tasche','toolbar=no,width=420,height=180'))"
+  );
 }

@@ -1,7 +1,10 @@
-"""Tests for security headers middleware.
+"""Tests for security headers and CORS middleware.
 
 Verifies that SecurityHeadersMiddleware injects the correct HTTP security
 headers on all responses, including conditional HSTS for HTTPS origins.
+
+Also verifies that CORS is restricted to localhost (for local dev) and
+rejects external origins (production is same-origin via bookmarklet popup).
 """
 
 from __future__ import annotations
@@ -25,6 +28,13 @@ def _make_app(site_url: str = "https://tasche.test") -> FastAPI:
     @app.get("/test")
     async def test_endpoint():
         return {"ok": True}
+
+    return app
+
+
+def _make_cors_app() -> FastAPI:
+    """Create a minimal FastAPI app with the production CORS config."""
+    from src.entry import app
 
     return app
 
@@ -74,3 +84,74 @@ class TestSecurityHeaders:
         assert resp.status_code == 404
         assert resp.headers["x-content-type-options"] == "nosniff"
         assert resp.headers["x-frame-options"] == "DENY"
+
+
+# ---------------------------------------------------------------------------
+# CORS — localhost only for local dev; production is same-origin
+# ---------------------------------------------------------------------------
+
+
+class TestCORS:
+    """Verify CORS is restricted to localhost for local dev.
+
+    Production requests are same-origin (bookmarklet uses a popup on
+    Tasche's own origin), so no external CORS is needed.
+    """
+
+    def test_cors_allows_localhost(self) -> None:
+        """Preflight from localhost gets CORS headers (local dev)."""
+        client = TestClient(_make_cors_app())
+        resp = client.options(
+            "/api/articles",
+            headers={
+                "origin": "http://localhost:3000",
+                "access-control-request-method": "POST",
+                "access-control-request-headers": "content-type",
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.headers["access-control-allow-origin"] == "http://localhost:3000"
+        assert "POST" in resp.headers["access-control-allow-methods"]
+        assert resp.headers["access-control-allow-credentials"] == "true"
+
+    def test_cors_allows_127_0_0_1(self) -> None:
+        """Preflight from 127.0.0.1 gets CORS headers (local dev)."""
+        client = TestClient(_make_cors_app())
+        resp = client.options(
+            "/api/articles",
+            headers={
+                "origin": "http://127.0.0.1:8080",
+                "access-control-request-method": "POST",
+                "access-control-request-headers": "content-type",
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.headers["access-control-allow-origin"] == "http://127.0.0.1:8080"
+        assert resp.headers["access-control-allow-credentials"] == "true"
+
+    def test_cors_rejects_external_origin(self) -> None:
+        """Preflight from an external site does NOT get CORS headers."""
+        client = TestClient(_make_cors_app())
+        resp = client.options(
+            "/api/articles",
+            headers={
+                "origin": "https://stratechery.com",
+                "access-control-request-method": "POST",
+                "access-control-request-headers": "content-type",
+            },
+        )
+        assert resp.headers.get("access-control-allow-origin") != "https://stratechery.com"
+
+    def test_cors_rejects_chrome_extension(self) -> None:
+        """Preflight from a chrome-extension:// origin does NOT get CORS headers."""
+        client = TestClient(_make_cors_app())
+        ext_origin = "chrome-extension://abcdefghijklmnop"
+        resp = client.options(
+            "/api/articles",
+            headers={
+                "origin": ext_origin,
+                "access-control-request-method": "POST",
+                "access-control-request-headers": "content-type",
+            },
+        )
+        assert resp.headers.get("access-control-allow-origin") != ext_origin

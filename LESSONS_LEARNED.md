@@ -205,10 +205,20 @@ Bookmarklets using `fetch()` with `credentials: 'include'` fail silently when th
 
 **Lesson:** Cross-origin integrations (bookmarklets, browser extensions, share targets) must account for SameSite cookie policies. Top-level navigations work; cross-origin fetches don't.
 
-### 18. SSRF Is a Server-Side Concern for URL-Based Services
+### 18. Fix the Integration Pattern, Not the Security Policy
+The bookmarklet used cross-origin `fetch()` with `credentials: 'include'`, which broke with `SameSite=Lax` cookies. The initial fix was opening CORS to `.*` — but that addressed the symptom, not the cause. The spec already said bookmarklets should use `window.open()`. The correct fix was a dedicated `/bookmarklet` popup page that makes same-origin requests, removing any need for open CORS. The browser extension (which had the same cross-origin problem) was removed entirely.
+
+**Lesson:** When a security policy blocks a feature, question whether the feature's approach is wrong before weakening the policy. A `window.open()` popup is simpler, more resilient (immune to CSP/cookie issues), and updatable server-side — unlike cross-origin fetch or browser extensions.
+
+### 19. SSRF Is a Server-Side Concern for URL-Based Services
 Any service that fetches URLs on behalf of users is a potential SSRF vector. The processing pipeline will happily fetch `http://169.254.169.254/` (cloud metadata) or `http://localhost:8080/admin` if not blocked.
 
 **Lesson:** Block private/internal network URLs at the validation layer. This should be in the spec, not discovered after implementation.
+
+### 20. Dedicated Lightweight Pages Beat Loading the Full SPA
+The bookmarklet popup only needs to show "Saving..." then "Saved!" and close. Loading the full SPA (54KB gzipped, hydration, router, state) for a 2-second interaction is wasteful. A self-contained static HTML page (`bookmarklet.html`, <2KB) with inline CSS and a single `fetch()` call loads instantly and auto-closes. This pattern applies to any transient UI: OAuth callbacks, share targets, notification actions.
+
+**Lesson:** Not every URL needs to load the SPA. For transient interactions that don't need the app shell, a standalone HTML page in `public/` is faster, simpler, and has zero JS bundle dependencies.
 
 ---
 

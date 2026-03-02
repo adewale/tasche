@@ -148,9 +148,7 @@ export function Settings() {
         <div class="mt-8">
           <h3 class="section-title">Bookmarklet</h3>
           <p class="bookmarklet-hint">
-            Drag this link to your bookmarks bar to save articles from any page. The bookmarklet
-            captures the page content directly, so it works with paywalled articles you can see in
-            your browser.
+            Drag this link to your bookmarks bar to save articles from any page.
           </p>
           <a
             href={getBookmarkletCode()}

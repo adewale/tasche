@@ -102,7 +102,7 @@ Tasche uses **GitHub OAuth** for authentication:
 4. Permanent library (content preservation)
 5. **Full-text search** across saved articles
 6. Tagging and organization
-7. Browser integration via extension/bookmarklet
+7. Browser integration via bookmarklet
 8. **Listen Later** — audio versions of articles via TTS
 
 ### 1.6 Listen Later (Text-to-Speech)
@@ -201,12 +201,12 @@ Tasche stores articles in **dual format**:
 
 1. User reads an article on the web
 2. Clicks bookmarklet in browser toolbar
-3. Bookmarklet opens Tasche in a new tab via `window.open(SITE_URL + '/?url=...')` — this is a top-level navigation, so `SameSite=Lax` session cookies are included
-4. Tasche frontend detects the `?url=` parameter and saves the article via same-origin API call
+3. Bookmarklet opens a small popup window at `/bookmarklet?url=...&title=...` — this is a top-level navigation to Tasche's own origin, so `SameSite=Lax` session cookies are included
+4. The popup page makes a same-origin `POST /api/articles`, shows "Saved!", and auto-closes after 1.5 seconds
 5. Article appears in library within seconds (thumbnail, title, excerpt)
 6. Original page can now disappear—user has their copy
 
-**Important:** The bookmarklet MUST use `window.open()` (top-level navigation), NOT `fetch()`. Cross-origin `fetch()` with `credentials: 'include'` will not send `SameSite=Lax` cookies. The bookmarklet template uses a `__SITE_URL__` placeholder; the frontend generates the actual bookmarklet with the correct origin baked in.
+**Important:** The bookmarklet MUST use `window.open()` (top-level navigation), NOT `fetch()`. Cross-origin `fetch()` with `credentials: 'include'` will not send `SameSite=Lax` cookies. The frontend generates the bookmarklet code dynamically with the correct origin baked in.
 
 ### Save an Article (Share Sheet / Mobile)
 
@@ -1050,18 +1050,23 @@ The Service Worker is the heart of Tasche's offline capability. It enables:
 
 ### 8.2 Bookmarklet
 
-The bookmarklet opens Tasche in a new tab with the current page URL as a query parameter. It uses `window.open()` (top-level navigation) rather than `fetch()` because `SameSite=Lax` cookies are not sent on cross-origin fetch requests.
+The bookmarklet opens a small popup window pointing at a dedicated `/bookmarklet` page on Tasche's origin. It uses `window.open()` (top-level navigation) rather than `fetch()` because `SameSite=Lax` cookies are not sent on cross-origin fetch requests.
 
-**Template** (`bookmarklet.js`): Uses `__SITE_URL__` placeholder, replaced at build time or generated dynamically by the frontend with the correct origin.
-
-**Generated code pattern:**
+**Generated code pattern** (built dynamically by the frontend with the correct origin):
 ```javascript
-javascript:void(window.open('https://tasche.example.com/?url='
+javascript:void(open('https://tasche.example.com/bookmarklet?url='
   +encodeURIComponent(location.href)
-  +'&title='+encodeURIComponent(document.title)))
+  +'&title='+encodeURIComponent(document.title),
+  'Tasche','toolbar=no,width=420,height=180'))
 ```
 
-The frontend handles the `?url=` parameter via the same code path as the PWA share target — both result in a same-origin API call with valid session cookies.
+The `/bookmarklet` page (`frontend/public/bookmarklet.html`) is a lightweight, self-contained HTML page (<2KB) that:
+1. Reads the `url` and `title` query parameters
+2. Makes a same-origin `POST /api/articles` request (session cookie is sent automatically)
+3. Shows "Saved!" or an error message
+4. Auto-closes after 1.5 seconds via `window.close()`
+
+This avoids loading the full SPA and completes in under 2 seconds.
 
 ### 8.3 Frontend Technology Stack
 
@@ -1292,7 +1297,6 @@ Session cookies use `SameSite=Lax` (the correct setting for CSRF protection). Th
 | Integration | Method | SameSite=Lax sends cookie? | Pattern |
 |-------------|--------|---------------------------|---------|
 | Bookmarklet | `window.open()` (top-level nav) | Yes | Correct |
-| Bookmarklet | `fetch()` (cross-origin) | No | **Broken** — never use |
 | Share target | Top-level navigation to `/` | Yes | Correct |
 | PWA same-origin API | `fetch()` (same-origin) | Yes | Correct |
 
@@ -1525,7 +1529,7 @@ Each milestone is a **vertical slice** — it delivers a complete, end-to-end us
 | Data export | `/api/export/json`, `/api/export/bookmarks` | Export full library as JSON or Netscape HTML bookmarks file |
 | Reading statistics | `/api/stats` | Aggregated reading stats: articles saved, read, archived, total reading time, etc. |
 | Batch operations | `/api/articles/batch-update`, `/api/articles/batch-delete` | Bulk status updates and deletions for multiple articles at once |
-| Browser extension | `extension/` directory | Browser extension for saving articles (alternative to bookmarklet) |
+| Bookmarklet popup | `frontend/public/bookmarklet.html` | Lightweight save-page opened by the bookmarklet as a popup |
 | Markdown view | `#/article/:id/markdown` | View article as rendered Markdown (alternative to the HTML reader view) |
 | Reader preferences | `ReaderToolbar` component | Font size adjustment and theme selection (light/dark) in reader view |
 | Keyboard shortcuts | Library and reader views | `j`/`k` navigation between articles, `?` for help overlay |

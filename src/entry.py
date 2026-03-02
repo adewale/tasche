@@ -65,8 +65,8 @@ app = FastAPI(
 # observability last.
 # ---------------------------------------------------------------------------
 
-# 3. CORSMiddleware (innermost) — covers local dev; same-origin production
-#    requests don't trigger CORS preflight.
+# 3. CORSMiddleware (innermost) — local dev only; production requests
+#    are same-origin (bookmarklet uses window.open popup on Tasche's origin).
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
