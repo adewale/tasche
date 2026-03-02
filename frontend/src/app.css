@@ -242,11 +242,11 @@ textarea {
   gap: 8px;
 }
 
-.help-menu {
+.hamburger-menu {
   position: relative;
 }
 
-.help-menu-dropdown {
+.hamburger-dropdown {
   position: absolute;
   top: 100%;
   right: 0;
@@ -260,7 +260,7 @@ textarea {
   z-index: 150;
 }
 
-.help-menu-item {
+.hamburger-item {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -276,7 +276,7 @@ textarea {
   font-family: inherit;
 }
 
-.help-menu-item:hover {
+.hamburger-item:hover {
   background: var(--bg-secondary);
 }
 
@@ -1838,6 +1838,27 @@ mark {
 .login-btn {
   padding: 12px 32px;
   font-size: 1rem;
+}
+
+.login-error {
+  max-width: 400px;
+  margin-bottom: 24px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+  text-align: center;
+}
+
+.login-error p {
+  font-size: 0.9375rem;
+  margin-bottom: 8px;
+}
+
+.login-error .login-error-hint {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  margin-bottom: 0;
 }
 
 /* Setup Checklist (first-boot) */

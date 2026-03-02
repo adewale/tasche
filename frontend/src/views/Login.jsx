@@ -143,9 +143,25 @@ function SetupChecklist({ checks, status, environment }) {
   );
 }
 
+function getHashError() {
+  var hash = window.location.hash;
+  var qIndex = hash.indexOf('?');
+  if (qIndex === -1) return null;
+  var params = new URLSearchParams(hash.slice(qIndex));
+  return params.get('error');
+}
+
 export function Login() {
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error] = useState(getHashError);
+
+  useEffect(function () {
+    // Clean the error param from the hash so it doesn't persist on refresh
+    if (error) {
+      window.location.hash = '#/login';
+    }
+  }, [error]);
 
   useEffect(function () {
     getHealthConfig().then(function (data) {
@@ -169,6 +185,18 @@ export function Login() {
   return (
     <div class="login-page">
       <h1>Tasche</h1>
+      {error === 'not_owner' && (
+        <div class="login-error">
+          <p>This is a personal Tasche instance and your account isn't on the access list.</p>
+          <p class="login-error-hint">
+            If you'd like your own,{' '}
+            <a href="https://github.com/adewale/tasche" target="_blank" rel="noopener noreferrer">
+              Tasche is open source
+            </a>{' '}
+            — you can deploy your own instance on Cloudflare Workers.
+          </p>
+        </div>
+      )}
       {isError ? (
         <SetupChecklist checks={config.checks} status={config.status} environment={environment} />
       ) : (

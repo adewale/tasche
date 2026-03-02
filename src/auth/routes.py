@@ -186,7 +186,7 @@ async def callback(request: Request) -> RedirectResponse:
             detail="ALLOWED_EMAILS is not configured. Run: npx wrangler secret put ALLOWED_EMAILS",
         )
     if email.lower() not in allowed_emails:
-        raise HTTPException(status_code=403, detail="Email not authorized")
+        return RedirectResponse(url="/#/login?error=not_owner", status_code=302)
 
     # --- Upsert user in D1 ---
     db = env.DB

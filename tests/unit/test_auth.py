@@ -673,7 +673,7 @@ class TestCallbackGitHubErrors:
 
 class TestCallbackRejectsUnauthorizedEmail:
     async def test_rejects_email_not_in_allowed_list(self) -> None:
-        """When ALLOWED_EMAILS is set, emails not in the list get 403."""
+        """When ALLOWED_EMAILS is set, emails not in the list get a redirect to the login error page."""
         env = MockEnv(allowed_emails="allowed@example.com,admin@example.com")
         state = await _setup_oauth_state(env)
 
@@ -692,8 +692,10 @@ class TestCallbackRejectsUnauthorizedEmail:
         with patch("src.auth.routes.http_fetch", mock_fetch):
             resp = client.get(
                 f"/api/auth/callback?code=test_code&state={state}",
+                follow_redirects=False,
             )
-        assert resp.status_code == 403
+        assert resp.status_code == 302
+        assert "error=not_owner" in resp.headers["location"]
 
     async def test_allows_authorized_email(self) -> None:
         """When ALLOWED_EMAILS is set, emails in the list proceed (redirect)."""

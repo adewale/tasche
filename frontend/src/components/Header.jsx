@@ -6,7 +6,7 @@ import {
   IconTag,
   IconSettings,
   IconBarChart,
-  IconHelpCircle,
+  IconMenu,
   IconKeyboard,
   IconMoon,
   IconSun,
@@ -81,37 +81,58 @@ export function Header() {
             <a href="#/search" class="btn btn-icon" title="Search">
               <IconSearch />
             </a>
-            <a href="#/stats" class="btn btn-icon" title="Stats">
-              <IconBarChart />
-            </a>
-            <a href="#/tags" class="btn btn-icon" title="Tags">
-              <IconTag />
-            </a>
-            <a href="#/settings" class="btn btn-icon" title="Settings">
-              <IconSettings />
-            </a>
-            <div class="help-menu" ref={menuRef}>
+            <div class="hamburger-menu" ref={menuRef}>
               <button
                 class="btn btn-icon"
-                title="Help"
+                title="Menu"
                 onClick={function () {
                   setMenuOpen(!menuOpen);
                 }}
               >
-                <IconHelpCircle />
+                <IconMenu />
               </button>
               {menuOpen && (
-                <div class="help-menu-dropdown">
-                  <button class="help-menu-item" onClick={handleShortcuts}>
-                    <IconKeyboard size={16} />
-                    Keyboard shortcuts
-                  </button>
-                  <button class="help-menu-item" onClick={toggleTheme}>
+                <div class="hamburger-dropdown">
+                  <a
+                    class="hamburger-item"
+                    href="#/tags"
+                    onClick={function () {
+                      setMenuOpen(false);
+                    }}
+                  >
+                    <IconTag size={16} />
+                    Tags
+                  </a>
+                  <a
+                    class="hamburger-item"
+                    href="#/stats"
+                    onClick={function () {
+                      setMenuOpen(false);
+                    }}
+                  >
+                    <IconBarChart size={16} />
+                    Stats
+                  </a>
+                  <a
+                    class="hamburger-item"
+                    href="#/settings"
+                    onClick={function () {
+                      setMenuOpen(false);
+                    }}
+                  >
+                    <IconSettings size={16} />
+                    Settings
+                  </a>
+                  <button class="hamburger-item" onClick={toggleTheme}>
                     {isDark ? <IconSun size={16} /> : <IconMoon size={16} />}
                     {isDark ? 'Light mode' : 'Dark mode'}
                   </button>
+                  <button class="hamburger-item" onClick={handleShortcuts}>
+                    <IconKeyboard size={16} />
+                    Keyboard shortcuts
+                  </button>
                   <a
-                    class="help-menu-item"
+                    class="hamburger-item"
                     href="/design-language.html"
                     target="_blank"
                     rel="noopener noreferrer"
