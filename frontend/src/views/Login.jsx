@@ -156,12 +156,15 @@ export function Login() {
   const [loading, setLoading] = useState(true);
   const [error] = useState(getHashError);
 
-  useEffect(function () {
-    // Clean the error param from the hash so it doesn't persist on refresh
-    if (error) {
-      window.location.hash = '#/login';
-    }
-  }, [error]);
+  useEffect(
+    function () {
+      // Clean the error param from the hash so it doesn't persist on refresh
+      if (error) {
+        window.location.hash = '#/login';
+      }
+    },
+    [error],
+  );
 
   useEffect(function () {
     getHealthConfig().then(function (data) {

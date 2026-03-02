@@ -42,26 +42,6 @@ def extract_canonical_url(html: str) -> str | None:
     return None
 
 
-def extract_article(html: str) -> dict:
-    """Extract article content from HTML.
-
-    Uses a BeautifulSoup heuristic extractor that identifies the main content
-    container and strips boilerplate elements.
-
-    Parameters
-    ----------
-    html:
-        Raw HTML string of the full page.
-
-    Returns
-    -------
-    dict
-        Keys: ``title`` (str), ``html`` (str — clean article HTML),
-        ``excerpt`` (str — short summary), ``byline`` (str | None — author).
-    """
-    return _extract_article_bs4(html)
-
-
 # ---------------------------------------------------------------------------
 # BeautifulSoup content extractor
 # ---------------------------------------------------------------------------
@@ -111,7 +91,7 @@ def _text_length(tag: Tag) -> int:
     return len(tag.get_text(strip=True))
 
 
-def _extract_article_bs4(html: str) -> dict:
+def extract_article(html: str) -> dict:
     """Extract article content using BeautifulSoup heuristics.
 
     Identifies the largest content-bearing block element (``<article>``,

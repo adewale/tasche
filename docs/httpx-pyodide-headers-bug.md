@@ -1,5 +1,7 @@
 # httpx Drops the `User-Agent` Header in Cloudflare Python Workers
 
+> **Note:** Line numbers reference httpx 0.28.1 as vendored at the time of this investigation.
+
 ## Summary
 
 When deployed via `pywrangler`, httpx is bundled with a modified transport (`jsfetch.py`) that replaces httpcore with a `js.fetch()`-based implementation. This transport intentionally filters out the `User-Agent` header to prevent CORS preflight failures in browser-based Pyodide ([pyodide-http#22](https://github.com/koenvo/pyodide-http/issues/22)). Cloudflare Workers are not browsers and have no CORS restrictions on outbound fetch, but the filter still applies.

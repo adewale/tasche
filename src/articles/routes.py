@@ -24,7 +24,7 @@ from articles.storage import (
 from articles.urls import check_duplicate, extract_domain, validate_url
 from auth.dependencies import get_current_user
 from utils import generate_id, get_user_entity, now_iso
-from wrappers import _to_py_safe, stream_r2_body
+from wrappers import stream_r2_body
 
 router = APIRouter()
 
@@ -458,7 +458,7 @@ async def batch_update_articles(
             continue
         bind_params = params + [article_id, user_id]
         sql = f"UPDATE articles SET {', '.join(set_clauses)} WHERE id = ? AND user_id = ?"
-        result = _to_py_safe(await db.prepare(sql).bind(*bind_params).run())
+        result = await db.prepare(sql).bind(*bind_params).run()
         if result.get("meta", {}).get("changes", 0) > 0:
             updated_count += 1
 

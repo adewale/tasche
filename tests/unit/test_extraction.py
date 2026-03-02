@@ -10,7 +10,6 @@ from __future__ import annotations
 from bs4 import BeautifulSoup
 
 from src.articles.extraction import (
-    _extract_article_bs4,
     _unwrap_layout_tables,
     calculate_reading_time,
     count_words,
@@ -117,7 +116,7 @@ class TestExtractArticle:
 
 
 # =========================================================================
-# _extract_article_bs4 (fallback extractor)
+# extract_article (fallback extractor)
 # =========================================================================
 
 
@@ -138,7 +137,7 @@ class TestExtractArticleBs4:
         </body>
         </html>
         """
-        result = _extract_article_bs4(html)
+        result = extract_article(html)
         assert result["title"] == "Article Title"
         assert "First paragraph" in result["html"]
         assert "<nav>" not in result["html"]
@@ -159,7 +158,7 @@ class TestExtractArticleBs4:
         </body>
         </html>
         """
-        result = _extract_article_bs4(html)
+        result = extract_article(html)
         assert result["title"] == "Main Content Title"
         assert "actual content" in result["html"]
 
@@ -180,7 +179,7 @@ class TestExtractArticleBs4:
         </body>
         </html>
         """
-        result = _extract_article_bs4(html)
+        result = extract_article(html)
         assert result["title"] == "Blog Post"
         assert "article content" in result["html"]
 
@@ -195,7 +194,7 @@ class TestExtractArticleBs4:
         <body><article><p>Content here.</p></article></body>
         </html>
         """
-        result = _extract_article_bs4(html)
+        result = extract_article(html)
         assert result["byline"] == "Jane Doe"
 
     def test_removes_nav_and_footer(self) -> None:
@@ -207,7 +206,7 @@ class TestExtractArticleBs4:
             <footer><p>Footer text</p></footer>
         </body></html>
         """
-        result = _extract_article_bs4(html)
+        result = extract_article(html)
         assert "Real content" in result["html"]
         assert "Link 1" not in result["html"]
         assert "Footer text" not in result["html"]
@@ -219,7 +218,7 @@ class TestExtractArticleBs4:
             <article><p>This is a <strong>bold</strong> paragraph.</p></article>
         </body></html>
         """
-        result = _extract_article_bs4(html)
+        result = extract_article(html)
         assert "<strong>" not in result["excerpt"]
         assert "<p>" not in result["excerpt"]
 

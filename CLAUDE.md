@@ -66,11 +66,11 @@ Wide events pattern: emit one JSON log line per request (not many small lines). 
 
 ## Key Conventions
 
-- **FFI boundary:** All JS↔Python conversion happens in `src/wrappers.py`. Use `d1_first()` for `.first()` results, `d1_rows()` for `.all()` results, `_to_js_value()` for Python→JS, `_to_py_safe()` for JS→Python. Never expose JsProxy to business logic.
-- **Status enums:** `reading_status`: unread/archived. `audio_status`: pending/generating/ready/failed. `article.status`: pending/processing/ready/failed. These match D1 CHECK constraints exactly.
+- **FFI boundary:** All JS↔Python conversion happens in `src/wrappers.py`. Application code accesses bindings through Safe* wrappers (`SafeD1`, `SafeR2`, `SafeKV`, `SafeQueue`, `SafeAI`, `SafeReadability`) via `SafeEnv`. Never expose JsProxy to business logic.
+- **Status enums:** `reading_status`: unread/archived (D1 CHECK also allows 'reading' as a historical artifact, but the app enforces only unread/archived). `audio_status`: pending/generating/ready/failed. `article.status`: pending/processing/ready/failed. These match D1 CHECK constraints exactly.
 - **IDs:** `secrets.token_urlsafe(16)` for article/tag IDs, `secrets.token_urlsafe(32)` for session IDs.
 - **Timestamps:** `now_iso()` from `utils.py` everywhere.
-- **R2 keys:** `articles/{article_id}/{suffix}` (e.g., `content.html`, `content.md`, `audio.mp3`, `thumbnail.webp`). Helper: `articles.storage.article_key()`.
+- **R2 keys:** `articles/{article_id}/{suffix}` (e.g., `content.html`, `metadata.json`, `audio.mp3`, `thumbnail.webp`). Helper: `articles.storage.article_key()`.
 - **Duplicate URL detection:** Checks `original_url`, `final_url`, AND `canonical_url`.
 - **Two tag routers:** `tags.routes.router` (CRUD at `/api/tags`) and `tags.routes.article_tags_router` (associations at `/api/articles/{id}/tags`).
 - **FTS5 search:** Always use `INNER JOIN articles_fts` with `ORDER BY articles_fts.rank` — never subquery.

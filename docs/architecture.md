@@ -27,7 +27,7 @@ Tasche runs Python on **Pyodide** (CPython compiled to WebAssembly) inside Cloud
 
 **File:** `src/entry.py` — `class Default(WorkerEntrypoint)`
 
-### Three Handlers
+### Two Handlers
 
 | Handler | Trigger | Purpose |
 |---------|---------|---------|
@@ -309,7 +309,7 @@ Both functions raise `BrowserRenderingError` on non-200 status. In the processin
 
 ### Model
 
-Configurable via the `TTS_MODEL` env var (default: `melotts`). Supported values: `melotts` (`@cf/myshell-ai/melotts-en-default`), `aura-2-en` (`@cf/deepgram/aura-2-en`), `aura-2-es`, `aura-1`. Called through the `AI` binding: `env.AI.run(model_id, {"text": chunk})`.
+Configurable via the `TTS_MODEL` env var (default: `melotts`). Supported values: `melotts` (`@cf/myshell-ai/melotts`), `aura-2-en` (`@cf/deepgram/aura-2-en`), `aura-2-es`, `aura-1`. Called through the `AI` binding: `env.AI.run(model_id, {"text": chunk})`.
 
 ### Pipeline
 

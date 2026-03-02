@@ -156,6 +156,28 @@ def _is_js_heavy(html: str) -> bool:
     return len(text) < _MIN_CONTENT_LENGTH
 
 
+async def _mark_failed(db: object, article_id: str) -> None:
+    """Log the error and set article status to 'failed' in D1."""
+    evt = current_event()
+    if evt:
+        evt.set_many(
+            {
+                "outcome": "error",
+                "error.message": traceback.format_exc()[-500:],
+            }
+        )
+    try:
+        await (
+            db.prepare("UPDATE articles SET status = ?, updated_at = ? WHERE id = ?")
+            .bind("failed", now_iso(), article_id)
+            .run()
+        )
+    except Exception:
+        evt = current_event()
+        if evt:
+            evt.set("status_update_error", traceback.format_exc()[-500:])
+
+
 async def process_article(article_id: str, original_url: str, env: object) -> None:
     """Process a single article through the full content pipeline.
 
@@ -469,44 +491,10 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
                 )
             raise
         # Client errors (4xx) are permanent — mark as failed
-        evt = current_event()
-        if evt:
-            evt.set_many(
-                {
-                    "outcome": "error",
-                    "error.message": traceback.format_exc()[-500:],
-                }
-            )
-        try:
-            await (
-                db.prepare("UPDATE articles SET status = ?, updated_at = ? WHERE id = ?")
-                .bind("failed", now_iso(), article_id)
-                .run()
-            )
-        except Exception:
-            evt = current_event()
-            if evt:
-                evt.set("status_update_error", traceback.format_exc()[-500:])
+        await _mark_failed(db, article_id)
     except Exception:
         # Other permanent errors (invalid content, etc.) — mark as failed
-        evt = current_event()
-        if evt:
-            evt.set_many(
-                {
-                    "outcome": "error",
-                    "error.message": traceback.format_exc()[-500:],
-                }
-            )
-        try:
-            await (
-                db.prepare("UPDATE articles SET status = ?, updated_at = ? WHERE id = ?")
-                .bind("failed", now_iso(), article_id)
-                .run()
-            )
-        except Exception:
-            evt = current_event()
-            if evt:
-                evt.set("status_update_error", traceback.format_exc()[-500:])
+        await _mark_failed(db, article_id)
 
 
 async def _fetch_page(

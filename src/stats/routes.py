@@ -63,51 +63,26 @@ async def get_stats(
         if status in articles_by_status:
             articles_by_status[status] = row.get("cnt", 0)
 
-    # 4. Articles saved this week (created_at >= 7 days ago)
-    week_row = await (
+    # 4-7. Weekly/monthly activity (saved + archived) in a single query
+    activity_row = await (
         db.prepare(
-            "SELECT COUNT(*) AS cnt FROM articles "
-            "WHERE user_id = ? AND created_at >= datetime('now', '-7 days')"
+            "SELECT "
+            "COUNT(CASE WHEN created_at >= datetime('now', '-7 days') THEN 1 END) AS saved_week, "
+            "COUNT(CASE WHEN created_at >= datetime('now', '-30 days') THEN 1 END) AS saved_month, "
+            "COUNT(CASE WHEN reading_status = 'archived' "
+            "AND updated_at >= datetime('now', '-7 days') THEN 1 END) AS archived_week, "
+            "COUNT(CASE WHEN reading_status = 'archived' "
+            "AND updated_at >= datetime('now', '-30 days') THEN 1 END) AS archived_month "
+            "FROM articles WHERE user_id = ?"
         )
         .bind(user_id)
         .first()
     )
-    articles_this_week = (week_row or {}).get("cnt", 0)
-
-    # 5. Articles saved this month (created_at >= 30 days ago)
-    month_row = await (
-        db.prepare(
-            "SELECT COUNT(*) AS cnt FROM articles "
-            "WHERE user_id = ? AND created_at >= datetime('now', '-30 days')"
-        )
-        .bind(user_id)
-        .first()
-    )
-    articles_this_month = (month_row or {}).get("cnt", 0)
-
-    # 6. Articles archived this week
-    archived_week_row = await (
-        db.prepare(
-            "SELECT COUNT(*) AS cnt FROM articles "
-            "WHERE user_id = ? AND reading_status = 'archived' "
-            "AND updated_at >= datetime('now', '-7 days')"
-        )
-        .bind(user_id)
-        .first()
-    )
-    archived_this_week = (archived_week_row or {}).get("cnt", 0)
-
-    # 7. Articles archived this month
-    archived_month_row = await (
-        db.prepare(
-            "SELECT COUNT(*) AS cnt FROM articles "
-            "WHERE user_id = ? AND reading_status = 'archived' "
-            "AND updated_at >= datetime('now', '-30 days')"
-        )
-        .bind(user_id)
-        .first()
-    )
-    archived_this_month = (archived_month_row or {}).get("cnt", 0)
+    activity = activity_row or {}
+    articles_this_week = activity.get("saved_week", 0)
+    articles_this_month = activity.get("saved_month", 0)
+    archived_this_week = activity.get("archived_week", 0)
+    archived_this_month = activity.get("archived_month", 0)
 
     # 8. Top domains (top 10)
     domain_rows = await (

@@ -1099,6 +1099,8 @@ The frontend handles the `?url=` parameter via the same code path as the PWA sha
 
 **Full-page screenshot (`original.webp`):** Required. Captures a full-page scrolling screenshot via Browser Rendering API during article processing. Serves as archival fallback for content that Readability fails to extract (infographics, complex layouts).
 
+**Design language page (`/design-language.html`):** A standalone HTML reference page documenting Tasche's visual style — typography, colour palette, spacing, component patterns, light/dark themes. Lives in `frontend/public/design-language.html` and is served as a static asset (bypasses the SPA router). Accessible from the hamburger menu in the header.
+
 ### 8.4 UI Screens & Wireframes
 
 Each screen below is a route in the SPA. The wireframes show layout structure, not pixel-perfect design.
@@ -1579,7 +1581,7 @@ Each milestone is a **vertical slice** — it delivers a complete, end-to-end us
 
 | Task | Layer | Details |
 |------|-------|---------|
-| `deploy.json` | Deployment | "Deploy to Cloudflare" button configuration for GitHub README |
+| ~~`deploy.json`~~ | ~~Deployment~~ | ~~Removed — the Deploy to Cloudflare button uses a URL-based flow, not `deploy.json`~~ |
 | README setup guide | Docs | Step-by-step walkthrough: fork → deploy → create GitHub OAuth app → set secrets → use |
 | Real PWA icons | Assets | Replace placeholder PNGs with properly designed icons (192px, 512px) |
 | Integration tests | Testing | HTTP tests against `pywrangler dev` verifying save → process → read → search flow |

@@ -151,7 +151,7 @@ async def health_config(request: Request) -> dict:
     else:
         overall = "ok"
 
-    worker_env = getattr(env, "WORKER_ENV", None) or "" if env else ""
+    worker_env = (getattr(env, "WORKER_ENV", None) or "") if env else ""
 
     return {"status": overall, "checks": checks, "environment": worker_env}
 

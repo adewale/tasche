@@ -677,10 +677,6 @@ def _make_mock_http_fetch(
     return AsyncMock(side_effect=_mock_fetch)
 
 
-# Keep backward-compatible alias
-_make_mock_client = _make_mock_http_fetch
-
-
 # ---------------------------------------------------------------------------
 # Pytest fixtures
 # ---------------------------------------------------------------------------

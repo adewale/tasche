@@ -136,32 +136,11 @@ async def get_audio(
     # IMPORTANT: Cannot use StreamingResponse with async generators — the
     # Cloudflare Workers ASGI adapter only consumes the FIRST yielded chunk
     # from the generator, silently truncating the response.  Instead, read
-    # the full body via body.getReader() and return as a single Response.
-    from wrappers import to_py_bytes
+    # the full body via consume_readable_stream and return as a single Response.
+    from wrappers import consume_readable_stream
 
-    body = getattr(audio_obj, "body", None)
-    if body is not None and hasattr(body, "getReader"):
-        # Pyodide path: R2 object has a ReadableStream body
-        reader = body.getReader()
-        parts: list[bytes] = []
-        try:
-            while True:
-                result = await reader.read()
-                if bool(getattr(result, "done", True)):
-                    break
-                chunk = getattr(result, "value", None)
-                if chunk is not None:
-                    parts.append(to_py_bytes(chunk))
-        finally:
-            reader.releaseLock()
-        audio_bytes = b"".join(parts)
-    elif isinstance(body, (bytes, bytearray)):
-        # Test/mock path: MockR2Object has .body as raw bytes
-        audio_bytes = bytes(body)
-    elif isinstance(audio_obj, (bytes, bytearray)):
-        audio_bytes = bytes(audio_obj)
-    else:
-        audio_bytes = b""
+    body = getattr(audio_obj, "body", audio_obj)
+    audio_bytes = await consume_readable_stream(body)
 
     return Response(
         content=audio_bytes,

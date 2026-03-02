@@ -455,8 +455,15 @@ class TestWeeklyMonthlyActivity:
         """GET /api/stats returns correct articles_this_week count."""
 
         def execute(sql: str, params: list) -> list:
-            if "COUNT(*)" in sql and "7 days" in sql and "reading_status" not in sql:
-                return [{"cnt": 7}]
+            if "saved_week" in sql:
+                return [
+                    {
+                        "saved_week": 7,
+                        "saved_month": 0,
+                        "archived_week": 0,
+                        "archived_month": 0,
+                    }
+                ]
             if "SUM(word_count)" in sql:
                 return [{"total": 0}]
             if "COUNT(*)" in sql:
@@ -485,8 +492,15 @@ class TestWeeklyMonthlyActivity:
         """GET /api/stats returns correct archived_this_month count."""
 
         def execute(sql: str, params: list) -> list:
-            if "COUNT(*)" in sql and "30 days" in sql and "reading_status = 'archived'" in sql:
-                return [{"cnt": 12}]
+            if "saved_week" in sql:
+                return [
+                    {
+                        "saved_week": 0,
+                        "saved_month": 0,
+                        "archived_week": 0,
+                        "archived_month": 12,
+                    }
+                ]
             if "SUM(word_count)" in sql:
                 return [{"total": 0}]
             if "COUNT(*)" in sql:

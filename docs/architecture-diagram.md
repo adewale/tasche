@@ -51,7 +51,7 @@ flowchart TB
             R2[("R2 · Object Storage\nHTML · images · audio\nthumbnails · metadata")]
             KV[("KV · Sessions\nsession:{id} → user JSON\nTTL: 7 days")]
             Queue[("Queues\narticle_processing\ntts_generation")]
-            AI["Workers AI\n@cf/deepgram/aura-2-en\nText-to-Speech"]
+            AI["Workers AI TTS\nText-to-Speech"]
             Readability["Service Binding\nReadability Worker\nMozilla Readability"]
             ASSETS["Assets Binding\nPreact SPA\nSPA fallback on 404"]
         end
@@ -136,7 +136,7 @@ flowchart LR
         EnqTTS["Enqueue\ntts_generation"]
         StripMD["Strip markdown\nTruncate 100K chars"]
         Chunk["Split sentences\nChunk ≤ 1900 chars"]
-        AICall["Workers AI\n@cf/deepgram/aura-2-en\nper chunk"]
+        AICall["Workers AI TTS\nper chunk"]
         Concat["Concatenate MP3"]
         StoreAudio["Store to R2\naudio.mp3\naudio-timing.json"]
         AudioReady["UPDATE D1\naudio_status: ready"]

@@ -2,10 +2,10 @@
 
 ## Header Navigation Redesign
 
-The header nav (Search | Stats | Tags | Settings | Help) needs rethinking:
+~~Replaced individual nav buttons and Help dropdown with a hamburger menu. Search stays as a direct icon button; everything else (Tags, Stats, Settings, theme toggle, keyboard shortcuts, design language) lives in the hamburger dropdown.~~
 
-- **Reorder by usage frequency**: swap Stats and Tags — Tags is a core workflow, Stats is occasional
-- **Remove Help dropdown**: move theme toggle to Settings, make keyboard shortcuts accessible via `?` hotkey
+Remaining:
+
 - **Add active-tab indicator**: no icon currently shows which view you're on (no `aria-current`, no highlight)
 - **Mobile bottom nav**: on small screens, move primary navigation (Library, Search, Tags, Settings) to a bottom bar for thumb reachability — top header is the hardest zone to reach one-handed
 

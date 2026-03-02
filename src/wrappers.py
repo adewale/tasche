@@ -426,10 +426,14 @@ class SafeD1Statement:
             _record("record_d1", t0)
 
     async def run(self) -> Any:
-        """Execute a write statement (INSERT/UPDATE/DELETE)."""
+        """Execute a write statement (INSERT/UPDATE/DELETE).
+
+        Returns the D1 result object (with ``meta.changes``, etc.)
+        converted to native Python types.
+        """
         t0 = time.monotonic()
         try:
-            return await self._stmt.run()
+            return _to_py_safe(await self._stmt.run())
         finally:
             _record("record_d1", t0)
 

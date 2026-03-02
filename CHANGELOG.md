@@ -38,15 +38,15 @@ Initial release of Tasche — a self-hosted read-it-later service on Cloudflare 
 - Filter articles by tag
 
 **Listen Later (TTS)**
-- Queue-based TTS generation via Workers AI (`@cf/deepgram/aura-2-en`)
+- Queue-based TTS generation via Workers AI (`@cf/deepgram/aura-2-en`) (default later changed to MeloTTS)
 - Markdown stripped to plain text before TTS (no "hash hash Introduction")
 - Text truncated to 100K characters for model limits
 - Idempotent: 409 if pending/generating, 200 if ready, enqueue only for null/failed
-- Audio streamed from R2 ReadableStream (not buffered in memory)
+- Audio streamed from R2 ReadableStream (not buffered in memory) (later changed to buffered Response due to ASGI adapter limitation)
 - Retry after failure: button reappears when `audio_status` is `failed`
 
 **Frontend PWA**
-- Vanilla JS single-page application with hash-based routing
+- Vanilla JS single-page application with hash-based routing (later rewritten in Preact)
 - Responsive reader view with clean typography
 - Audio player: play/pause, skip ±15s, playback speed (0.75x–2x)
 - Tag picker UI in reader view (add/remove tags)

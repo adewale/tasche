@@ -673,7 +673,7 @@ class TestCallbackGitHubErrors:
 
 class TestCallbackRejectsUnauthorizedEmail:
     async def test_rejects_email_not_in_allowed_list(self) -> None:
-        """When ALLOWED_EMAILS is set, emails not in the list get a redirect to the login error page."""
+        """Emails not in ALLOWED_EMAILS get a redirect to login error."""
         env = MockEnv(allowed_emails="allowed@example.com,admin@example.com")
         state = await _setup_oauth_state(env)
 

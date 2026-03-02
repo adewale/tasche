@@ -25,7 +25,7 @@ import { InkWashThumbnail } from './InkWashThumbnail.jsx';
 
 const tagCache = new Map();
 
-export function ArticleCard({ article, onDelete, selectMode, selected, onToggleSelect }) {
+export function ArticleCard({ article, selectMode, selected, onToggleSelect }) {
   const a = article;
   const readingTime = a.reading_time_minutes ? a.reading_time_minutes + ' min read' : '';
   const isFav = a.is_favorite;
@@ -33,7 +33,6 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
   const isProcessing = a.status === 'pending' || a.status === 'processing';
 
   const [cardTags, setCardTags] = useState([]);
-  const [thumbError] = useState(false);
   const [offlineSaved, setOfflineSaved] = useState(false);
   const [audioLoading, setAudioLoading] = useState(false);
 
@@ -80,9 +79,7 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
 
   function handleDelete(e) {
     e.stopPropagation();
-    removeArticle(a.id).then(function (deleted) {
-      if (deleted && onDelete) onDelete(a.id);
-    });
+    removeArticle(a.id);
   }
 
   async function handleListenLater(e) {
@@ -130,7 +127,7 @@ export function ArticleCard({ article, onDelete, selectMode, selected, onToggleS
   var isArchived = a.reading_status === 'archived';
 
   var thumbnailSrc = a.thumbnail_key ? '/api/articles/' + a.id + '/thumbnail' : null;
-  var hasThumbnail = thumbnailSrc && !thumbError;
+  var hasThumbnail = !!thumbnailSrc;
 
   var cardClass = 'article-card';
   if (!hasThumbnail) cardClass += ' article-card--compact';
