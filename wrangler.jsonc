@@ -20,9 +20,6 @@
     "producers": [{ "binding": "ARTICLE_QUEUE", "queue": "tasche-articles" }],
     "consumers": [{ "queue": "tasche-articles", "max_batch_size": 10, "max_batch_timeout": 60 }]
   },
-  "triggers": {
-    "crons": ["0 3 * * *"]
-  },
   "observability": {
     "enabled": true,
     "logs": { "head_sampling_rate": 1 },

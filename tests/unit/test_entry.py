@@ -1,8 +1,7 @@
 """Tests for the Worker entrypoint (src/entry.py).
 
 Covers queue dispatch (unknown types, missing fields, handler exceptions,
-body.to_py() conversion), the scheduled() health-check method, and SPA
-fallback routing logic.
+body.to_py() conversion) and SPA fallback routing logic.
 """
 
 from __future__ import annotations
@@ -11,7 +10,7 @@ import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from tests.conftest import MockEnv, TrackingD1
+from tests.conftest import MockEnv
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -261,119 +260,6 @@ class TestQueueBodyConversion:
         await worker.queue(batch)
 
         assert msg.acked is True
-
-
-# ---------------------------------------------------------------------------
-# scheduled() — health check logic
-# ---------------------------------------------------------------------------
-
-
-class TestScheduled:
-    async def test_selects_and_updates_articles(self, capsys: Any) -> None:
-        """scheduled() queries for articles to check and updates their status."""
-        from entry import Default
-
-        rows = [
-            {"id": "art_a", "original_url": "https://example.com/a"},
-            {"id": "art_b", "original_url": "https://example.com/b"},
-        ]
-
-        def execute(sql: str, params: list) -> list:
-            if sql.strip().startswith("SELECT"):
-                return rows
-            return []
-
-        db = TrackingD1(result_fn=execute)
-        env = MockEnv(db=db)
-        worker = Default()
-        worker.env = env
-
-        with patch(
-            "articles.health.check_original_url",
-            new_callable=AsyncMock,
-            return_value="available",
-        ):
-            await worker.scheduled(None)
-
-        # Should have UPDATE statements for both articles
-        update_stmts = [
-            (sql, params) for sql, params in db.executed if sql.strip().startswith("UPDATE")
-        ]
-        assert len(update_stmts) == 2
-
-        # Each update should set original_status to 'available'
-        for sql, params in update_stmts:
-            assert "original_status" in sql
-            assert "available" in params
-
-        output = capsys.readouterr().out
-        assert "articles_checked" in output
-        log_line = json.loads(output.strip())
-        assert log_line["articles_checked"] == 2
-
-    async def test_check_original_url_error_defaults_to_unknown(self, capsys: Any) -> None:
-        """When check_original_url raises, original_status is set to 'unknown'."""
-        from entry import Default
-
-        rows = [{"id": "art_c", "original_url": "https://broken.example.com"}]
-
-        def execute(sql: str, params: list) -> list:
-            if sql.strip().startswith("SELECT"):
-                return rows
-            return []
-
-        db = TrackingD1(result_fn=execute)
-        env = MockEnv(db=db)
-        worker = Default()
-        worker.env = env
-
-        with patch(
-            "articles.health.check_original_url",
-            new_callable=AsyncMock,
-            side_effect=RuntimeError("DNS failure"),
-        ):
-            await worker.scheduled(None)
-
-        update_stmts = [
-            (sql, params) for sql, params in db.executed if sql.strip().startswith("UPDATE")
-        ]
-        assert len(update_stmts) == 1
-        sql, params = update_stmts[0]
-        assert "unknown" in params
-
-    async def test_scheduled_handles_top_level_error(self, capsys: Any) -> None:
-        """When scheduled() has an unexpected top-level error, it logs and does not raise."""
-        from entry import Default
-
-        worker = Default()
-        # Give env a DB that fails on any query
-        mock_db = MagicMock()
-        mock_db.prepare.side_effect = RuntimeError("DB unavailable")
-        env = MockEnv()
-        env.DB = mock_db
-        worker.env = env
-
-        # Should not raise — error is caught and logged
-        await worker.scheduled(None)
-
-        output = capsys.readouterr().out
-        assert '"outcome": "error"' in output
-
-    async def test_scheduled_no_articles_to_check(self, capsys: Any) -> None:
-        """When no articles match the query, scheduled() still logs checked=0."""
-        from entry import Default
-
-        db = TrackingD1(result_fn=lambda sql, params: [])
-        env = MockEnv(db=db)
-        worker = Default()
-        worker.env = env
-
-        await worker.scheduled(None)
-
-        output = capsys.readouterr().out
-        assert "articles_checked" in output
-        log_line = json.loads(output.strip())
-        assert log_line["articles_checked"] == 0
 
 
 # ---------------------------------------------------------------------------

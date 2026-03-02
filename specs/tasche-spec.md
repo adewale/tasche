@@ -1032,7 +1032,7 @@ The whole point of a read-it-later app is **permanence**. When the original arti
 | `domain_dead` | Entire domain unreachable | Show: "Source website offline" |
 | `unknown` | Never checked | No indicator |
 
-**Periodic health check (via Cron Trigger `0 3 * * *`):** A daily scheduled task checks if original URLs are still accessible and updates their status. A Cron Trigger is simpler and sufficient for a daily health check — no Durable Objects overhead needed.
+**On-demand health check:** Users can check individual articles via the "Check now" button in the reader view, or trigger a batch check via the API (`POST /api/articles/batch-check-originals`). No automated cron sweep — the per-article check is sufficient for a single-user app.
 
 ---
 
@@ -1552,7 +1552,7 @@ Each milestone is a **vertical slice** — it delivers a complete, end-to-end us
 | Task | Layer | Details |
 |------|-------|---------|
 | `original_status` column | D1 migration | Add field to articles table: `available`, `paywalled`, `gone`, `domain_dead`, `unknown` |
-| URL health checker | Backend | Cron Trigger (`0 3 * * *`) periodically HEAD-checks original URLs, updates `original_status` |
+| On-demand URL health check | Backend | Per-article "Check now" button and batch endpoint HEAD-check original URLs, update `original_status` |
 | Status indicators in reader | Frontend | Show status badge: "Original is gone. Good thing you saved it." / "Original requires subscription" / etc. |
 | `metadata.json` per article | Backend | Store archive timestamp, image count, provenance in R2 alongside content |
 | Full-page screenshot | Backend | Store `original.webp` via Browser Rendering for archival fallback |

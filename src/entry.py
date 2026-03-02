@@ -299,59 +299,6 @@ class Default(WorkerEntrypoint):
         index_request = JsRequest.new(index_url, request.js_object)
         return await self.env.ASSETS.fetch(index_request)
 
-    async def scheduled(self, event: object) -> None:
-        """Handle a Cron Trigger event.
-
-        Runs periodic health checks on articles whose original_status is
-        'unknown' or hasn't been checked in 30+ days, and refreshes all
-        active RSS/Atom feed subscriptions.
-        """
-        from datetime import UTC, datetime
-
-        evt = begin_event("scheduled")
-        try:
-            from articles.health import check_original_url
-
-            env = SafeEnv(self.env)
-            db = env.DB
-
-            rows = await db.prepare(
-                "SELECT id, original_url FROM articles "
-                "WHERE (original_status = 'unknown' "
-                "OR last_checked_at IS NULL "
-                "OR last_checked_at < datetime('now', '-30 days')) "
-                "ORDER BY last_checked_at ASC NULLS FIRST "
-                "LIMIT 10"
-            ).all()
-
-            checked = 0
-            for row in rows:
-                try:
-                    new_status = await check_original_url(row["original_url"])
-                except Exception:
-                    new_status = "unknown"
-
-                now = datetime.now(UTC).isoformat()
-                await (
-                    db.prepare(
-                        "UPDATE articles SET original_status = ?, last_checked_at = ?, "
-                        "updated_at = ? WHERE id = ?"
-                    )
-                    .bind(new_status, now, now, row["id"])
-                    .run()
-                )
-                checked += 1
-
-            evt.set("articles_checked", checked)
-            evt.set("outcome", "success")
-
-        except Exception as exc:
-            evt.set("outcome", "error")
-            evt.set("error.type", type(exc).__name__)
-            evt.set("error.message", str(exc)[:500])
-        finally:
-            emit_event(evt)
-
     async def queue(self, batch: object, env: object = None, ctx: object = None) -> None:  # type: ignore[override]
         """Handle a batch of queue messages.
 

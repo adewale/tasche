@@ -33,7 +33,6 @@ Tasche runs Python on **Pyodide** (CPython compiled to WebAssembly) inside Cloud
 |---------|---------|---------|
 | `fetch(request)` | Every HTTP request | Route to FastAPI or ASSETS |
 | `queue(batch, env, ctx)` | Queued messages from ARTICLE_QUEUE | Async article processing and TTS |
-| `scheduled(event)` | Cron trigger | URL health checks |
 
 ### Fetch Handler: API vs ASSETS Dispatch
 
@@ -60,10 +59,6 @@ QUEUE_HANDLERS = {
 ```
 
 Each message is processed individually within a batch. On success: `message.ack()`. On transient error (network, 5xx): `message.retry()`. On permanent error (4xx, validation): `message.ack()` + update status to `failed`.
-
-### Scheduled Handler
-
-Runs periodically via cron. Queries D1 for up to 10 articles where `original_status = 'unknown'` or `last_checked_at` is NULL or older than 30 days. For each, performs a HEAD request to classify the original URL's status, then updates D1.
 
 ---
 
@@ -862,24 +857,11 @@ Offline metadata tracks cached articles: `{articleId: {hasContent, hasAudio, acc
 
 ---
 
-## 19. Scheduled Tasks
-
-**Handler:** `Default.scheduled(event)` in `entry.py`
-
-### URL Health Checker
-
-Runs on a cron schedule. Queries D1 for up to 10 articles where:
-- `original_status = 'unknown'`, OR
-- `last_checked_at IS NULL`, OR
-- `last_checked_at < datetime('now', '-30 days')`
-
-For each article, calls `check_original_url(original_url)` which performs a HEAD request with a 10-second timeout.
-
-### HEAD Request Strategy
+## 19. URL Health Checks
 
 **File:** `src/articles/health.py`
 
-Uses HEAD (not GET) to minimize bandwidth. Pre-flight and post-redirect SSRF validation applied.
+Users can check if original URLs are still accessible via `POST /api/articles/{id}/check-original` (single) or `POST /api/articles/batch-check-originals` (up to 10 at a time). Uses HEAD requests with a 10-second timeout. Pre-flight and post-redirect SSRF validation applied.
 
 ### Status Classification
 
@@ -892,8 +874,6 @@ Uses HEAD (not GET) to minimize bandwidth. Pre-flight and post-redirect SSRF val
 | Any other | `unknown` |
 
 After classification, updates D1: `original_status`, `last_checked_at`, `updated_at`.
-
-The frontend can also trigger health checks on individual articles via `POST /api/articles/{id}/check-original` and in batch via `POST /api/articles/batch-check-originals` (processes 10 at a time).
 
 ---
 

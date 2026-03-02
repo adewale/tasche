@@ -19,7 +19,6 @@ flowchart TB
             Entry -->|"/api/*"| FastAPI
             Entry -->|"else"| ASSETS
             Entry -->|"queue batch"| QueueHandler["Queue Consumer"]
-            Entry -->|"cron"| Scheduled["Scheduled Handler"]
 
             subgraph FastAPI["FastAPI · ASGI Adapter"]
                 direction LR
@@ -43,7 +42,6 @@ flowchart TB
             FFI["wrappers.py · FFI Boundary · SafeEnv"]
             FastAPI --> FFI
             QueueHandler --> FFI
-            Scheduled --> FFI
         end
 
         %% ── Bindings ──
@@ -78,7 +76,7 @@ flowchart TB
     R_Auth <-.->|"OAuth flow"| GitHub
     QueueHandler <-.->|"Screenshots\nJS rendering"| BrowserRendering
     QueueHandler <-.->|"Fetch pages\nDownload images"| OriginalSites
-    Scheduled <-.->|"HEAD requests\nHealth checks"| OriginalSites
+    R_Articles <-.->|"HEAD requests\nHealth checks"| OriginalSites
 
     %% ── Styling ──
     classDef worker fill:#fff7ed,stroke:#ea580c,stroke-width:2px,color:#1e293b
@@ -89,7 +87,7 @@ flowchart TB
     classDef middleware fill:#fef3c7,stroke:#d97706,stroke-width:1px,color:#1e293b
 
     class Browser browser
-    class Entry,QueueHandler,Scheduled,FFI worker
+    class Entry,QueueHandler,FFI worker
     class D1,R2,KV,Queue,AI,Readability,ASSETS binding
     class GitHub,BrowserRendering,OriginalSites external
     class R_Auth,R_Articles,R_Search,R_Tags,R_TTS,R_Stats,R_Export route
