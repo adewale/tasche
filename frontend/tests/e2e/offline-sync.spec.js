@@ -70,9 +70,9 @@ test.describe('Offline sync round-trip', () => {
     await context.setOffline(false);
 
     // Wait for "Back online" or "All changes synced" toast
-    await expect(
-      page.locator('.toast').filter({ hasText: /synced|Back online/i }),
-    ).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('.toast').filter({ hasText: /synced|Back online/i })).toBeVisible({
+      timeout: 10000,
+    });
 
     // Verify the favorite actually persisted on the server
     const resp = await request.get(`/api/articles/${id}`);
@@ -111,9 +111,9 @@ test.describe('Offline sync round-trip', () => {
     await context.setOffline(false);
 
     // Wait for sync
-    await expect(
-      page.locator('.toast').filter({ hasText: /synced|Back online/i }),
-    ).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('.toast').filter({ hasText: /synced|Back online/i })).toBeVisible({
+      timeout: 10000,
+    });
 
     // Verify the status persisted on the server
     const resp = await request.get(`/api/articles/${id}`);
