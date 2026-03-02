@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { isOffline, syncStatus, theme, applyTheme, showShortcuts } from '../state.js';
 import {
+  IconLogo,
   IconSearch,
   IconTag,
   IconSettings,
@@ -56,6 +57,7 @@ export function Header() {
       <header class="header">
         <div class="header-inner">
           <a href="#/" class="header-logo">
+            <IconLogo size={28} />
             Tasche
             {offline && (
               <span

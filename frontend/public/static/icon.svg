@@ -1,19 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#1a1a2e"/>
-      <stop offset="100%" style="stop-color:#16213e"/>
-    </linearGradient>
-  </defs>
-  <!-- Background rounded rectangle -->
-  <rect width="512" height="512" rx="96" ry="96" fill="url(#bg)"/>
-  <!-- Pocket/bag shape -->
-  <path d="M 156 120 L 156 340 C 156 368 178 392 206 392 L 306 392 C 334 392 356 368 356 340 L 356 120"
-        fill="none" stroke="#e2e8f0" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
-  <!-- Bookmark flap (V shape inside the pocket) -->
-  <path d="M 206 120 L 206 248 L 256 212 L 306 248 L 306 120"
-        fill="#e2e8f0" opacity="0.9"/>
-  <!-- Top handle -->
-  <path d="M 196 120 L 316 120"
-        fill="none" stroke="#e2e8f0" stroke-width="28" stroke-linecap="round"/>
+  <rect width="512" height="512" rx="96" ry="96" fill="#1d1d1f"/>
+  <path d="M 48 32 L 48 368 Q 48 464 144 464 L 368 464 Q 464 464 464 368 L 464 32"
+        fill="none" stroke="#f5f5f7" stroke-width="48" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="256" y="384" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="288" fill="#f5f5f7">T</text>
 </svg>

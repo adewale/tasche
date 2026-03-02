@@ -1,5 +1,35 @@
 /* Inline SVG icons — no external dependency needed */
 
+export function IconLogo({ size = 32, ...props }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 32 32"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="3"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      {...props}
+    >
+      <path d="M 3 2 L 3 23 Q 3 29 9 29 L 23 29 Q 29 29 29 23 L 29 2" />
+      <text
+        x="16"
+        y="24"
+        text-anchor="middle"
+        font-family="Georgia, 'Times New Roman', serif"
+        font-weight="700"
+        font-size="18"
+        fill="currentColor"
+        stroke="none"
+      >
+        T
+      </text>
+    </svg>
+  );
+}
+
 export function IconSearch({ size = 18, ...props }) {
   return (
     <svg

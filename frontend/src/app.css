@@ -220,12 +220,20 @@ textarea {
 }
 
 .header-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   font-family: var(--font-serif);
   font-size: 1.25rem;
   font-weight: 700;
   color: var(--text);
   text-decoration: none;
   letter-spacing: -0.02em;
+}
+
+.header-logo svg {
+  flex-shrink: 0;
+  transform: translateY(-0.5px);
 }
 
 .header-actions {
