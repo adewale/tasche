@@ -2,6 +2,8 @@
 
 A self-hosted read-it-later service built on Cloudflare Python Workers. Save articles, read them offline, and listen to them as audio -- all running in your own Cloudflare account.
 
+![Tasche library view](screenshot.png)
+
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/adewale/tasche&paid=true)
 
 ## Features
@@ -14,30 +16,42 @@ A self-hosted read-it-later service built on Cloudflare Python Workers. Save art
 - **Bookmarklet and share target** for quick saving from any browser
 - **Self-hosted** -- your data stays in your Cloudflare account
 
-## Quick Start (< 5 minutes)
+## Deploy (< 5 minutes)
 
-### Option A: Deploy button (fastest)
+Click the **Deploy to Cloudflare** button above. Cloudflare creates all the infrastructure (database, storage, queue, AI) automatically. Once deployed, visit your new URL -- you'll see a setup checklist showing what's needed.
 
-Click the **Deploy to Cloudflare** button above. After the deploy completes, your instance will be live at `https://tasche-<id>.workers.dev`. Visit it and you'll see a setup checklist. Three manual steps are needed:
+The only manual step is connecting GitHub for login:
 
-1. **Create a GitHub OAuth App** at [github.com/settings/developers](https://github.com/settings/developers):
+1. **Create a GitHub OAuth App** at [github.com/settings/developers](https://github.com/settings/developers)
    - **Homepage URL:** your workers.dev URL (shown after deploy)
    - **Authorization callback URL:** `<your-url>/api/auth/callback`
 
-2. **Set the OAuth secrets:**
-   ```bash
-   npx wrangler secret put GITHUB_CLIENT_ID
-   npx wrangler secret put GITHUB_CLIENT_SECRET
-   ```
+2. **Add three secrets** in the Cloudflare dashboard under **Workers & Pages > your worker > Settings > Variables and Secrets**:
 
-3. **Set your email whitelist** (use the email on your GitHub account):
-   ```bash
-   npx wrangler secret put ALLOWED_EMAILS
-   ```
+   | Secret | Value |
+   |--------|-------|
+   | `GITHUB_CLIENT_ID` | From the OAuth app you just created |
+   | `GITHUB_CLIENT_SECRET` | From the OAuth app you just created |
+   | `ALLOWED_EMAILS` | Your GitHub email address |
 
-Reload the page — the checklist clears and you can sign in.
+3. **Reload the page** -- the checklist clears and you can sign in.
 
-### Option B: Deploy to workers.dev (CLI)
+Everything else (database, storage, queues, AI, URL detection) is configured automatically.
+
+### Browser Rendering (optional)
+
+For JS-heavy pages, Tasche can use Cloudflare Browser Rendering for better content extraction. Without it, article processing falls back to plain HTTP fetches -- this works fine for most sites.
+
+To enable, add two more secrets in the dashboard:
+
+| Secret | Value |
+|--------|-------|
+| `CF_ACCOUNT_ID` | Your Cloudflare account ID (visible in the dashboard URL) |
+| `CF_API_TOKEN` | An API token with Browser Rendering permissions |
+
+## Manual Deploy (CLI)
+
+If you prefer deploying from the command line:
 
 ```bash
 git clone https://github.com/adewale/tasche.git
@@ -59,17 +73,9 @@ Create a GitHub OAuth App at [github.com/settings/developers](https://github.com
 - **Homepage URL:** your workers.dev URL (shown after deploy)
 - **Callback URL:** `<your-workers-dev-url>/api/auth/callback`
 
-### Option C: Deploy to a custom domain
+### Custom domain
 
-```bash
-git clone https://github.com/adewale/tasche.git
-cd tasche
-
-# Build frontend
-cd frontend && npm install && npm run build && cd ..
-```
-
-Edit `wrangler.jsonc` production section to add your custom domain:
+Edit `wrangler.jsonc` production section to add your domain:
 
 ```jsonc
 "production": {
@@ -77,33 +83,7 @@ Edit `wrangler.jsonc` production section to add your custom domain:
 }
 ```
 
-```bash
-# Set secrets
-uv run pywrangler secret put GITHUB_CLIENT_ID --env production
-uv run pywrangler secret put GITHUB_CLIENT_SECRET --env production
-uv run pywrangler secret put ALLOWED_EMAILS --env production
-
-# Deploy
-make deploy-production
-```
-
-Create a GitHub OAuth App with:
-- **Homepage URL:** `https://tasche.yourdomain.com`
-- **Callback URL:** `https://tasche.yourdomain.com/api/auth/callback`
-
-### Browser Rendering (optional)
-
-For JS-heavy pages, Tasche uses the Cloudflare Browser Rendering REST API for screenshots and content extraction. Without it, article processing falls back to plain HTTP fetches.
-
-To enable:
-1. In the Cloudflare dashboard, go to **Workers & Pages > Browser Rendering**
-2. Enable Browser Rendering for your account
-3. Set your account ID and API token as secrets:
-
-```bash
-uv run pywrangler secret put CF_ACCOUNT_ID
-uv run pywrangler secret put CF_API_TOKEN
-```
+Then deploy with `make deploy-production` and set your OAuth callback URL to `https://tasche.yourdomain.com/api/auth/callback`.
 
 ## Development
 
@@ -159,10 +139,6 @@ Tasche runs entirely on the Cloudflare Developer Platform:
 **Frontend:** Preact SPA built with Vite, served as Workers Static Assets. PWA with offline support via service worker.
 
 See [specs/tasche-spec.md](specs/tasche-spec.md) for the full product specification.
-
-## PWA Icons
-
-The repository includes placeholder PWA icons at `frontend/public/static/icon-192.png` and `frontend/public/static/icon-512.png`. To use your own icons, replace these files with 192x192 and 512x512 PNG images. An SVG source file is provided at `frontend/public/static/icon.svg` that can be used to generate PNGs with any SVG-to-PNG tool.
 
 ## Cost
 
