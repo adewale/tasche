@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "build": "cd frontend && npm install && npm run build",
-    "deploy": "npx wrangler d1 migrations apply DB --remote && npx pywrangler deploy",
+    "deploy": "cd readability-worker && npm install && npx wrangler deploy && cd .. && npx wrangler d1 migrations apply DB --remote && npx pywrangler deploy",
     "db:migrate": "npx wrangler d1 migrations apply DB --remote"
   },
   "cloudflare": {

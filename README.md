@@ -16,38 +16,13 @@ A self-hosted read-it-later service built on Cloudflare Python Workers. Save art
 - **Bookmarklet and share target** for quick saving from any browser
 - **Self-hosted** -- your data stays in your Cloudflare account
 
-## Deploy (< 5 minutes)
+## Deploy
 
-Click the **Deploy to Cloudflare** button above. Cloudflare creates all the infrastructure (database, storage, queue, AI) automatically. Once deployed, visit your new URL -- you'll see a setup checklist showing what's needed.
-
-The only manual step is connecting GitHub for login:
-
-1. **Create a GitHub OAuth App** at [github.com/settings/developers](https://github.com/settings/developers)
-   - **Homepage URL:** your workers.dev URL (shown after deploy)
-   - **Authorization callback URL:** `<your-url>/api/auth/callback`
-
-2. **Add three secrets** in the Cloudflare dashboard under **Workers & Pages > your worker > Settings > Variables and Secrets**:
-
-   | Secret | Value |
-   |--------|-------|
-   | `GITHUB_CLIENT_ID` | From the OAuth app you just created |
-   | `GITHUB_CLIENT_SECRET` | From the OAuth app you just created |
-   | `ALLOWED_EMAILS` | Your GitHub email address |
-
-3. **Reload the page** -- the checklist clears and you can sign in.
-
-Everything else (database, storage, queues, AI, URL detection) is configured automatically.
-
-### Browser Rendering (optional)
-
-For JS-heavy pages, Tasche can use Cloudflare Browser Rendering for better content extraction. Without it, article processing falls back to plain HTTP fetches -- this works fine for most sites.
-
-To enable, add two more secrets in the dashboard:
-
-| Secret | Value |
-|--------|-------|
-| `CF_ACCOUNT_ID` | Your Cloudflare account ID (visible in the dashboard URL) |
-| `CF_API_TOKEN` | An API token with Browser Rendering permissions |
+1. Click **Deploy to Cloudflare** above. Enter your GitHub email when prompted for `ALLOWED_EMAILS`. Skip the OAuth fields for now.
+2. Once deployed, note your worker URL (e.g. `https://tasche-abc.workers.dev`).
+3. Create a **GitHub OAuth App** at [github.com/settings/developers](https://github.com/settings/developers). Set the callback URL to `<your-worker-url>/api/auth/callback`.
+4. In the Cloudflare dashboard, go to **Workers & Pages > your worker > Settings > Variables and Secrets**. Add `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` from the OAuth app you just created.
+5. Visit your worker URL and sign in.
 
 ## Manual Deploy (CLI)
 
