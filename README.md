@@ -2,9 +2,9 @@
 
 A self-hosted read-it-later service built on Cloudflare Python Workers. Save articles, read them offline, and listen to them as audio -- all running in your own Cloudflare account.
 
-![Tasche library view](screenshot.png)
-
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/adewale/tasche&paid=true)
+
+![Tasche library view](screenshot.png)
 
 ## Features
 
