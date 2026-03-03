@@ -474,6 +474,64 @@ class TestSearchSqlStructure:
         assert "articles.excerpt" in sql
 
 
+class TestBm25ColumnWeights:
+    """Verify bm25() column weights boost title > excerpt > content."""
+
+    async def _get_search_sql(self) -> str:
+        captured: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            captured.append({"sql": sql, "params": params})
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        client.get("/api/search?q=test")
+
+        select_calls = [c for c in captured if "SELECT" in c["sql"]]
+        return select_calls[0]["sql"]
+
+    async def test_uses_bm25_not_default_rank(self) -> None:
+        """Search uses bm25() function, not the default articles_fts.rank."""
+        sql = await self._get_search_sql()
+        assert "bm25(" in sql
+        assert "articles_fts.rank" not in sql
+
+    async def test_title_weight_exceeds_excerpt_weight(self) -> None:
+        """Title weight (10.0) is higher than excerpt weight (5.0)."""
+        import re
+
+        sql = await self._get_search_sql()
+        match = re.search(r"bm25\(articles_fts,\s*([\d.]+),\s*([\d.]+),\s*([\d.]+)\)", sql)
+        assert match, f"bm25() call not found in SQL: {sql}"
+        title_w, excerpt_w, content_w = (float(match.group(i)) for i in (1, 2, 3))
+        assert title_w > excerpt_w, f"title weight {title_w} should exceed excerpt weight {excerpt_w}"
+
+    async def test_excerpt_weight_exceeds_content_weight(self) -> None:
+        """Excerpt weight (5.0) is higher than content weight (1.0)."""
+        import re
+
+        sql = await self._get_search_sql()
+        match = re.search(r"bm25\(articles_fts,\s*([\d.]+),\s*([\d.]+),\s*([\d.]+)\)", sql)
+        assert match, f"bm25() call not found in SQL: {sql}"
+        title_w, excerpt_w, content_w = (float(match.group(i)) for i in (1, 2, 3))
+        assert excerpt_w > content_w, (
+            f"excerpt weight {excerpt_w} should exceed content weight {content_w}"
+        )
+
+    async def test_three_weights_match_fts5_columns(self) -> None:
+        """bm25() has exactly 3 weights, matching FTS5 columns (title, excerpt, markdown_content)."""
+        import re
+
+        sql = await self._get_search_sql()
+        match = re.search(r"bm25\(articles_fts,\s*([\d.,\s]+)\)", sql)
+        assert match, f"bm25() call not found in SQL: {sql}"
+        weights = [w.strip() for w in match.group(1).split(",")]
+        assert len(weights) == 3, f"Expected 3 weights for 3 FTS5 columns, got {len(weights)}: {weights}"
+
+
 class TestSearchAuthRequired:
     def test_returns_401_without_auth(self) -> None:
         """GET /api/search?q=test returns 401 without a session cookie."""
