@@ -10,7 +10,6 @@
   // Required secrets (set via `npx wrangler secret put`):
   // - ALLOWED_EMAILS (your GitHub email, comma-separated for multiple)
   // - GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET (GitHub OAuth)
-  // - CF_ACCOUNT_ID, CF_API_TOKEN (Browser Rendering REST API — optional)
   "vars": { "TTS_MODEL": "melotts" },
   "services": [{ "binding": "READABILITY", "service": "readability-worker", "entrypoint": "ReadabilityService" }],
   "ai": { "binding": "AI" },

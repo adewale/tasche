@@ -19,7 +19,6 @@ import {
   IconClock,
   IconDownload,
   IconCheck,
-  IconCamera,
   IconRefresh,
   IconInkDrop,
 } from '../components/Icons.jsx';
@@ -772,16 +771,6 @@ export function Reader({ id }) {
             >
               <IconExternalLink /> Original
             </a>
-            {article.original_key && (
-              <a
-                href={'/api/articles/' + id + '/screenshot'}
-                target="_blank"
-                rel="noopener noreferrer"
-                class="btn btn-sm btn-secondary"
-              >
-                <IconCamera size={14} /> Screenshot
-              </a>
-            )}
             <button class="btn btn-sm btn-secondary" onClick={handleRetry} disabled={retrying}>
               <IconRefresh size={14} /> {retrying ? 'Retrying...' : 'Retry'}
             </button>

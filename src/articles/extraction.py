@@ -18,6 +18,28 @@ from bs4 import BeautifulSoup, Tag
 from markdownify import markdownify
 
 
+def extract_thumbnail_url(html: str) -> str | None:
+    """Extract a thumbnail URL from HTML meta tags.
+
+    Checks og:image, twitter:image, and schema.org image in priority order.
+    Returns the first valid URL found, or None.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+
+    for attr, value in [
+        ("property", "og:image"),
+        ("name", "twitter:image"),
+        ("itemprop", "image"),
+    ]:
+        meta = soup.find("meta", attrs={attr: value})
+        if meta and meta.get("content"):
+            url = meta["content"].strip()
+            if url.startswith(("http://", "https://")):
+                return url
+
+    return None
+
+
 def extract_canonical_url(html: str) -> str | None:
     """Extract the canonical URL from an HTML document.
 

@@ -635,18 +635,6 @@ def _make_mock_response(
     return resp
 
 
-async def _noop_screenshot(url, account_id, api_token, **kwargs):
-    """Mock screenshot that returns fake image data."""
-    return b"FAKE_SCREENSHOT"
-
-
-def _browser_env(env: MockEnv) -> MockEnv:
-    """Add Browser Rendering config to a MockEnv."""
-    env.CF_ACCOUNT_ID = "test-account"
-    env.CF_API_TOKEN = "test-token"
-    return env
-
-
 def _make_mock_http_fetch(
     page_response: MagicMock | None = None,
     image_response: MagicMock | None = None,

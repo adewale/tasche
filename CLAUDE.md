@@ -40,7 +40,7 @@ uv run pytest tests/unit/test_articles.py::TestCreateArticle::test_creates_artic
 | Service       | `READABILITY`    | Readability extraction (Service Binding)     |
 | Assets        | `ASSETS`         | Static frontend asset serving                |
 
-**Key data flow:** Save URL → API creates article (status: pending) → enqueue to `ARTICLE_QUEUE` → queue consumer fetches page (via Browser Rendering REST API if JS-heavy), extracts content via Readability Service Binding (with BeautifulSoup fallback), converts images to WebP, stores HTML+Markdown in R2, updates D1.
+**Key data flow:** Save URL → API creates article (status: pending) → enqueue to `ARTICLE_QUEUE` → queue consumer fetches page, extracts content via Readability Service Binding (with BeautifulSoup fallback), converts images to WebP, stores HTML+Markdown in R2, updates D1.
 
 **Auth:** Manual GitHub OAuth → sessions in KV. Endpoints under `/api/auth/`.
 
@@ -58,7 +58,7 @@ uv run pytest tests/unit/test_articles.py::TestCreateArticle::test_creates_artic
 
 ## Configuration
 
-All config lives in `wrangler.jsonc`. The `SITE_URL` env var drives all internal URLs (bookmarklet, auth callbacks, etc.). Auth secrets (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`) are set via `wrangler secret put`.
+All config lives in `wrangler.jsonc`. Auth secrets (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`) are set via `wrangler secret put`.
 
 ## Observability
 

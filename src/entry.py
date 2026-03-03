@@ -116,8 +116,6 @@ async def health_config(request: Request) -> dict:
         ("ALLOWED_EMAILS", True, "Your GitHub email address (comma-separated for multiple users)"),
         ("GITHUB_CLIENT_ID", True, "GitHub OAuth app client ID"),
         ("GITHUB_CLIENT_SECRET", True, "GitHub OAuth app client secret"),
-        ("CF_ACCOUNT_ID", False, "Cloudflare account ID for Browser Rendering"),
-        ("CF_API_TOKEN", False, "Cloudflare API token for Browser Rendering"),
     ]
 
     checks = []

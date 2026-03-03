@@ -443,8 +443,6 @@ class TestConfigCheck:
         env.ALLOWED_EMAILS = "user@example.com"
         env.GITHUB_CLIENT_ID = "test-id"
         env.GITHUB_CLIENT_SECRET = "test-secret"
-        env.CF_ACCOUNT_ID = "test-account"
-        env.CF_API_TOKEN = "test-token"
         env.READABILITY = "mock-readability-binding"
 
         client = self._make_client(env)
@@ -457,14 +455,14 @@ class TestConfigCheck:
         for item in data["checks"]:
             assert item["status"] == "ok", f"{item['name']} should be ok"
 
-    def test_missing_secrets_returns_degraded(self) -> None:
-        """When optional secrets are missing, status is 'degraded'."""
+    def test_missing_optional_returns_degraded(self) -> None:
+        """When optional bindings are missing, status is 'degraded'."""
         env = MockEnv()
         env.SITE_URL = "https://tasche.example.com"
         env.ALLOWED_EMAILS = "user@example.com"
         env.GITHUB_CLIENT_ID = "test-id"
         env.GITHUB_CLIENT_SECRET = "test-secret"
-        # CF_ACCOUNT_ID and CF_API_TOKEN NOT set
+        # READABILITY not set — optional
 
         client = self._make_client(env)
         resp = client.get("/api/health/config")
@@ -474,8 +472,7 @@ class TestConfigCheck:
         assert data["status"] == "degraded"
         missing = [c for c in data["checks"] if c["status"] == "missing"]
         missing_names = {c["name"] for c in missing}
-        assert "CF_ACCOUNT_ID" in missing_names
-        assert "CF_API_TOKEN" in missing_names
+        assert "READABILITY" in missing_names
 
     def test_missing_required_returns_error(self) -> None:
         """When required vars are missing, status is 'error'."""
@@ -502,8 +499,6 @@ class TestConfigCheck:
         env.ALLOWED_EMAILS = "user@example.com"
         env.GITHUB_CLIENT_ID = "test-id"
         env.GITHUB_CLIENT_SECRET = "test-secret"
-        env.CF_ACCOUNT_ID = "test-account"
-        env.CF_API_TOKEN = "test-token"
 
         client = self._make_client(env)
         resp = client.get("/api/health/config")

@@ -28,12 +28,6 @@ function getHelpText(name, env) {
     SITE_URL: 'Auto-detected from your URL. Only set this if using a custom domain.',
     READABILITY:
       'Optional — improves content extraction. Without it, the built-in parser handles most pages.',
-    CF_ACCOUNT_ID:
-      'Optional — enables screenshots of JS-heavy pages. Run: npx wrangler secret put CF_ACCOUNT_ID' +
-      flag,
-    CF_API_TOKEN:
-      'Optional — enables screenshots of JS-heavy pages. Run: npx wrangler secret put CF_API_TOKEN' +
-      flag,
   };
   return texts[name] || null;
 }

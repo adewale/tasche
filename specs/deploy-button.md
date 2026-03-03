@@ -95,12 +95,6 @@ The deploy button reads `package.json` for build/deploy scripts and binding desc
       },
       "ALLOWED_EMAILS": {
         "description": "Your GitHub email address (the one you log in with). Comma-separated for multiple users."
-      },
-      "CF_ACCOUNT_ID": {
-        "description": "*(Optional)* Cloudflare Account ID — enables Browser Rendering for JS-heavy pages. Find it on the Workers dashboard sidebar."
-      },
-      "CF_API_TOKEN": {
-        "description": "*(Optional)* Cloudflare API token — enables Browser Rendering. Create at dash.cloudflare.com/profile/api-tokens."
       }
     }
   }
@@ -132,10 +126,6 @@ GITHUB_CLIENT_SECRET=your_github_client_secret
 
 # Your GitHub email for login (required)
 ALLOWED_EMAILS=your@email.com
-
-# Browser Rendering (optional — enables JS-heavy page screenshots)
-# CF_ACCOUNT_ID=your_account_id
-# CF_API_TOKEN=your_api_token
 ```
 
 **Note:** `ALLOWED_EMAILS` is a secret (set via `npx wrangler secret put ALLOWED_EMAILS`), not a var in `wrangler.jsonc`. Adding it to `.dev.vars.example` ensures local dev works and the deploy button prompts the user.
@@ -244,7 +234,6 @@ After deploy, if auth secrets are missing, clicking "Sign in with GitHub" return
 | Client secret set | GITHUB_CLIENT_SECRET present | Yes |
 | Email whitelist configured | ALLOWED_EMAILS non-empty | Yes |
 | Readability Worker deployed | READABILITY binding present | No |
-| Browser Rendering enabled | CF_ACCOUNT_ID + CF_API_TOKEN present | No |
 
 Each item shows its status (configured / missing) with a brief instruction for the missing ones. The checklist links to the GitHub OAuth App creation page and shows the callback URL the user needs to set.
 
@@ -285,15 +274,6 @@ Then add the service binding to `wrangler.jsonc` and redeploy the main Worker:
 
 ```jsonc
 "services": [{ "binding": "READABILITY", "service": "readability-worker", "entrypoint": "ReadabilityService" }]
-```
-
-### Step 4: (Optional) Enable Browser Rendering
-
-For JS-heavy page screenshots and scraping:
-
-```bash
-npx wrangler secret put CF_ACCOUNT_ID
-npx wrangler secret put CF_API_TOKEN
 ```
 
 ---

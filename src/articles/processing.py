@@ -1,23 +1,21 @@
 """Main queue consumer pipeline for article processing.
 
-Implements the 14-step content processing pipeline described in spec
-section 3.1.  Called by ``_handle_article_processing`` in ``entry.py``
-when an ``article_processing`` queue message is consumed.
+Called by ``_handle_article_processing`` in ``entry.py`` when an
+``article_processing`` queue message is consumed.
 
 Steps:
  1. Update article status to 'processing'
  2. Fetch page via http_fetch (follow redirects, capture final_url)
- 3. Try Browser Rendering scrape if content looks JS-heavy
- 4. Extract canonical_url from HTML
- 5. Screenshots via Browser Rendering (thumbnail + full-page archival)
- 6. Extract article content (Readability Service Binding with BS4 fallback)
- 7. Download and store images
- 8. Rewrite HTML image paths to local R2 paths
- 9. Convert to Markdown
-10. Store content.html to R2
-11. Store metadata.json to R2
-12. Update D1 with all metadata
-13. FTS5 indexing (handled automatically by D1 triggers)
+ 3. Extract canonical_url from HTML
+ 4. Extract thumbnail from og:image meta tag
+ 5. Extract article content (Readability Service Binding with BS4 fallback)
+ 6. Download and store images
+ 7. Rewrite HTML image paths to local R2 paths
+ 8. Convert to Markdown
+ 9. Store content.html to R2
+10. Store metadata.json to R2
+11. Update D1 with all metadata
+12. FTS5 indexing (handled automatically by D1 triggers)
 """
 
 from __future__ import annotations
@@ -26,12 +24,12 @@ import hashlib
 import json  # noqa: F401 — kept for other callers / queue handler
 import traceback
 
-from articles.browser_rendering import BrowserRenderingError, scrape, screenshot
 from articles.extraction import (
     calculate_reading_time,
     count_words,
     extract_article,
     extract_canonical_url,
+    extract_thumbnail_url,
     html_to_markdown,
     rewrite_image_paths,
 )
@@ -41,10 +39,6 @@ from articles.urls import _is_private_hostname, extract_domain
 from utils import now_iso
 from wide_event import current_event
 from wrappers import HttpError, SafeEnv, http_fetch
-
-# Minimum content length (characters) to consider HTML as "real" content.
-# Below this threshold, the page is likely JS-rendered and needs Browser Rendering.
-_MIN_CONTENT_LENGTH = 500
 
 
 async def apply_auto_tags(
@@ -139,23 +133,6 @@ async def apply_auto_tags(
     return applied
 
 
-def _is_js_heavy(html: str) -> bool:
-    """Heuristic: detect if HTML is mostly a JS shell with minimal content.
-
-    Returns ``True`` if the body text (excluding scripts) is shorter than
-    ``_MIN_CONTENT_LENGTH``, suggesting the real content is rendered by
-    JavaScript.
-    """
-    from bs4 import BeautifulSoup
-
-    soup = BeautifulSoup(html, "html.parser")
-    # Remove script and style tags
-    for tag in soup(["script", "style", "noscript"]):
-        tag.decompose()
-    text = soup.get_text(strip=True)
-    return len(text) < _MIN_CONTENT_LENGTH
-
-
 async def _mark_failed(db: object, article_id: str) -> None:
     """Log the error and set article status to 'failed' in D1."""
     evt = current_event()
@@ -193,7 +170,7 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
         The URL originally submitted by the user.
     env:
         Worker environment object with ``DB`` (D1), ``CONTENT`` (R2),
-        ``CF_ACCOUNT_ID``, and ``CF_API_TOKEN`` for Browser Rendering.
+        and optional ``READABILITY`` service binding.
     """
     db = env.DB  # type: ignore[attr-defined]
     r2 = env.CONTENT  # type: ignore[attr-defined]
@@ -247,67 +224,35 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
             if parsed_final.hostname and _is_private_hostname(parsed_final.hostname):
                 raise ValueError(f"Redirect to private/internal URL blocked: {final_url}")
 
-        # Step 3: If content looks JS-heavy, try Browser Rendering
-        # (skip when content was pre-supplied — the user's browser already
-        # rendered any JS)
-        safe_env = SafeEnv(env)
-        account_id = safe_env.get("CF_ACCOUNT_ID")
-        api_token = safe_env.get("CF_API_TOKEN")
-        has_browser_rendering = bool(account_id and api_token)
-
-        if not has_browser_rendering:
-            evt = current_event()
-            if evt:
-                evt.set("browser_rendering", "not_configured")
-
-        if has_browser_rendering and pre_supplied_html is None and _is_js_heavy(html):
-            try:
-                html = await scrape(final_url, account_id, api_token)
-            except BrowserRenderingError:
-                pass  # Fall back to the original HTML
-
-        # Step 4: Extract canonical URL
+        # Step 3: Extract canonical URL
         canonical_url = extract_canonical_url(html) or final_url
         domain = extract_domain(final_url)
 
-        # Step 5: Screenshots via Browser Rendering
+        # Step 4: Extract thumbnail from og:image meta tag
         thumbnail_key = None
         original_key = None
 
-        # 5a: Thumbnail (above-the-fold crop)
-        if has_browser_rendering:
+        thumbnail_url = extract_thumbnail_url(html)
+        if thumbnail_url:
             try:
-                thumb_data = await screenshot(
-                    final_url,
-                    account_id,
-                    api_token,
-                    viewport_width=1200,
-                    viewport_height=630,
-                )
-                thumbnail_key = article_key(article_id, "thumbnail.webp")
-                await r2.put(thumbnail_key, thumb_data)
-            except BrowserRenderingError:
-                pass  # Per-URL failures are non-fatal
+                from urllib.parse import urlparse
 
-        # 5b: Full-page archival screenshot
-        if has_browser_rendering:
-            try:
-                full_data = await screenshot(
-                    final_url,
-                    account_id,
-                    api_token,
-                    viewport_width=1200,
-                    viewport_height=800,
-                    full_page=True,
-                )
-                original_key = article_key(article_id, "original.webp")
-                await r2.put(original_key, full_data)
-            except BrowserRenderingError:
-                pass  # Per-URL failures are non-fatal
+                parsed = urlparse(thumbnail_url)
+                if parsed.hostname and not _is_private_hostname(parsed.hostname):
+                    resp = await http_fetch(thumbnail_url, timeout=15.0)
+                    if resp.status_code == 200:
+                        content_type = resp.headers.get("content-type", "").split(";")[0].strip()
+                        max_thumb = 2 * 1024 * 1024
+                        if content_type.startswith("image/") and len(resp.content) <= max_thumb:
+                            thumbnail_key = article_key(article_id, "thumbnail.webp")
+                            await r2.put(thumbnail_key, resp.content)
+            except Exception:
+                pass  # Thumbnail extraction is non-fatal
 
-        # Step 6: Extract article content
+        # Step 5: Extract article content
         # Prefer the Readability Service Binding (100% Mozilla fidelity)
         # with BS4 heuristic fallback when the binding is unavailable.
+        safe_env = SafeEnv(env)
         readability = safe_env.READABILITY
         extraction_method = "bs4"
         if readability is not None:

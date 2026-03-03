@@ -340,36 +340,7 @@ For a simple schema like Tasche's, raw SQL is clearer than an ORM anyway.
 **Content extraction: Readability Service Binding with BeautifulSoup fallback.**
 `python-readability` is **not used** — it calls `js.eval()` to load Mozilla Readability JS, which is blocked in Workers (`EvalError: Code generation from strings disallowed`). Instead, content extraction uses a **Readability Service Binding** to a separate JS Worker that runs @mozilla/readability natively, with BeautifulSoup as a fallback when the service binding is unavailable or extraction fails.
 
-### 2.5 Browser Rendering: REST API
-
-Python Workers can't use the Puppeteer binding directly. Instead, use Cloudflare's Browser Rendering REST API:
-
-**Endpoints:**
-- `POST /screenshot` — Capture page as image
-- `POST /scrape` — Extract rendered HTML after JavaScript execution
-
-**Usage from Python:**
-
-```
-POST https://api.cloudflare.com/client/v4/accounts/{account_id}/browser-rendering/screenshot
-Authorization: Bearer {api_token}
-
-{
-  "url": "https://example.com/article",
-  "viewport": { "width": 1200, "height": 630 },
-  "fullPage": true
-}
-```
-
-**Tradeoffs vs Puppeteer binding:**
-- Less control (can't interact with page, fill forms, etc.)
-- Requires API token management
-- Slightly higher latency (external API call vs binding)
-- Works from any language
-
-For Tasche's use case (screenshot + scrape HTML), the REST API is sufficient.
-
-### 2.6 ID Generation
+### 2.5 ID Generation
 
 | Library | Version | Purpose | Why It Works |
 |---------|---------|---------|--------------|
@@ -377,7 +348,7 @@ For Tasche's use case (screenshot + scrape HTML), the REST API is sufficient.
 
 Use `secrets.token_urlsafe(16)` for 22-character URL-safe IDs, or `uuid.uuid4()` for standard UUIDs.
 
-### 2.7 Libraries to AVOID
+### 2.6 Libraries to AVOID
 
 | Library | Reason |
 |---------|--------|
@@ -436,7 +407,7 @@ This section explains the architectural decisions behind Tasche and why each Clo
 - **Global low-latency API**: Users access their reading list from anywhere. Workers run in 300+ locations, so API responses are fast regardless of where the user is.
 - **No cold starts**: V8 isolates provide sub-millisecond startup. When a user opens the PWA, the article list loads instantly.
 - **Cost-effective**: The free tier (100K requests/day) covers most personal use. Paid plan ($5/mo) includes 10M requests.
-- **Native integrations**: Workers have first-class bindings to D1, R2, KV, Queues, and Browser Rendering—no SDK configuration needed.
+- **Native integrations**: Workers have first-class bindings to D1, R2, KV, Queues, and Workers AI—no SDK configuration needed.
 
 ---
 
@@ -509,9 +480,8 @@ This section explains the architectural decisions behind Tasche and why each Clo
 **Why Queues for Tasche:**
 - **Decouple save from process**: When a user clicks "Save," the API immediately returns success. The heavy work (fetching page, extracting content, generating thumbnail) happens asynchronously.
 - **User experience**: Save operations feel instant (<100ms) instead of waiting 5-10 seconds for page processing.
-- **Retry on failure**: If Browser Rendering times out or the page is temporarily unavailable, Queues automatically retry with exponential backoff. See §10.1 for error categorization (transient vs. permanent).
-- **Rate limit compliance**: Browser Rendering allows 2 new browsers/minute. Queue's `max_batch_timeout: 60` ensures we don't exceed this limit.
-- **Batch processing**: Multiple saves can be processed together, reducing Browser Rendering overhead.
+- **Retry on failure**: If the page is temporarily unavailable, Queues automatically retry with exponential backoff. See §10.1 for error categorization (transient vs. permanent).
+- **Batch processing**: Multiple saves can be processed together.
 
 **Flow:**
 ```
@@ -533,28 +503,26 @@ User saves URL → POST /api/articles
 ┌─────────────────────────────────────┐
 │  Queue Consumer (async, retries)    │
 │                                     │
-│  1. Spawn headless browser          │
-│  2. Navigate, follow redirects      │
+│  1. Fetch page, follow redirects    │
 │     → capture final_url             │
 │     → validate final_url against    │
 │       SSRF blocklist (see §9.1)     │
-│  3. Extract canonical_url from DOM  │
-│  4. Full-page screenshot → R2       │
-│  5. Thumbnail screenshot → R2       │
-│  6. Readability extracts content    │
-│  7. Download + convert images       │
+│  2. Extract canonical_url from HTML │
+│  3. Extract og:image thumbnail → R2 │
+│  4. Readability extracts content    │
+│  5. Download + convert images       │
 │     → validate each URL (§9.1)      │
 │     → skip private network URLs     │
 │     → R2 images/*.webp              │
-│  8. Rewrite HTML with local paths   │
-│  9. Convert to Markdown (Turndown)  │
-│ 10. Store content.html → R2         │
-│ 11. Store metadata.json → R2        │
-│ 12. Update D1:                      │
+│  6. Rewrite HTML with local paths   │
+│  7. Convert to Markdown             │
+│  8. Store content.html → R2         │
+│  9. Store metadata.json → R2        │
+│ 10. Update D1:                      │
 │     - title, excerpt, word_count    │
 │     - reading_time, status: 'ready' │
 │     - all three URLs                │
-│ 13. Index in FTS5                   │
+│ 11. Index in FTS5                   │
 └─────────────────────────────────────┘
                       │
                       ▼
@@ -566,24 +534,6 @@ User saves URL → POST /api/articles
 - *Synchronous processing*: Terrible UX. User waits 5-10 seconds staring at a spinner.
 
 ---
-
-#### **Browser Rendering REST API** → Page Fetching & Screenshots
-
-**What it does:** Headless Chromium browsers running on Cloudflare's edge, accessible via REST API.
-
-**Why Browser Rendering for Tasche:**
-- **JavaScript rendering**: Modern websites are SPAs. A simple `fetch()` gets empty HTML shells. Browser Rendering executes JavaScript and returns the fully-rendered DOM.
-- **Accurate content extraction**: BeautifulSoup/readability work best on rendered HTML. Paywalls, lazy-loaded content, and dynamic elements are handled.
-- **Thumbnail generation**: The `/screenshot` endpoint creates visual previews. Users can identify articles by thumbnail in the PWA.
-- **No infrastructure**: No Docker containers, no browser servers, no Chrome installation. Just REST API calls.
-
-**REST API endpoints:**
-- `POST /screenshot` — Full-page or viewport screenshot as PNG/JPEG
-- `POST /scrape` — Rendered HTML after JavaScript execution
-
-**Constraints addressed:**
-- *Rate limits*: Queue batching with 60-second timeout keeps us under limit.
-- *$0.02 per 1,000 sessions*: Acceptable for personal use (100 articles/month = $0.002).
 
 ---
 
@@ -711,10 +661,10 @@ The PWA is designed for true offline reading—users should be able to read save
 │  │  Database   │  │   Content   │  │ Sess │  │   Processing    │  │
 │  └─────────────┘  └─────────────┘  └──────┘  └─────────────────┘  │
 │                                                                     │
-│  ┌─────────────────────────────┐  ┌─────────────────────────────┐  │
-│  │   Browser Rendering API     │  │        Workers AI           │  │
-│  │  (JS-heavy site scraping)   │  │   (TTS: configurable model)  │  │
-│  └─────────────────────────────┘  └─────────────────────────────┘  │
+│  ┌─────────────────────────────┐                                   │
+│  │        Workers AI           │                                   │
+│  │   (TTS: configurable model)  │                                   │
+│  └─────────────────────────────┘                                   │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
           │                              │
@@ -746,7 +696,6 @@ flowchart TB
         end
         
         Q[/Queue/]
-        BR[Browser Rendering<br/>REST API]
         AI[Workers AI<br/>TTS]
     end
 
@@ -769,8 +718,6 @@ flowchart TB
     API -->|enqueue URL| Q
     Q -->|consume| QC
     QC -->|fetch| WEB
-    QC -->|if JS-heavy| BR
-    BR -->|rendered HTML| QC
     QC -->|metadata| D1
     QC -->|HTML + Markdown| R2
 
@@ -786,7 +733,7 @@ flowchart TB
 ```
 
 **Key flows:**
-1. **Save article**: Bookmarklet/PWA → API → Queue → Consumer fetches URL (via Browser Rendering if needed) → stores metadata in D1, content in R2
+1. **Save article**: Bookmarklet/PWA → API → Queue → Consumer fetches URL → stores metadata in D1, content in R2
 2. **Read article**: PWA → API → D1 for metadata → R2 for content (streamed)
 3. **Listen Later**: PWA → API → Queue → Consumer → Workers AI generates audio → R2
 4. **Auth**: PWA → API → GitHub OAuth → callback → session stored in KV
@@ -803,8 +750,7 @@ flowchart TB
 | Content Storage | R2 | Archived HTML, Markdown, thumbnails, audio |
 | Session Management | KV | Auth sessions with TTL |
 | Background Processing | Queues | Article fetching, content extraction, TTS generation |
-| Content Extraction | Browser Rendering REST API | Screenshot and HTML scraping |
-| Readability Extraction | Service Binding (`READABILITY`) | @mozilla/readability via separate JS Worker, BeautifulSoup fallback |
+| Content Extraction | Service Binding (`READABILITY`) | @mozilla/readability via separate JS Worker, BeautifulSoup fallback |
 | Authentication | Manual GitHub OAuth | OAuth flow with KV sessions |
 | Listen Later (TTS) | Workers AI | Text-to-speech via configurable `TTS_MODEL` (default: MeloTTS) |
 
@@ -1102,7 +1048,7 @@ This avoids loading the full SPA and completes in under 2 seconds.
 | Build pipeline | `vite build --outDir assets` | Single command, drops into existing `wrangler.jsonc` config |
 | Agent implementability | High | JSX is the most reliable output format for coding agents |
 
-**Full-page screenshot (`original.webp`):** Required. Captures a full-page scrolling screenshot via Browser Rendering API during article processing. Serves as archival fallback for content that Readability fails to extract (infographics, complex layouts).
+**Thumbnail (`thumbnail.webp`):** Extracted from the page's `og:image` meta tag during article processing. Downloaded, converted to WebP, and stored in R2. Used as a visual preview in the library view.
 
 **Design language page (`/design-language.html`):** A standalone HTML reference page documenting Tasche's visual style — typography, colour palette, spacing, component patterns, light/dark themes. Lives in `frontend/public/design-language.html` and is served as a static asset (bypasses the SPA router). Accessible from the hamburger menu in the header.
 
@@ -1270,7 +1216,7 @@ Each screen below is a route in the SPA. The wireframes show layout structure, n
 
 ### 9.1 SSRF Protection
 
-Tasche fetches URLs on behalf of users (article processing, image downloads, browser rendering). All outbound HTTP requests MUST validate the target hostname against a private network blocklist:
+Tasche fetches URLs on behalf of users (article processing, image downloads). All outbound HTTP requests MUST validate the target hostname against a private network blocklist:
 
 **Blocked ranges:**
 - Loopback: `127.0.0.0/8`, `[::1]`, `localhost`
@@ -1348,7 +1294,7 @@ R2's `list()` API is paginated (default 1000 objects per page). When deleting al
 
 ### 10.4 Idempotency for Expensive Operations
 
-Any operation that costs real compute (Workers AI, Browser Rendering) MUST be idempotent:
+Any operation that costs real compute (Workers AI) MUST be idempotent:
 - Check the current state before triggering work
 - Return the existing result if work is already done
 - Return 409 if work is already in progress
@@ -1561,7 +1507,7 @@ Each milestone is a **vertical slice** — it delivers a complete, end-to-end us
 | On-demand URL health check | Backend | Per-article "Check now" button and batch endpoint HEAD-check original URLs, update `original_status` |
 | Status indicators in reader | Frontend | Show status badge: "Original is gone. Good thing you saved it." / "Original requires subscription" / etc. |
 | `metadata.json` per article | Backend | Store archive timestamp, image count, provenance in R2 alongside content |
-| Full-page screenshot | Backend | Store `original.webp` via Browser Rendering for archival fallback |
+| og:image thumbnail | Backend | Extract og:image URL, download and store as `thumbnail.webp` |
 
 **Acceptance test:** User opens an article whose original URL returns 404. Reader view shows the article content intact with a "Original no longer available" badge. `metadata.json` exists in R2 with archive provenance.
 

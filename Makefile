@@ -12,7 +12,7 @@ format:
 	uv run ruff format src/ tests/
 
 setup:
-	@test -f .dev.vars || (cp .dev.vars.example .dev.vars && echo "Created .dev.vars from .dev.vars.example")
+	@test -f .dev.vars || (cp .dev.vars.example .dev.vars && echo "DISABLE_AUTH=true" >> .dev.vars && echo "Created .dev.vars with auth disabled for local dev")
 	uv sync
 	cd frontend && npm install
 

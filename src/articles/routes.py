@@ -664,43 +664,6 @@ async def get_article_thumbnail(
     return await _stream_r2_object(obj, media_type="image/webp")
 
 
-@router.get("/{article_id}/screenshot")
-async def get_article_screenshot(
-    request: Request,
-    article_id: str,
-    user: dict[str, Any] = Depends(get_current_user),
-) -> Response:
-    """Serve the article's full-page archival screenshot from R2.
-
-    Returns the full-page WebP screenshot stored during article processing.
-    Falls back to 404 if no screenshot is available.
-    """
-    env = request.scope["env"]
-    db = env.DB
-    r2 = env.CONTENT
-    user_id = user["user_id"]
-
-    article = await _get_user_article(
-        db,
-        article_id,
-        user_id,
-        fields="id, original_key",
-    )
-
-    original_key = article.get("original_key")
-    if not original_key:
-        raise HTTPException(status_code=404, detail="No screenshot available")
-
-    obj = await r2.get(original_key)
-    if obj is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Screenshot not found in storage",
-        )
-
-    return await _stream_r2_object(obj, media_type="image/webp")
-
-
 # Extension-to-media-type mapping for article images.
 _IMAGE_MEDIA_TYPES: dict[str, str] = {
     ".webp": "image/webp",

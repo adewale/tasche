@@ -17,12 +17,6 @@
       },
       "ALLOWED_EMAILS": {
         "description": "Your GitHub email address (the one you log in with). Comma-separated for multiple users."
-      },
-      "CF_ACCOUNT_ID": {
-        "description": "*(Optional)* Cloudflare Account ID — enables Browser Rendering for JS-heavy pages. Find it on the Workers dashboard sidebar."
-      },
-      "CF_API_TOKEN": {
-        "description": "*(Optional)* Cloudflare API token — enables Browser Rendering. Create at dash.cloudflare.com/profile/api-tokens."
       }
     }
   }

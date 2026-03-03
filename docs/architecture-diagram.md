@@ -61,7 +61,6 @@ flowchart TB
     subgraph External["External Services"]
         direction LR
         GitHub["GitHub OAuth\nAuthorize → Callback\nEmail whitelist"]
-        BrowserRendering["Browser Rendering API\nScreenshots · JS scrape"]
         OriginalSites["Original Article Sites\nFetch · Image download\nSSRF-validated"]
     end
 
@@ -74,7 +73,6 @@ flowchart TB
     FFI <--> AI
     FFI <--> Readability
     R_Auth <-.->|"OAuth flow"| GitHub
-    QueueHandler <-.->|"Screenshots\nJS rendering"| BrowserRendering
     QueueHandler <-.->|"Fetch pages\nDownload images"| OriginalSites
     R_Articles <-.->|"HEAD requests\nHealth checks"| OriginalSites
 
@@ -89,7 +87,7 @@ flowchart TB
     class Browser browser
     class Entry,QueueHandler,FFI worker
     class D1,R2,KV,Queue,AI,Readability,ASSETS binding
-    class GitHub,BrowserRendering,OriginalSites external
+    class GitHub,OriginalSites external
     class R_Auth,R_Articles,R_Search,R_Tags,R_TTS,R_Stats,R_Export route
     class MW,Auth middleware
 ```
@@ -112,23 +110,18 @@ flowchart LR
         direction TB
         Fetch["Fetch page\n30s timeout · 10MB limit"]
         SSRF2["Post-redirect\nSSRF check"]
-        JSCheck{"JS-heavy?\n< 500 chars\nbody text"}
-        Scrape["Browser Rendering\nscrape()"]
         Extract["Extract content\nReadability → BS4 fallback"]
+        Thumbnail["Extract og:image\nDownload thumbnail"]
         Images["Download images\nConvert to WebP\nRewrite paths"]
-        Screenshots["Screenshots\n1200×630 thumb\n1200×800 full"]
         Markdown["HTML → Markdown\nWord count\nReading time"]
         Store["Store to R2\ncontent.html\nmetadata.json"]
         UpdateD1["UPDATE D1\nstatus: ready\n15+ columns"]
         FTS["FTS5 auto-index\nvia D1 triggers"]
         AutoTag["Apply auto-tag\nrules"]
 
-        Fetch --> SSRF2 --> JSCheck
-        JSCheck -->|"Yes"| Scrape --> Extract
-        JSCheck -->|"No"| Extract
-        Extract --> Images --> Markdown
+        Fetch --> SSRF2 --> Extract
+        Extract --> Thumbnail --> Images --> Markdown
         Markdown --> Store --> UpdateD1 --> FTS --> AutoTag
-        SSRF2 -.-> Screenshots -.-> Store
     end
 
     subgraph TTS["3 · TTS (if listen_later)"]
@@ -153,9 +146,8 @@ flowchart LR
     classDef decision fill:#fef3c7,stroke:#d97706,stroke-width:2px
 
     class POST,Validate,Insert,Enqueue save
-    class Fetch,SSRF2,Scrape,Extract,Images,Screenshots,Markdown,Store,UpdateD1,FTS,AutoTag process
+    class Fetch,SSRF2,Extract,Thumbnail,Images,Markdown,Store,UpdateD1,FTS,AutoTag process
     class EnqTTS,StripMD,Chunk,AICall,Concat,StoreAudio,AudioReady tts
-    class JSCheck decision
 ```
 
 ## Authentication Flow
@@ -300,7 +292,7 @@ flowchart LR
 
     subgraph R2["R2 · Object Storage"]
         direction TB
-        R2Layout["articles/{id}/\n├── content.html\n├── metadata.json\n├── thumbnail.webp\n├── original.webp\n├── audio.mp3\n├── audio-timing.json\n├── raw.html\n└── images/{hash}.webp"]
+        R2Layout["articles/{id}/\n├── content.html\n├── metadata.json\n├── thumbnail.webp\n├── audio.mp3\n├── audio-timing.json\n├── raw.html\n└── images/{hash}.webp"]
     end
 
     subgraph KVStore["KV · Sessions"]

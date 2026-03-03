@@ -24,9 +24,7 @@ from tests.conftest import (
     MockQueue,
     MockR2,
     TrackingD1,
-    _browser_env,
     _make_mock_http_fetch,
-    _noop_screenshot,
     make_test_helpers,
 )
 
@@ -361,14 +359,13 @@ class TestMetadataJsonEnhanced:
         """metadata.json includes a sha256 content_hash field."""
         db = TrackingD1()
         r2 = MockR2()
-        env = _browser_env(MockEnv(db=db, content=r2))
+        env = MockEnv(db=db, content=r2)
 
         mock_client = _make_mock_http_fetch()
 
         with (
             patch("articles.processing.http_fetch", mock_client),
             patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
 
@@ -385,14 +382,13 @@ class TestMetadataJsonEnhanced:
         """metadata.json includes extraction_method field set to 'bs4'."""
         db = TrackingD1()
         r2 = MockR2()
-        env = _browser_env(MockEnv(db=db, content=r2))
+        env = MockEnv(db=db, content=r2)
 
         mock_client = _make_mock_http_fetch()
 
         with (
             patch("articles.processing.http_fetch", mock_client),
             patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
 
@@ -407,14 +403,13 @@ class TestMetadataJsonEnhanced:
         """metadata.json includes an archived_at timestamp."""
         db = TrackingD1()
         r2 = MockR2()
-        env = _browser_env(MockEnv(db=db, content=r2))
+        env = MockEnv(db=db, content=r2)
 
         mock_client = _make_mock_http_fetch()
 
         with (
             patch("articles.processing.http_fetch", mock_client),
             patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
 
@@ -431,14 +426,13 @@ class TestMetadataJsonEnhanced:
         """metadata.json contains all required provenance fields."""
         db = TrackingD1()
         r2 = MockR2()
-        env = _browser_env(MockEnv(db=db, content=r2))
+        env = MockEnv(db=db, content=r2)
 
         mock_client = _make_mock_http_fetch()
 
         with (
             patch("articles.processing.http_fetch", mock_client),
             patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
 

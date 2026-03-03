@@ -201,10 +201,8 @@ The full pipeline from URL save to content ready, executed by the queue consumer
 | Check pre-supplied content | Check R2 for `raw.html` (bookmarklet) | R2 | Skip fetch if found |
 | Fetch page | `_fetch_page(url)` with 30s timeout, 10 MB limit, content-type validation | HTTP | HttpError, TimeoutError |
 | SSRF check | Post-redirect SSRF check on final URL hostname | — | ValueError if private |
-| JS-heavy detection | `_is_js_heavy(html)` → `scrape()` via Browser Rendering REST API | HTTP | Non-fatal catch |
 | URL extraction | `extract_canonical_url(html)` + `extract_domain(final_url)` | — | — |
-| Thumbnail | Screenshot (1200x630) via Browser Rendering | HTTP, R2 | Non-fatal catch |
-| Full screenshot | Screenshot (1200x800, full_page=True) via Browser Rendering | HTTP, R2 | Non-fatal catch |
+| Thumbnail | Extract og:image URL, download image | HTTP, R2 | Non-fatal catch |
 | Content extraction | Readability Service Binding, then BS4 fallback | Service Binding | Fallback on any error |
 | Image processing | `download_images()` + `store_images()` — WebP conversion, SSRF-checked | HTTP, R2 | Per-image catch |
 | Image path rewrite | `rewrite_image_paths()` to `/api/articles/{id}/images/{hash}.ext` | — | — |
@@ -223,10 +221,6 @@ HttpError (status >= 500)         → transient → message.retry()
 HttpError (status < 500)          → permanent → status='failed', message.ack()
 All other exceptions              → permanent → status='failed', message.ack()
 ```
-
-### JS-Heavy Heuristic
-
-`_is_js_heavy(html)`: Parse HTML with BeautifulSoup, remove `<script>`, `<style>`, `<noscript>` tags, extract plain text. If `len(text) < 500` characters, the page likely relies on JavaScript rendering and needs Browser Rendering's `scrape()` endpoint.
 
 ---
 
@@ -263,47 +257,7 @@ Used when the Readability binding fails or is unavailable (e.g., `eval()` blocke
 
 ---
 
-## 7. Browser Rendering
-
-**File:** `src/articles/browser_rendering.py`
-
-Uses the Cloudflare Browser Rendering **REST API** (not the Puppeteer binding) for screenshots and JS-heavy page scraping.
-
-### API Endpoint
-
-```
-https://api.cloudflare.com/client/v4/accounts/{account_id}/browser-rendering
-```
-
-Authenticated via `CF_API_TOKEN` in the `Authorization: Bearer` header. Requires `CF_ACCOUNT_ID` and `CF_API_TOKEN` to be set in env vars.
-
-### Screenshot
-
-```python
-async def screenshot(url, account_id, api_token, *,
-                     viewport_width=1200, viewport_height=630,
-                     full_page=False) -> bytes
-```
-
-POST to `/screenshot` with JSON body. Two uses in the processing pipeline:
-- **Thumbnail:** 1200x630 viewport, above-the-fold capture → stored as `thumbnail.webp`
-- **Full-page archival:** 1200x800 viewport, `full_page=True` → stored as `original.webp`
-
-### Scrape
-
-```python
-async def scrape(url, account_id, api_token) -> str
-```
-
-POST to `/scrape`. Returns the fully-rendered DOM HTML after JavaScript execution. Triggered when `_is_js_heavy(html)` detects less than 500 characters of body text in the initial HTTP fetch.
-
-### Error Handling
-
-Both functions raise `BrowserRenderingError` on non-200 status. In the processing pipeline, all Browser Rendering calls are wrapped in non-fatal try/except — failures fall back to the original HTTP-fetched HTML or simply skip screenshots.
-
----
-
-## 8. Text-to-Speech
+## 7. Text-to-Speech
 
 **File:** `src/tts/processing.py`
 
@@ -339,7 +293,7 @@ Configurable via the `TTS_MODEL` env var (default: `melotts`). Supported values:
 
 ---
 
-## 9. Search
+## 8. Search
 
 **File:** `src/search/routes.py`
 
@@ -374,7 +328,7 @@ LIMIT ? OFFSET ?
 
 ---
 
-## 10. Tags & Auto-Tagging
+## 9. Tags & Auto-Tagging
 
 **Files:** `src/tags/routes.py`, `src/tags/rules.py`
 
@@ -408,7 +362,7 @@ Pattern max length: 500 characters. Rule uniqueness: `(tag_id, match_type, patte
 
 ---
 
-## 11. Queue System
+## 10. Queue System
 
 **Binding:** `ARTICLE_QUEUE` (Cloudflare Queues)
 
@@ -436,7 +390,7 @@ Each queue message gets its own WideEvent with `pipeline="queue"`. The event cap
 
 ---
 
-## 12. Database
+## 11. Database
 
 **Binding:** `DB` (Cloudflare D1, SQLite)
 
@@ -537,7 +491,7 @@ All D1 bind parameters go through `d1_null()` which converts Python `None` to JS
 
 ---
 
-## 13. Object Storage
+## 12. Object Storage
 
 **Binding:** `CONTENT` (Cloudflare R2)
 
@@ -549,8 +503,7 @@ All keys follow the pattern `articles/{article_id}/{suffix}`:
 |-----|---------|------------|-------|
 | `articles/{id}/content.html` | Cleaned article HTML | text/html | max-age=86400 |
 | `articles/{id}/metadata.json` | Processing metadata | application/json | — |
-| `articles/{id}/thumbnail.webp` | Above-the-fold screenshot | image/webp | max-age=86400 |
-| `articles/{id}/original.webp` | Full-page screenshot | image/webp | max-age=86400 |
+| `articles/{id}/thumbnail.webp` | og:image thumbnail | image/webp | max-age=86400 |
 | `articles/{id}/audio.mp3` | TTS audio | audio/mpeg | max-age=86400, immutable |
 | `articles/{id}/audio-timing.json` | Sentence timing map | application/json | max-age=86400, immutable |
 | `articles/{id}/raw.html` | Bookmarklet pre-supplied HTML | — | Internal only |
@@ -570,7 +523,7 @@ Image keys are content-addressed: `articles/{id}/images/{sha256(original_url)[:1
 
 ---
 
-## 14. Observability
+## 13. Observability
 
 **File:** `src/wide_event.py`
 
@@ -615,7 +568,7 @@ The outermost middleware in the FastAPI stack. Wraps each request:
 
 ---
 
-## 15. Security
+## 14. Security
 
 ### SSRF Protection
 
@@ -694,7 +647,7 @@ HSTS is conditional on `SITE_URL` starting with `https://`.
 
 ---
 
-## 16. Statistics & Export
+## 15. Statistics & Export
 
 **File:** `src/stats/routes.py`, `src/articles/export.py`
 
@@ -734,7 +687,7 @@ Two queries for the last 12 months — saved articles by `created_at` month and 
 
 ---
 
-## 17. Frontend
+## 16. Frontend
 
 **Directory:** `frontend/src/`
 
@@ -798,7 +751,7 @@ Global: ? (help overlay).
 
 ---
 
-## 18. Service Worker & Offline
+## 17. Service Worker & Offline
 
 **File:** `frontend/public/sw.js` — vanilla JS, no build step.
 
@@ -857,7 +810,7 @@ Offline metadata tracks cached articles: `{articleId: {hasContent, hasAudio, acc
 
 ---
 
-## 19. URL Health Checks
+## 18. URL Health Checks
 
 **File:** `src/articles/health.py`
 
@@ -877,7 +830,7 @@ After classification, updates D1: `original_status`, `last_checked_at`, `updated
 
 ---
 
-## 20. Deployment
+## 19. Deployment
 
 ### Configuration
 

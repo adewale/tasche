@@ -15,10 +15,8 @@ from tests.conftest import (
     MockR2,
     MockReadability,
     TrackingD1,
-    _browser_env,
     _make_mock_http_fetch,
     _make_mock_response,
-    _noop_screenshot,
     parse_update_params,
 )
 
@@ -32,14 +30,13 @@ class TestProcessArticleHappyPath:
         """On successful processing, article status is updated to 'ready'."""
         db = TrackingD1()
         r2 = MockR2()
-        env = _browser_env(MockEnv(db=db, content=r2))
+        env = MockEnv(db=db, content=r2)
 
         mock_client = _make_mock_http_fetch()
 
         with (
             patch("articles.processing.http_fetch", mock_client),
             patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
 
@@ -59,14 +56,13 @@ class TestProcessArticleHappyPath:
         """content.html is stored in R2 under the correct key."""
         db = TrackingD1()
         r2 = MockR2()
-        env = _browser_env(MockEnv(db=db, content=r2))
+        env = MockEnv(db=db, content=r2)
 
         mock_client = _make_mock_http_fetch()
 
         with (
             patch("articles.processing.http_fetch", mock_client),
             patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
 
@@ -78,14 +74,13 @@ class TestProcessArticleHappyPath:
         """Markdown is stored only in D1, not in R2."""
         db = TrackingD1()
         r2 = MockR2()
-        env = _browser_env(MockEnv(db=db, content=r2))
+        env = MockEnv(db=db, content=r2)
 
         mock_client = _make_mock_http_fetch()
 
         with (
             patch("articles.processing.http_fetch", mock_client),
             patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
 
@@ -97,14 +92,13 @@ class TestProcessArticleHappyPath:
         """metadata.json is stored in R2 with correct article metadata."""
         db = TrackingD1()
         r2 = MockR2()
-        env = _browser_env(MockEnv(db=db, content=r2))
+        env = MockEnv(db=db, content=r2)
 
         mock_client = _make_mock_http_fetch()
 
         with (
             patch("articles.processing.http_fetch", mock_client),
             patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
 
@@ -117,147 +111,6 @@ class TestProcessArticleHappyPath:
         assert metadata["original_url"] == "https://example.com/article"
         assert "word_count" in metadata
         assert "reading_time_minutes" in metadata
-
-
-# =========================================================================
-# test_process_article — full-page screenshot
-# =========================================================================
-
-
-class TestProcessArticleScreenshot:
-    async def test_captures_full_page_screenshot_when_browser_rendering_available(
-        self,
-    ) -> None:
-        """When CF_ACCOUNT_ID and CF_API_TOKEN are set, a full-page screenshot is stored."""
-        db = TrackingD1()
-        r2 = MockR2()
-        env = MockEnv(db=db, content=r2)
-        env.CF_ACCOUNT_ID = "test-account"
-        env.CF_API_TOKEN = "test-token"
-
-        mock_client = _make_mock_http_fetch()
-        # Mock the screenshot function to return fake image data
-        fake_thumb = b"THUMB_DATA"
-        fake_fullpage = b"FULLPAGE_DATA"
-        call_count = {"n": 0}
-
-        async def _mock_screenshot(url, account_id, api_token, **kwargs):
-            call_count["n"] += 1
-            if kwargs.get("full_page"):
-                return fake_fullpage
-            return fake_thumb
-
-        with (
-            patch("articles.processing.http_fetch", mock_client),
-            patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_mock_screenshot),
-        ):
-            from articles.processing import process_article
-
-            await process_article("art_ss", "https://example.com/article", env)
-
-        # Verify both screenshots were stored in R2
-        assert "articles/art_ss/thumbnail.webp" in r2._store
-        assert r2._store["articles/art_ss/thumbnail.webp"] == fake_thumb
-        assert "articles/art_ss/original.webp" in r2._store
-        assert r2._store["articles/art_ss/original.webp"] == fake_fullpage
-
-    async def test_original_key_in_d1_update(self) -> None:
-        """The final D1 UPDATE includes original_key field."""
-        db = TrackingD1()
-        r2 = MockR2()
-        env = MockEnv(db=db, content=r2)
-        env.CF_ACCOUNT_ID = "test-account"
-        env.CF_API_TOKEN = "test-token"
-
-        mock_client = _make_mock_http_fetch()
-
-        async def _mock_screenshot(url, account_id, api_token, **kwargs):
-            return b"SCREENSHOT_DATA"
-
-        with (
-            patch("articles.processing.http_fetch", mock_client),
-            patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_mock_screenshot),
-        ):
-            from articles.processing import process_article
-
-            await process_article("art_okf", "https://example.com/article", env)
-
-        # Find the big UPDATE statement
-        update_stmts = [
-            (sql, params)
-            for sql, params in db.executed
-            if sql.strip().startswith("UPDATE") and "title" in sql
-        ]
-        assert len(update_stmts) >= 1
-        sql, params = update_stmts[-1]
-        assert "original_key" in sql
-        assert "articles/art_okf/original.webp" in params
-
-    async def test_succeeds_without_browser_rendering_config(self) -> None:
-        """Without CF_ACCOUNT_ID/CF_API_TOKEN, processing still succeeds
-        (Browser Rendering is optional — screenshots are skipped)."""
-        db = TrackingD1()
-        r2 = MockR2()
-        env = MockEnv(db=db, content=r2)
-        # No CF_ACCOUNT_ID or CF_API_TOKEN set
-
-        mock_client = _make_mock_http_fetch()
-
-        with (
-            patch("articles.processing.http_fetch", mock_client),
-            patch("articles.images.http_fetch", mock_client),
-        ):
-            from articles.processing import process_article
-
-            await process_article("art_noss", "https://example.com/article", env)
-
-        # Article should be marked as 'ready' (not failed)
-        ready_updates = [
-            (sql, params)
-            for sql, params in db.executed
-            if "status" in sql and "ready" in str(params)
-        ]
-        assert len(ready_updates) >= 1
-
-    async def test_full_page_screenshot_failure_non_fatal(self) -> None:
-        """If full-page screenshot fails, processing still succeeds."""
-        db = TrackingD1()
-        r2 = MockR2()
-        env = MockEnv(db=db, content=r2)
-        env.CF_ACCOUNT_ID = "test-account"
-        env.CF_API_TOKEN = "test-token"
-
-        mock_client = _make_mock_http_fetch()
-
-        from articles.browser_rendering import BrowserRenderingError
-
-        async def _mock_screenshot(url, account_id, api_token, **kwargs):
-            if kwargs.get("full_page"):
-                raise BrowserRenderingError("Timeout on full-page")
-            return b"THUMB_DATA"
-
-        with (
-            patch("articles.processing.http_fetch", mock_client),
-            patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_mock_screenshot),
-        ):
-            from articles.processing import process_article
-
-            await process_article("art_sserr", "https://example.com/article", env)
-
-        # Thumbnail was stored, but original was not
-        assert "articles/art_sserr/thumbnail.webp" in r2._store
-        assert "articles/art_sserr/original.webp" not in r2._store
-
-        # Article should still be 'ready'
-        ready_updates = [
-            (sql, params)
-            for sql, params in db.executed
-            if "status" in sql and "ready" in str(params) and "title" in sql
-        ]
-        assert len(ready_updates) >= 1
 
 
 # =========================================================================
@@ -325,14 +178,13 @@ class TestProcessArticleD1Updates:
         """The final D1 UPDATE includes all required metadata fields."""
         db = TrackingD1()
         r2 = MockR2()
-        env = _browser_env(MockEnv(db=db, content=r2))
+        env = MockEnv(db=db, content=r2)
 
         mock_client = _make_mock_http_fetch()
 
         with (
             patch("articles.processing.http_fetch", mock_client),
             patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
 
@@ -371,14 +223,13 @@ class TestProcessArticleD1Updates:
         """The first D1 operation sets status to 'processing'."""
         db = TrackingD1()
         r2 = MockR2()
-        env = _browser_env(MockEnv(db=db, content=r2))
+        env = MockEnv(db=db, content=r2)
 
         mock_client = _make_mock_http_fetch()
 
         with (
             patch("articles.processing.http_fetch", mock_client),
             patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
 
@@ -401,7 +252,7 @@ class TestProcessArticleContentValidation:
         """Non-HTML response (e.g. application/json) results in 'failed' status."""
         db = TrackingD1()
         r2 = MockR2()
-        env = _browser_env(MockEnv(db=db, content=r2))
+        env = MockEnv(db=db, content=r2)
 
         json_response = _make_mock_response(
             headers={"content-type": "application/json"},
@@ -411,7 +262,6 @@ class TestProcessArticleContentValidation:
         with (
             patch("articles.processing.http_fetch", mock_client),
             patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
 
@@ -431,7 +281,7 @@ class TestProcessArticleContentValidation:
         """Oversized response (Content-Length > 10MB) results in 'failed' status."""
         db = TrackingD1()
         r2 = MockR2()
-        env = _browser_env(MockEnv(db=db, content=r2))
+        env = MockEnv(db=db, content=r2)
 
         oversized_response = _make_mock_response(
             headers={
@@ -444,7 +294,6 @@ class TestProcessArticleContentValidation:
         with (
             patch("articles.processing.http_fetch", mock_client),
             patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
 
@@ -476,14 +325,13 @@ class TestProcessArticleImageRewriting:
         """Image paths in stored HTML should be /api/articles/{id}/images/... not bare R2 keys."""
         db = TrackingD1()
         r2 = MockR2()
-        env = _browser_env(MockEnv(db=db, content=r2))
+        env = MockEnv(db=db, content=r2)
 
         mock_client = _make_mock_http_fetch()
 
         with (
             patch("articles.processing.http_fetch", mock_client),
             patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
 
@@ -511,14 +359,13 @@ class TestProcessArticleImageRewriting:
         """After processing, canonical_url from HTML is stored in the D1 UPDATE."""
         db = TrackingD1()
         r2 = MockR2()
-        env = _browser_env(MockEnv(db=db, content=r2))
+        env = MockEnv(db=db, content=r2)
 
         mock_client = _make_mock_http_fetch()
 
         with (
             patch("articles.processing.http_fetch", mock_client),
             patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
 
@@ -578,14 +425,13 @@ class TestProcessArticleImageRewriting:
 
         db = TrackingD1()
         r2 = MockR2()
-        env = _browser_env(MockEnv(db=db, content=r2))
+        env = MockEnv(db=db, content=r2)
 
         mock_client = _make_mock_http_fetch()
 
         with (
             patch("articles.processing.http_fetch", mock_client),
             patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
 
@@ -614,7 +460,7 @@ class TestProcessArticleImageRewriting:
         """Processing should handle pages where readability extracts minimal content."""
         db = TrackingD1()
         r2 = MockR2()
-        env = _browser_env(MockEnv(db=db, content=r2))
+        env = MockEnv(db=db, content=r2)
 
         # Page with very little article content but enough body text to pass JS-heavy check
         minimal_html = """
@@ -638,7 +484,6 @@ class TestProcessArticleImageRewriting:
         with (
             patch("articles.processing.http_fetch", mock_client),
             patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
 
@@ -669,14 +514,13 @@ class TestProcessArticleUserTitle:
 
         db = TrackingD1(result_fn=result_fn)
         r2 = MockR2()
-        env = _browser_env(MockEnv(db=db, content=r2))
+        env = MockEnv(db=db, content=r2)
 
         mock_client = _make_mock_http_fetch()
 
         with (
             patch("articles.processing.http_fetch", mock_client),
             patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
 
@@ -701,7 +545,7 @@ class TestProcessArticleWithNoCanonical:
         """When the HTML has no canonical URL, canonical_url should equal final_url."""
         db = TrackingD1()
         r2 = MockR2()
-        env = _browser_env(MockEnv(db=db, content=r2))
+        env = MockEnv(db=db, content=r2)
 
         html_no_canonical = """
         <html>
@@ -729,7 +573,6 @@ class TestProcessArticleWithNoCanonical:
         with (
             patch("articles.processing.http_fetch", mock_client),
             patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
 
@@ -758,7 +601,7 @@ class TestProcessArticleRelativeImages:
         """Images with relative URLs should not crash processing."""
         db = TrackingD1()
         r2 = MockR2()
-        env = _browser_env(MockEnv(db=db, content=r2))
+        env = MockEnv(db=db, content=r2)
 
         html_with_relative_imgs = """
         <html>
@@ -802,7 +645,6 @@ class TestProcessArticleRelativeImages:
         with (
             patch("articles.processing.http_fetch", mock_fetch),
             patch("articles.images.http_fetch", mock_fetch),
-            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
 
@@ -827,14 +669,13 @@ class TestProcessArticleSQLParamCounts:
 
         db = TrackingD1()
         r2 = MockR2()
-        env = _browser_env(MockEnv(db=db, content=r2))
+        env = MockEnv(db=db, content=r2)
 
         mock_client = _make_mock_http_fetch()
 
         with (
             patch("articles.processing.http_fetch", mock_client),
             patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
 
@@ -856,7 +697,7 @@ class TestProcessArticleSSRF:
         """Processing should fail if the page redirects to a private IP."""
         db = TrackingD1()
         r2 = MockR2()
-        env = _browser_env(MockEnv(db=db, content=r2))
+        env = MockEnv(db=db, content=r2)
 
         # Page response that claims to redirect to 127.0.0.1
         redirect_response = _make_mock_response(
@@ -867,7 +708,6 @@ class TestProcessArticleSSRF:
         with (
             patch("articles.processing.http_fetch", mock_client),
             patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
 
@@ -889,14 +729,13 @@ class TestProcessArticleExactAssertions:
         """Verify the final UPDATE sets status='ready' at the correct param index."""
         db = TrackingD1()
         r2 = MockR2()
-        env = _browser_env(MockEnv(db=db, content=r2))
+        env = MockEnv(db=db, content=r2)
 
         mock_client = _make_mock_http_fetch()
 
         with (
             patch("articles.processing.http_fetch", mock_client),
             patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
 
@@ -961,14 +800,13 @@ class TestProcessArticleReadability:
                 "byline": "Readability Author",
             }
         )
-        env = _browser_env(MockEnv(db=db, content=r2, readability=readability))
+        env = MockEnv(db=db, content=r2, readability=readability)
 
         mock_client = _make_mock_http_fetch()
 
         with (
             patch("articles.processing.http_fetch", mock_client),
             patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
 
@@ -988,14 +826,13 @@ class TestProcessArticleReadability:
         """When env.READABILITY is None, BS4 extractor is used."""
         db = TrackingD1()
         r2 = MockR2()
-        env = _browser_env(MockEnv(db=db, content=r2))  # No readability
+        env = MockEnv(db=db, content=r2)  # No readability
 
         mock_client = _make_mock_http_fetch()
 
         with (
             patch("articles.processing.http_fetch", mock_client),
             patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
 
@@ -1013,14 +850,13 @@ class TestProcessArticleReadability:
         r2 = MockR2()
         readability = MockReadability()
         readability.parse = AsyncMock(side_effect=RuntimeError("Service unavailable"))
-        env = _browser_env(MockEnv(db=db, content=r2, readability=readability))
+        env = MockEnv(db=db, content=r2, readability=readability)
 
         mock_client = _make_mock_http_fetch()
 
         with (
             patch("articles.processing.http_fetch", mock_client),
             patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
 
@@ -1052,14 +888,13 @@ class TestProcessArticleReadability:
                 "byline": None,
             }
         )
-        env = _browser_env(MockEnv(db=db, content=r2, readability=readability))
+        env = MockEnv(db=db, content=r2, readability=readability)
 
         mock_client = _make_mock_http_fetch()
 
         with (
             patch("articles.processing.http_fetch", mock_client),
             patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
 
@@ -1091,14 +926,13 @@ class TestProcessArticleAutoTTS:
         db = TrackingD1(result_fn=result_fn)
         r2 = MockR2()
         queue = MockQueue()
-        env = _browser_env(MockEnv(db=db, content=r2, article_queue=queue))
+        env = MockEnv(db=db, content=r2, article_queue=queue)
 
         mock_client = _make_mock_http_fetch()
 
         with (
             patch("articles.processing.http_fetch", mock_client),
             patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
 
@@ -1121,14 +955,13 @@ class TestProcessArticleAutoTTS:
         db = TrackingD1(result_fn=result_fn)
         r2 = MockR2()
         queue = MockQueue()
-        env = _browser_env(MockEnv(db=db, content=r2, article_queue=queue))
+        env = MockEnv(db=db, content=r2, article_queue=queue)
 
         mock_client = _make_mock_http_fetch()
 
         with (
             patch("articles.processing.http_fetch", mock_client),
             patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
 
@@ -1149,7 +982,7 @@ class TestProcessArticlePreSuppliedContent:
         """When raw.html exists in R2, processing skips the HTTP fetch."""
         db = TrackingD1()
         r2 = MockR2()
-        env = _browser_env(MockEnv(db=db, content=r2))
+        env = MockEnv(db=db, content=r2)
 
         # Pre-store raw HTML in R2 (as the bookmarklet would)
         pre_supplied_html = """
@@ -1189,7 +1022,6 @@ class TestProcessArticlePreSuppliedContent:
         with (
             patch("articles.processing.http_fetch", mock_fetch),
             patch("articles.images.http_fetch", mock_fetch),
-            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
 
@@ -1217,7 +1049,7 @@ class TestProcessArticlePreSuppliedContent:
         """Pre-supplied HTML is processed through the extraction pipeline."""
         db = TrackingD1()
         r2 = MockR2()
-        env = _browser_env(MockEnv(db=db, content=r2))
+        env = MockEnv(db=db, content=r2)
 
         pre_supplied_html = """
         <html>
@@ -1247,7 +1079,6 @@ class TestProcessArticlePreSuppliedContent:
         with (
             patch("articles.processing.http_fetch", mock_client),
             patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
 
@@ -1271,7 +1102,7 @@ class TestProcessArticlePreSuppliedContent:
         """When no raw.html exists in R2, the normal HTTP fetch path is used."""
         db = TrackingD1()
         r2 = MockR2()
-        env = _browser_env(MockEnv(db=db, content=r2))
+        env = MockEnv(db=db, content=r2)
 
         # No raw.html pre-stored in R2
         mock_client = _make_mock_http_fetch()
@@ -1279,7 +1110,6 @@ class TestProcessArticlePreSuppliedContent:
         with (
             patch("articles.processing.http_fetch", mock_client),
             patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
 
@@ -1325,14 +1155,13 @@ class TestProcessArticleContentParity:
             db = TrackingD1(result_fn=make_result_fn(audio_status))
             r2 = MockR2()
             queue = MockQueue()
-            env = _browser_env(MockEnv(db=db, content=r2, article_queue=queue))
+            env = MockEnv(db=db, content=r2, article_queue=queue)
 
             mock_client = _make_mock_http_fetch()
 
             with (
                 patch("articles.processing.http_fetch", mock_client),
                 patch("articles.images.http_fetch", mock_client),
-                patch("articles.processing.screenshot", side_effect=_noop_screenshot),
             ):
                 from articles.processing import process_article
 
@@ -1360,14 +1189,13 @@ class TestProcessArticleContentParity:
             db = TrackingD1(result_fn=make_result_fn(audio_status))
             r2 = MockR2()
             queue = MockQueue()
-            env = _browser_env(MockEnv(db=db, content=r2, article_queue=queue))
+            env = MockEnv(db=db, content=r2, article_queue=queue)
 
             mock_client = _make_mock_http_fetch()
 
             with (
                 patch("articles.processing.http_fetch", mock_client),
                 patch("articles.images.http_fetch", mock_client),
-                patch("articles.processing.screenshot", side_effect=_noop_screenshot),
             ):
                 from articles.processing import process_article
 
@@ -1400,14 +1228,13 @@ class TestProcessArticleContentParity:
             db = TrackingD1(result_fn=make_result_fn(audio_status))
             r2 = MockR2()
             queue = MockQueue()
-            env = _browser_env(MockEnv(db=db, content=r2, article_queue=queue))
+            env = MockEnv(db=db, content=r2, article_queue=queue)
 
             mock_client = _make_mock_http_fetch()
 
             with (
                 patch("articles.processing.http_fetch", mock_client),
                 patch("articles.images.http_fetch", mock_client),
-                patch("articles.processing.screenshot", side_effect=_noop_screenshot),
             ):
                 from articles.processing import process_article
 
@@ -1431,14 +1258,13 @@ class TestProcessArticleContentParity:
         db = TrackingD1(result_fn=result_fn)
         r2 = MockR2()
         queue = MockQueue()
-        env = _browser_env(MockEnv(db=db, content=r2, article_queue=queue))
+        env = MockEnv(db=db, content=r2, article_queue=queue)
 
         mock_client = _make_mock_http_fetch()
 
         with (
             patch("articles.processing.http_fetch", mock_client),
             patch("articles.images.http_fetch", mock_client),
-            patch("articles.processing.screenshot", side_effect=_noop_screenshot),
         ):
             from articles.processing import process_article
 
@@ -1460,3 +1286,86 @@ class TestProcessArticleContentParity:
         tts_msgs = [m for m in queue.messages if m.get("type") == "tts_generation"]
         assert len(tts_msgs) == 1
         assert tts_msgs[0]["article_id"] == "art_both"
+
+
+# =========================================================================
+# test_process_article — og:image thumbnail extraction
+# =========================================================================
+
+
+class TestOgImageThumbnail:
+    async def test_extracts_og_image_as_thumbnail(self) -> None:
+        """Processing extracts og:image and stores it as thumbnail."""
+        og_html = """
+        <html>
+        <head>
+            <meta property="og:image" content="https://cdn.example.com/hero.jpg">
+            <title>Test Article</title>
+        </head>
+        <body>
+            <article>
+                <h1>Test Article</h1>
+                <p>Content paragraph with enough text for extraction.</p>
+                <p>Second paragraph to pad the content further.</p>
+                <p>Third paragraph for good measure in tests.</p>
+            </article>
+        </body>
+        </html>
+        """
+        db = TrackingD1()
+        r2 = MockR2()
+        env = MockEnv(db=db, content=r2)
+
+        call_count = 0
+
+        async def _mock_fetch(url, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # Page fetch
+                return _make_mock_response(text=og_html)
+            if "hero.jpg" in url:
+                # og:image fetch
+                return _make_mock_response(
+                    content=b"FAKE_THUMBNAIL_IMAGE",
+                    headers={"content-type": "image/jpeg"},
+                )
+            # Image downloads
+            return _make_mock_response(
+                content=b"fake-image-bytes",
+                headers={"content-type": "image/jpeg"},
+            )
+
+        mock_client = AsyncMock(side_effect=_mock_fetch)
+
+        with (
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
+        ):
+            from articles.processing import process_article
+
+            await process_article("art_og", "https://example.com/article", env)
+
+        # Verify thumbnail was stored in R2
+        thumbnail_key = "articles/art_og/thumbnail.webp"
+        assert thumbnail_key in r2._store
+        assert r2._store[thumbnail_key] == b"FAKE_THUMBNAIL_IMAGE"
+
+    async def test_skips_thumbnail_on_no_og_image(self) -> None:
+        """Processing sets thumbnail_key to None when no og:image is present."""
+        db = TrackingD1()
+        r2 = MockR2()
+        env = MockEnv(db=db, content=r2)
+
+        mock_client = _make_mock_http_fetch()
+
+        with (
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
+        ):
+            from articles.processing import process_article
+
+            await process_article("art_no_og", "https://example.com/article", env)
+
+        # Verify no thumbnail was stored
+        assert "articles/art_no_og/thumbnail.webp" not in r2._store

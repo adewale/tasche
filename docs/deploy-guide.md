@@ -44,8 +44,6 @@ These are the only manual steps, done in the Cloudflare dashboard under **Worker
 
 | Secret | Purpose | Fallback without it |
 |--------|---------|---------------------|
-| `CF_ACCOUNT_ID` | Browser Rendering for JS-heavy pages | Plain HTTP fetch |
-| `CF_API_TOKEN` | Browser Rendering API access | Plain HTTP fetch |
 | READABILITY service binding | Mozilla Readability extraction | BeautifulSoup (~70% fidelity) |
 
 ---
@@ -80,7 +78,6 @@ After deploy, visiting the app shows a setup checklist (Login view calls `/api/h
 | Client secret set | `GITHUB_CLIENT_SECRET` present | Yes |
 | Email whitelist configured | `ALLOWED_EMAILS` non-empty | Yes |
 | Readability Worker deployed | `READABILITY` binding present | No |
-| Browser Rendering enabled | `CF_ACCOUNT_ID` + `CF_API_TOKEN` present | No |
 
 Once all required items are green, the user reloads and sees the sign-in button.
 
@@ -116,13 +113,6 @@ Then add the service binding in the Cloudflare dashboard or `wrangler.jsonc`:
 ```jsonc
 "services": [{ "binding": "READABILITY", "service": "readability-worker", "entrypoint": "ReadabilityService" }]
 ```
-
-### Optional: Enable Browser Rendering (dashboard)
-
-Add two more secrets in the dashboard:
-
-- `CF_ACCOUNT_ID` — your Cloudflare account ID
-- `CF_API_TOKEN` — an API token with Browser Rendering permissions
 
 ---
 
