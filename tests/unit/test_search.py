@@ -447,7 +447,7 @@ class TestSearchSqlStructure:
         select_calls = [c for c in captured if "SELECT" in c["sql"]]
         sql = select_calls[0]["sql"]
         assert "INNER JOIN articles_fts ON articles.rowid = articles_fts.rowid" in sql
-        assert "ORDER BY articles_fts.rank" in sql
+        assert "ORDER BY bm25(articles_fts, 10.0, 5.0, 1.0)" in sql
 
     async def test_prefixes_columns_with_articles_table(self) -> None:
         """Search query prefixes all columns with 'articles.' to avoid ambiguity."""

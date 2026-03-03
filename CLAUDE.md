@@ -73,7 +73,7 @@ Wide events pattern: emit one JSON log line per request (not many small lines). 
 - **R2 keys:** `articles/{article_id}/{suffix}` (e.g., `content.html`, `metadata.json`, `audio.mp3`, `thumbnail.webp`). Helper: `articles.storage.article_key()`.
 - **Duplicate URL detection:** Checks `original_url`, `final_url`, AND `canonical_url`.
 - **Two tag routers:** `tags.routes.router` (CRUD at `/api/tags`) and `tags.routes.article_tags_router` (associations at `/api/articles/{id}/tags`).
-- **FTS5 search:** Always use `INNER JOIN articles_fts` with `ORDER BY articles_fts.rank` — never subquery.
+- **FTS5 search:** Always use `INNER JOIN articles_fts` with `ORDER BY bm25(articles_fts, 10.0, 5.0, 1.0)` (title 10×, excerpt 5×, content 1×) — never subquery.
 - **Queue dispatch:** `entry.py` routes queue messages by `body["type"]` to handlers in `QUEUE_HANDLERS` dict.
 - **JSON logging:** `print(json.dumps({...}))` — Workers Logs captures stdout.
 
