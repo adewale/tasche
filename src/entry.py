@@ -11,9 +11,14 @@ Queue messages are dispatched to the appropriate handler based on the
 from __future__ import annotations
 
 import json
+import re
 
 from wide_event import begin_event, current_event, emit_event
 from wrappers import SafeEnv, _to_py_safe
+
+# Audio path pattern — matched before ASGI routing so large R2 objects
+# are streamed directly without loading into Python memory.
+_AUDIO_PATH_RE = re.compile(r"^/api/articles/([A-Za-z0-9_-]+)/audio$")
 
 # ---------------------------------------------------------------------------
 # HAS_PYODIDE guard — allows this module to be imported during tests even
@@ -194,6 +199,11 @@ from tts.routes import router as tts_router  # noqa: E402
 
 app.include_router(tts_router, prefix="/api/articles", tags=["tts"])
 
+# Preferences router
+from preferences.routes import router as preferences_router  # noqa: E402
+
+app.include_router(preferences_router, prefix="/api/preferences", tags=["preferences"])
+
 # Stats router
 from stats.routes import router as stats_router  # noqa: E402
 
@@ -237,6 +247,7 @@ async def _handle_tts_generation(message_body: dict, env: object) -> None:
 
     article_id = message_body.get("article_id")
     user_id = message_body.get("user_id")
+    tts_voice = message_body.get("tts_voice")
 
     evt = current_event()
     if evt:
@@ -248,7 +259,7 @@ async def _handle_tts_generation(message_body: dict, env: object) -> None:
             evt.set("skip_reason", "missing article_id or user_id")
         return
 
-    await process_tts(article_id, env, user_id=user_id)
+    await process_tts(article_id, env, user_id=user_id, tts_voice=tts_voice)
 
 
 QUEUE_HANDLERS: dict[str, object] = {
@@ -275,12 +286,21 @@ class Default(WorkerEntrypoint):
         API routes (``/api/``) are handled by the FastAPI app via ASGI.
         All other requests are served from static assets (ASSETS binding),
         with a fallback to ``/index.html`` for SPA client-side routing.
+
+        Audio files bypass ASGI entirely — R2 objects (49 MB+ WAV) are
+        streamed directly as JS Responses to avoid loading into Python
+        memory across the Pyodide FFI boundary.
         """
         from js import URL  # type: ignore[import-not-found]
         from js import Request as JsRequest  # type: ignore[import-not-found]
 
         url = URL.new(request.url)
         path = url.pathname
+
+        # Audio streaming: bypass ASGI so large R2 bodies never enter Python
+        audio_match = _AUDIO_PATH_RE.match(path)
+        if audio_match:
+            return await self._serve_audio(request, audio_match.group(1))
 
         # API routes → FastAPI (wrap env so handlers get Safe* bindings)
         if path.startswith("/api/"):
@@ -296,6 +316,106 @@ class Default(WorkerEntrypoint):
         index_url = URL.new("/index.html", request.url)
         index_request = JsRequest.new(index_url, request.js_object)
         return await self.env.ASSETS.fetch(index_request)
+
+    async def _serve_audio(self, request: object, article_id: str) -> object:
+        """Stream audio from R2, bypassing ASGI.
+
+        Audio files can be 49 MB+ (uncompressed WAV from MeloTTS).
+        Loading them into Python memory through the Pyodide FFI boundary
+        (JS ReadableStream → Python bytes → ASGI Response → JS Response)
+        crashes the Worker.  This handler passes the R2 ReadableStream
+        directly to a JS Response — the audio data never enters Python.
+
+        Auth is checked via session cookie (same logic as
+        ``auth.dependencies.get_current_user``).  The FastAPI handler in
+        ``tts.routes`` still exists for unit tests (which run in CPython
+        via TestClient and never hit this code path).
+        """
+        import js  # type: ignore[import-not-found]
+
+        from auth.session import COOKIE_NAME, get_session
+
+        env = SafeEnv(self.env)
+
+        def _json_resp(detail: str, status: int) -> object:
+            h = js.Headers.new()
+            h.set("Content-Type", "application/json")
+            init = js.Object.new()
+            init.status = status
+            init.headers = h
+            return js.Response.new(json.dumps({"detail": detail}), init)
+
+        # --- Auth ---
+        disable_auth = getattr(self.env, "DISABLE_AUTH", None)
+        if str(disable_auth) == "true":
+            user_id = "dev"
+        else:
+            cookie_raw = request.headers.get("cookie")
+            cookie_header = str(cookie_raw) if cookie_raw else ""
+            session_id = None
+            for part in cookie_header.split(";"):
+                part = part.strip()
+                if part.startswith(COOKIE_NAME + "="):
+                    session_id = part[len(COOKIE_NAME) + 1 :]
+                    break
+
+            if not session_id:
+                return _json_resp("Not authenticated", 401)
+
+            user_data = await get_session(env.SESSIONS, session_id)
+            if user_data is None:
+                return _json_resp("Invalid or expired session", 401)
+
+            user_id = user_data.get("user_id")
+
+        # --- Article lookup ---
+        article = await (
+            env.DB.prepare(
+                "SELECT audio_status, audio_key FROM articles WHERE id = ? AND user_id = ?"
+            )
+            .bind(article_id, user_id)
+            .first()
+        )
+
+        if not article:
+            return _json_resp("Article not found", 404)
+
+        audio_status = article.get("audio_status")
+        if audio_status != "ready":
+            if audio_status in ("pending", "generating"):
+                return _json_resp("Audio is still being generated", 409)
+            return _json_resp("No audio available for this article", 404)
+
+        audio_key = article.get("audio_key")
+        if not audio_key:
+            return _json_resp("No audio available for this article", 404)
+
+        # --- R2 stream (raw binding — preserves JS ReadableStream) ---
+        r2_obj = await self.env.CONTENT.get(audio_key)
+        if r2_obj is None or type(r2_obj).__name__ in ("JsNull", "JsUndefined"):
+            return _json_resp("Audio file not found", 404)
+
+        if audio_key.endswith(".ogg"):
+            media_type = "audio/ogg"
+        elif audio_key.endswith(".wav"):
+            media_type = "audio/wav"
+        else:
+            media_type = "audio/mpeg"
+
+        h = js.Headers.new()
+        h.set("Content-Type", media_type)
+        h.set("Cache-Control", "public, max-age=86400, immutable")
+        r2_size = getattr(r2_obj, "size", None)
+        if r2_size is not None and type(r2_size).__name__ not in (
+            "JsNull",
+            "JsUndefined",
+        ):
+            h.set("Content-Length", str(int(r2_size)))
+
+        init = js.Object.new()
+        init.status = 200
+        init.headers = h
+        return js.Response.new(r2_obj.body, init)
 
     async def queue(self, batch: object, env: object = None, ctx: object = None) -> None:  # type: ignore[override]
         """Handle a batch of queue messages.

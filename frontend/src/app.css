@@ -2743,6 +2743,11 @@ body.has-audio-player {
   gap: 8px;
 }
 
+.voice-picker {
+  display: flex;
+  gap: 8px;
+}
+
 /* Reader status message (replaces inline color styles in Reader.jsx) */
 .reader-status-message {
   color: var(--text-muted);

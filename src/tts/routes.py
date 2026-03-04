@@ -62,6 +62,12 @@ async def listen_later(
     # Only enqueue if audio_status is NULL or 'failed'
     now = now_iso()
 
+    # Read user's voice preference
+    pref = await (
+        db.prepare("SELECT tts_voice FROM user_preferences WHERE user_id = ?").bind(user_id).first()
+    )
+    tts_voice = pref.get("tts_voice") if pref else "athena"
+
     # Update D1: set audio_status
     await (
         db.prepare(
@@ -80,6 +86,7 @@ async def listen_later(
             "type": "tts_generation",
             "article_id": article_id,
             "user_id": user_id,
+            "tts_voice": tts_voice,
         },
         article_id,
         status_field="audio_status",
@@ -97,7 +104,7 @@ async def get_audio(
 ) -> Response:
     """Stream the audio file for an article from R2.
 
-    Returns the audio as ``audio/mpeg`` via a ``StreamingResponse``.
+    Auto-detects the audio format (WAV or MP3) from magic bytes.
     Returns 404 if no audio is available for the article.
     """
     env = request.scope["env"]
@@ -142,9 +149,17 @@ async def get_audio(
     body = getattr(audio_obj, "body", audio_obj)
     audio_bytes = await consume_readable_stream(body)
 
+    # Detect format from magic bytes and serve with correct MIME type.
+    if audio_bytes[:4] == b"OggS":
+        media_type = "audio/ogg"
+    elif audio_bytes[:4] == b"RIFF":
+        media_type = "audio/wav"
+    else:
+        media_type = "audio/mpeg"
+
     return Response(
         content=audio_bytes,
-        media_type="audio/mpeg",
+        media_type=media_type,
         headers={
             "Cache-Control": "public, max-age=86400, immutable",
             "Content-Length": str(len(audio_bytes)),

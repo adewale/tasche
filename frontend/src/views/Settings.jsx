@@ -9,6 +9,8 @@ import {
   getCacheStats,
   triggerAutoPrecache,
   clearAllCaches,
+  getPreferences,
+  updatePreferences,
 } from '../api.js';
 import { getBookmarkletCode } from '../utils.js';
 import { IconBookmark } from '../components/Icons.jsx';
@@ -29,9 +31,16 @@ export function Settings() {
   const cacheStats = useSignal(null);
   const precaching = useSignal(false);
   const clearing = useSignal(false);
+  const ttsVoice = useSignal('athena');
+  const voiceLoading = useSignal(false);
 
   useEffect(function () {
     loadCacheStats();
+    getPreferences()
+      .then(function (prefs) {
+        ttsVoice.value = prefs.tts_voice || 'athena';
+      })
+      .catch(function () {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -141,6 +150,53 @@ export function Settings() {
               }}
             >
               {clearing.value ? 'Clearing...' : 'Clear cache & reload'}
+            </button>
+          </div>
+        </div>
+
+        <div class="mt-8">
+          <h3 class="section-title">Listen Later Voice</h3>
+          <p class="settings-detail">Choose the voice for text-to-speech audio generation.</p>
+          <div class="voice-picker">
+            <button
+              class={'btn ' + (ttsVoice.value === 'athena' ? 'btn-primary' : 'btn-secondary')}
+              disabled={voiceLoading.value}
+              onClick={function () {
+                if (ttsVoice.value === 'athena') return;
+                voiceLoading.value = true;
+                updatePreferences({ tts_voice: 'athena' })
+                  .then(function () {
+                    ttsVoice.value = 'athena';
+                  })
+                  .catch(function () {
+                    addToast('Failed to update voice preference', 'error');
+                  })
+                  .finally(function () {
+                    voiceLoading.value = false;
+                  });
+              }}
+            >
+              Athena (female)
+            </button>
+            <button
+              class={'btn ' + (ttsVoice.value === 'orion' ? 'btn-primary' : 'btn-secondary')}
+              disabled={voiceLoading.value}
+              onClick={function () {
+                if (ttsVoice.value === 'orion') return;
+                voiceLoading.value = true;
+                updatePreferences({ tts_voice: 'orion' })
+                  .then(function () {
+                    ttsVoice.value = 'orion';
+                  })
+                  .catch(function () {
+                    addToast('Failed to update voice preference', 'error');
+                  })
+                  .finally(function () {
+                    voiceLoading.value = false;
+                  });
+              }}
+            >
+              Orion (male)
             </button>
           </div>
         </div>

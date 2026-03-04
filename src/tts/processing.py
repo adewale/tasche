@@ -38,6 +38,14 @@ _TTS_MODELS = {
 }
 _DEFAULT_TTS_MODEL = "aura-2-en"
 
+# Deepgram aura-2 encoding parameters
+_DEEPGRAM_ENCODING = "opus"
+_DEEPGRAM_CONTAINER = "ogg"
+_DEEPGRAM_BIT_RATE = 24000  # 24 kbps — excellent for speech
+_DEEPGRAM_SAMPLE_RATE = 24000  # 24 kHz
+_DEEPGRAM_DEFAULT_VOICE = "athena"
+_COST_PER_1000_CHARS = 0.03
+
 
 def _resolve_tts_model(env: object) -> tuple[str, str]:
     """Return ``(model_id, model_key)`` from the ``TTS_MODEL`` env var.
@@ -323,7 +331,12 @@ def strip_markdown(text: str) -> str:
 
 
 async def process_tts(
-    article_id: str, env: object, *, user_id: str, raise_on_error: bool = False
+    article_id: str,
+    env: object,
+    *,
+    user_id: str,
+    tts_voice: str | None = None,
+    raise_on_error: bool = False,
 ) -> dict | None:
     """Process a TTS generation job for a single article.
 
@@ -398,15 +411,23 @@ async def process_tts(
 
         model_id, model_key = _resolve_tts_model(env)
         is_melotts = model_key == "melotts" or "melotts" in model_id
+        is_deepgram = not is_melotts and "deepgram" in model_id
+
+        voice = tts_voice or _DEEPGRAM_DEFAULT_VOICE
 
         evt = current_event()
         if evt:
             evt.set("tts_chunks", len(chunks))
             evt.set("tts_model", model_id)
+            evt.set("tts_voice", voice)
+            if is_deepgram:
+                evt.set("tts_encoding", _DEEPGRAM_ENCODING)
 
         audio_parts: list[bytes] = []
+        total_chars = 0
 
         for i, chunk in enumerate(chunks):
+            total_chars += len(chunk)
             if is_melotts:
                 result = await ai.run(model_id, {"prompt": chunk, "lang": "en"})
                 # MeloTTS returns {"audio": "<base64>"} — decode it
@@ -418,7 +439,18 @@ async def process_tts(
                 chunk_bytes = base64.b64decode(audio_b64) if audio_b64 else b""
             else:
                 # Deepgram Aura models return a ReadableStream
-                chunk_audio = await ai.run(model_id, {"text": chunk})
+                inputs = {"text": chunk}
+                if is_deepgram:
+                    inputs.update(
+                        {
+                            "speaker": voice,
+                            "encoding": _DEEPGRAM_ENCODING,
+                            "container": _DEEPGRAM_CONTAINER,
+                            "bit_rate": _DEEPGRAM_BIT_RATE,
+                            "sample_rate": _DEEPGRAM_SAMPLE_RATE,
+                        }
+                    )
+                chunk_audio = await ai.run(model_id, inputs)
                 chunk_bytes = await consume_readable_stream(chunk_audio)
 
             if chunk_bytes:
@@ -436,8 +468,13 @@ async def process_tts(
             evt.set("tts_total_audio_bytes", len(audio_data))
 
         # Step 5: Store audio in R2
-        # Detect actual format via magic bytes — some models return WAV despite docs claiming MP3.
-        ext = "wav" if audio_data[:4] == b"RIFF" else "mp3"
+        # Detect actual format via magic bytes
+        if audio_data[:4] == b"OggS":
+            ext = "ogg"
+        elif audio_data[:4] == b"RIFF":
+            ext = "wav"
+        else:
+            ext = "mp3"
         if ext == "wav":
             print(
                 json.dumps(
@@ -477,6 +514,14 @@ async def process_tts(
                     }
                 )
             )
+
+        # Cost tracking for Deepgram models
+        if is_deepgram:
+            estimated_cost = round((total_chars / 1000) * _COST_PER_1000_CHARS, 6)
+            evt = current_event()
+            if evt:
+                evt.set("tts_estimated_cost_usd", estimated_cost)
+                evt.set("tts_total_chars", total_chars)
 
         # Step 5b: Generate and store sentence timing map for highlight sync
         timing_data = generate_sentence_timing(tts_text)

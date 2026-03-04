@@ -66,11 +66,33 @@ class TestListenLater:
         update_sql = update_calls[0][0]
         assert "audio_status = 'pending'" in update_sql
 
-        # Verify queue message was sent
+        # Verify queue message was sent with voice preference
         assert len(queue.messages) == 1
         msg = queue.messages[0]
         assert msg["type"] == "tts_generation"
         assert msg["article_id"] == "art_tts1"
+        assert "tts_voice" in msg
+
+    async def test_includes_voice_preference_in_queue_message(self) -> None:
+        """POST listen-later includes user's tts_voice preference in the queue message."""
+        article = ArticleFactory.create(id="art_voice_q", user_id="user_001")
+
+        def execute(sql: str, params: list) -> list:
+            if "user_preferences" in sql and "SELECT" in sql:
+                return [{"tts_voice": "orion"}]
+            if sql.startswith("SELECT") and "id = ?" in sql:
+                return [article]
+            return []
+
+        db = TrackingD1(result_fn=execute)
+        queue = MockQueue()
+        env = MockEnv(db=db, article_queue=queue)
+
+        client, _ = await _authenticated_client(env)
+        resp = client.post("/api/articles/art_voice_q/listen-later")
+
+        assert resp.status_code == 202
+        assert queue.messages[0]["tts_voice"] == "orion"
 
     async def test_returns_404_for_missing_article(self) -> None:
         """POST listen-later returns 404 when article does not exist."""
@@ -255,6 +277,34 @@ class TestGetAudio:
         assert resp.headers["content-type"] == "audio/mpeg"
         assert resp.content == audio_bytes
 
+    async def test_streams_ogg_audio(self) -> None:
+        """GET audio returns audio/ogg content from R2 for OGG Opus data."""
+        audio_bytes = b"OggS" + b"\x00" * 100  # Fake OGG data
+        article = ArticleFactory.create(
+            id="art_audio_ogg",
+            user_id="user_001",
+            audio_key="articles/art_audio_ogg/audio.ogg",
+            audio_status="ready",
+        )
+
+        def execute(sql: str, params: list) -> list:
+            if "id = ?" in sql and params[0] == "art_audio_ogg":
+                return [article]
+            return []
+
+        db = MockD1(execute=execute)
+        r2 = MockR2()
+        env = MockEnv(db=db, content=r2)
+
+        await r2.put("articles/art_audio_ogg/audio.ogg", audio_bytes)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get("/api/articles/art_audio_ogg/audio")
+
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "audio/ogg"
+        assert resp.content == audio_bytes
+
     async def test_returns_404_when_no_audio_key(self) -> None:
         """GET audio returns 404 when article has no audio_key."""
         article = ArticleFactory.create(
@@ -389,7 +439,7 @@ class TestTTSProcessing:
         assert "articles/art_proc1/audio.wav" in final_params
 
     async def test_happy_path_aura_model(self) -> None:
-        """TTS processing uses Deepgram Aura when TTS_MODEL is set."""
+        """TTS processing uses Deepgram Aura with Opus encoding params."""
         article = ArticleFactory.create(
             id="art_aura",
             user_id="user_001",
@@ -398,7 +448,8 @@ class TestTTSProcessing:
 
         db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
         r2 = MockR2()
-        fake_audio = b"\xff\xfb\x90\x00" + b"\x00" * 200
+        # OGG Opus audio (starts with OggS magic bytes)
+        fake_audio = b"OggS" + b"\x00" * 200
         ai = MockAI(response=fake_audio)
         env = MockEnv(db=db, content=r2, ai=ai, tts_model="aura-2-en")
 
@@ -406,13 +457,39 @@ class TestTTSProcessing:
 
         await process_tts("art_aura", env, user_id="user_001")
 
-        # Verify AI was called with the Aura model and text key
+        # Verify AI was called with full Deepgram params
         assert len(ai.calls) == 1
-        assert ai.calls[0]["model"] == "@cf/deepgram/aura-2-en"
-        assert "Hello World" in ai.calls[0]["text"]
+        call = ai.calls[0]
+        assert call["model"] == "@cf/deepgram/aura-2-en"
+        assert "Hello World" in call["text"]
+        assert call["speaker"] == "athena"
+        assert call["encoding"] == "opus"
+        assert call["container"] == "ogg"
+        assert call["bit_rate"] == 24000
+        assert call["sample_rate"] == 24000
 
-        # Verify audio was stored in R2
-        assert "articles/art_aura/audio.mp3" in r2._store
+        # Verify audio was stored as .ogg in R2
+        assert "articles/art_aura/audio.ogg" in r2._store
+
+    async def test_aura_model_with_voice(self) -> None:
+        """TTS processing passes tts_voice to Deepgram Aura model."""
+        article = ArticleFactory.create(
+            id="art_voice",
+            user_id="user_001",
+            markdown_content="# Hello\n\nTest content.",
+        )
+
+        db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
+        r2 = MockR2()
+        fake_audio = b"OggS" + b"\x00" * 200
+        ai = MockAI(response=fake_audio)
+        env = MockEnv(db=db, content=r2, ai=ai, tts_model="aura-2-en")
+
+        from tts.processing import process_tts
+
+        await process_tts("art_voice", env, user_id="user_001", tts_voice="orion")
+
+        assert ai.calls[0]["speaker"] == "orion"
 
     async def test_uses_d1_markdown_content(self) -> None:
         """TTS processing uses D1 markdown_content for speech generation."""

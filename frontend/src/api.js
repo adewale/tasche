@@ -31,8 +31,15 @@ export async function request(method, path, body) {
   if (resp.status === 401) handleUnauthorized();
   if (resp.status === 204) return null;
   if (!resp.ok) {
-    const err = await resp.json().catch(() => ({ detail: resp.statusText }));
-    const e = new Error(err.detail || 'Request failed');
+    const text = await resp.text().catch(() => '');
+    var detail = resp.statusText;
+    try {
+      detail = JSON.parse(text).detail || detail;
+    } catch (_e) {
+      // response wasn't JSON — use raw text for logging
+    }
+    console.error('[API] %s %s → %d %s', method, path, resp.status, detail, text.slice(0, 500));
+    const e = new Error(detail);
     e.status = resp.status;
     throw e;
   }
@@ -49,15 +56,31 @@ export async function request(method, path, body) {
 }
 
 // Health (unauthenticated — uses plain fetch, not request())
+// Retries with backoff to handle Python Worker cold starts after deploy
 export function getHealthConfig() {
-  return fetch('/api/health/config')
-    .then(function (resp) {
-      if (!resp.ok) throw new Error('Health check failed');
-      return resp.json();
-    })
-    .catch(function () {
-      return { status: 'error', checks: [] };
-    });
+  var maxAttempts = 3;
+  var baseDelay = 1500;
+
+  function attempt(n) {
+    return fetch('/api/health/config')
+      .then(function (resp) {
+        if (!resp.ok) throw new Error('Health check failed');
+        return resp.json();
+      })
+      .catch(function (err) {
+        console.error('[API] GET /api/health/config attempt %d failed:', n, err.message);
+        if (n < maxAttempts) {
+          return new Promise(function (resolve) {
+            setTimeout(function () {
+              resolve(attempt(n + 1));
+            }, baseDelay * n);
+          });
+        }
+        return { status: 'unreachable', checks: [] };
+      });
+  }
+
+  return attempt(1);
 }
 
 // Auth
@@ -137,10 +160,14 @@ function authenticatedFetch(path) {
 function fetchText(path) {
   return authenticatedFetch(path)
     .then(function (resp) {
-      if (!resp.ok) return null;
+      if (!resp.ok) {
+        console.error('[API] GET %s → %d %s', path, resp.status, resp.statusText);
+        return null;
+      }
       return resp.text();
     })
-    .catch(function () {
+    .catch(function (err) {
+      console.error('[API] GET %s failed:', path, err.message);
       return null;
     });
 }
@@ -244,6 +271,37 @@ export function listenLater(articleId) {
 
 export function getAudioTiming(articleId) {
   return request('GET', '/api/articles/' + articleId + '/audio-timing');
+}
+
+// Audio (fetches via fetch() so HTTP errors are visible in JS)
+export function getAudioUrl(articleId) {
+  var path = '/api/articles/' + articleId + '/audio';
+  return authenticatedFetch(path).then(function (resp) {
+    if (!resp.ok) {
+      return resp.text().then(function (body) {
+        var detail = resp.statusText;
+        try {
+          detail = JSON.parse(body).detail || detail;
+        } catch (_e) {
+          // response wasn't JSON — use statusText
+        }
+        console.error('[API] GET %s → %d %s', path, resp.status, detail, body.slice(0, 500));
+        throw new Error(resp.status + ': ' + detail);
+      });
+    }
+    return resp.blob().then(function (blob) {
+      return URL.createObjectURL(blob);
+    });
+  });
+}
+
+// Preferences
+export function getPreferences() {
+  return request('GET', '/api/preferences');
+}
+
+export function updatePreferences(data) {
+  return request('PATCH', '/api/preferences', data);
 }
 
 // Stats
