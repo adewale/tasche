@@ -907,3 +907,76 @@ self.addEventListener('activate', function (event) {
 ```
 
 **Lesson:** Every SW deploy should include cache cleanup in the activate event. List the caches you want to keep and delete everything else. This prevents orphaned caches from consuming storage and ensures the new SW starts with the caches it expects.
+
+### 63. Large Binary Data Must Not Cross the Pyodide FFI Boundary Round-Trip
+
+After deploying TTS with MeloTTS, the Worker crashed when serving a 49MB WAV audio file. The audio data was stored in R2, then the audio endpoint read it into Python bytes (JS→Python via `consume_readable_stream`), then returned it as a FastAPI `Response` (Python→JS). This round-trip — JS ReadableStream → Python bytes → JS Response body — doubled memory usage in the Wasm linear memory and crashed the Worker with a generic "Worker threw exception" HTML page. No useful error appeared in browser DevTools because the `<audio>` element silently swallowed the HTTP error.
+
+**Fix:** Bypass Python entirely for large R2 binary data. In `entry.py`, intercept audio requests before they reach FastAPI. Read the R2 object, then pass its `body` ReadableStream directly to a JS `Response` — the data never enters Python memory:
+
+```python
+# In the Worker's fetch() method, before delegating to FastAPI:
+obj = await env.CONTENT.get(audio_key)
+if obj:
+    return js.Response.new(obj.body, headers=js_headers)
+```
+
+**Lesson:** The Pyodide FFI boundary is not free. Small payloads (JSON, HTML) cross it fine, but large binary data (>~10MB) can crash the Worker. When serving large R2 objects, pass the ReadableStream directly to a JS Response — never materialize the bytes in Python. If you must process the data in Python, do it during the write path (queue consumer), not the read path (HTTP handler).
+
+### 64. Structured Client-Side Error Logging Reveals Server-Side Crashes
+
+When the 49MB WAV crash happened, the `<audio>` element's `src` attribute pointed to the API endpoint. The Worker crashed, returning an HTML error page instead of audio. But the `<audio>` element doesn't expose HTTP status codes — its `error` event gives a generic `MediaError` with no server details. The browser DevTools network tab showed the failed request, but only if you happened to have it open.
+
+**Fix:** Pre-fetch audio URLs via `fetch()` before setting `<audio src=...>`. Log the response status with a structured format:
+
+```javascript
+const resp = await fetch(audioUrl);
+if (!resp.ok) {
+    const body = await resp.text();
+    console.error(`[API] GET ${audioUrl} → ${resp.status}`, body.slice(0, 200));
+    throw new Error(`Audio fetch failed: ${resp.status}`);
+}
+const blob = await resp.blob();
+audioElement.src = URL.createObjectURL(blob);
+```
+
+**Lesson:** HTML media elements (`<audio>`, `<video>`, `<img>`) silently swallow HTTP errors. When the source is an API endpoint that can fail, always pre-fetch with `fetch()` and log the status. The `[API] METHOD /path → STATUS` format makes server-side crashes visible in client logs without opening DevTools.
+
+### 65. Post-Deploy Smoke Tests Catch What Unit Tests Cannot
+
+Unit tests for the TTS feature passed — they ran in CPython with mocked Workers AI and D1. But the 49MB WAV crash only happened in the deployed Worker where real data crossed the Pyodide FFI boundary. Unit tests can't catch: Pyodide initialization failures, FFI memory limits, binding misconfiguration, model output format surprises (WAV vs MP3), or ASGI adapter quirks.
+
+**Fix:** Add a post-deploy smoke test script that exercises critical paths against the real deployed Worker:
+
+```python
+# scripts/smoke-test.py — run after every deploy
+def test_audio_roundtrip(base_url, session):
+    """Create article, generate TTS, fetch audio — end to end."""
+    # 1. Create article with known content
+    # 2. Trigger TTS generation
+    # 3. Poll until audio_status == "ready"
+    # 4. Fetch the audio endpoint — assert 200, correct Content-Type, non-zero body
+```
+
+**Lesson:** Unit tests verify logic; smoke tests verify deployment. For Python Workers, the gap between CPython tests and Pyodide production is wider than for traditional web apps. A 30-second smoke test after deploy catches an entire class of bugs that no amount of unit testing can reach: FFI boundary issues, binding configuration, model behavior, and runtime memory limits.
+
+### 66. WAV vs MP3: Know What Your TTS Model Actually Produces
+
+The MeloTTS documentation says it returns MP3. It actually returns WAV — a 49MB uncompressed audio file for a typical article. The code stored this in R2 as `audio.mp3` and served it with `Content-Type: audio/mpeg`. Some browsers played it anyway (they sniff the format), but the real problem was the 49MB file size crashing the FFI boundary.
+
+Deepgram's `aura-2-en` model returns actual MP3, producing ~2MB files for the same content — a 25x reduction.
+
+**Fix:** Detect the actual format using magic bytes, not the model's documentation:
+
+```python
+ext = "wav" if audio_data[:4] == b"RIFF" else "mp3"
+if ext == "wav":
+    print(json.dumps({
+        "event": "tts_wav_warning",
+        "article_id": article_id,
+        "audio_bytes": len(audio_data),
+        "message": "TTS model returned WAV. Consider switching to a model that outputs MP3.",
+    }))
+```
+
+**Lesson:** Never trust a model's documented output format — verify with magic bytes. A `RIFF` header means WAV regardless of what the API docs say. Log a warning when unexpected formats appear so model changes don't silently regress file sizes. The difference between WAV and MP3 can be 25x in file size, which matters when the data must cross an FFI boundary or be stored in R2.

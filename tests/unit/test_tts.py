@@ -194,7 +194,38 @@ class TestListenLater:
 
 class TestGetAudio:
     async def test_streams_audio(self) -> None:
-        """GET audio returns audio/mpeg content from R2."""
+        """GET audio returns audio/wav content from R2 for WAV data."""
+        audio_bytes = b"RIFF" + b"\x00" * 100  # Fake WAV data
+        article = ArticleFactory.create(
+            id="art_audio1",
+            user_id="user_001",
+            audio_key="articles/art_audio1/audio.wav",
+            audio_status="ready",
+        )
+
+        def execute(sql: str, params: list) -> list:
+            if "id = ?" in sql and params[0] == "art_audio1":
+                return [article]
+            return []
+
+        db = MockD1(execute=execute)
+        r2 = MockR2()
+        env = MockEnv(db=db, content=r2)
+
+        # Store audio in R2
+        await r2.put("articles/art_audio1/audio.wav", audio_bytes)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get(
+            "/api/articles/art_audio1/audio",
+        )
+
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "audio/wav"
+        assert resp.content == audio_bytes
+
+    async def test_streams_mp3_audio(self) -> None:
+        """GET audio returns audio/mpeg content from R2 for MP3 data."""
         audio_bytes = b"\xff\xfb\x90\x00" + b"\x00" * 100  # Fake MP3 data
         article = ArticleFactory.create(
             id="art_audio1",
@@ -253,7 +284,7 @@ class TestGetAudio:
         article = ArticleFactory.create(
             id="art_norfile",
             user_id="user_001",
-            audio_key="articles/art_norfile/audio.mp3",
+            audio_key="articles/art_norfile/audio.wav",
             audio_status="ready",
         )
 
@@ -317,8 +348,8 @@ class TestGetAudio:
 
 
 class TestTTSProcessing:
-    async def test_happy_path_melotts_default(self) -> None:
-        """TTS processing uses MeloTTS by default, decoding base64 audio."""
+    async def test_happy_path_melotts(self) -> None:
+        """TTS processing uses MeloTTS when configured, decoding base64 audio."""
         article = ArticleFactory.create(
             id="art_proc1",
             user_id="user_001",
@@ -327,9 +358,9 @@ class TestTTSProcessing:
 
         db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
         r2 = MockR2()
-        fake_audio = b"\xff\xfb\x90\x00" + b"\x00" * 200
+        fake_audio = b"RIFF" + b"\x00" * 200
         ai = MockAI(response={"audio": base64.b64encode(fake_audio).decode()})
-        env = MockEnv(db=db, content=r2, ai=ai)
+        env = MockEnv(db=db, content=r2, ai=ai, tts_model="melotts")
 
         from tts.processing import process_tts
 
@@ -341,9 +372,9 @@ class TestTTSProcessing:
         assert "Hello World" in ai.calls[0]["prompt"]
         assert ai.calls[0]["lang"] == "en"
 
-        # Verify audio was stored in R2
-        assert "articles/art_proc1/audio.mp3" in r2._store
-        assert r2._store["articles/art_proc1/audio.mp3"] == fake_audio
+        # Verify audio was stored in R2 (MeloTTS returns WAV)
+        assert "articles/art_proc1/audio.wav" in r2._store
+        assert r2._store["articles/art_proc1/audio.wav"] == fake_audio
 
         # Verify D1 was updated with audio_status='ready'
         ready_updates = [
@@ -355,7 +386,7 @@ class TestTTSProcessing:
 
         # Verify audio_key is set in the final update
         final_sql, final_params = ready_updates[-1]
-        assert "articles/art_proc1/audio.mp3" in final_params
+        assert "articles/art_proc1/audio.wav" in final_params
 
     async def test_happy_path_aura_model(self) -> None:
         """TTS processing uses Deepgram Aura when TTS_MODEL is set."""
@@ -393,9 +424,9 @@ class TestTTSProcessing:
 
         db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
         r2 = MockR2()
-        fake_audio = b"\xff\xfb\x90\x00" + b"\x00" * 100
+        fake_audio = b"RIFF" + b"\x00" * 100
         ai = MockAI(response={"audio": base64.b64encode(fake_audio).decode()})
-        env = MockEnv(db=db, content=r2, ai=ai)
+        env = MockEnv(db=db, content=r2, ai=ai, tts_model="melotts")
 
         from tts.processing import process_tts
 
@@ -405,8 +436,8 @@ class TestTTSProcessing:
         assert len(ai.calls) == 1
         assert "Fallback Content" in ai.calls[0]["prompt"]
 
-        # Verify audio was stored
-        assert "articles/art_proc2/audio.mp3" in r2._store
+        # Verify audio was stored (MeloTTS returns WAV)
+        assert "articles/art_proc2/audio.wav" in r2._store
 
     async def test_sets_generating_status_first(self) -> None:
         """The first D1 operation sets audio_status to 'generating'."""
@@ -420,7 +451,7 @@ class TestTTSProcessing:
         r2 = MockR2()
         fake_audio = b"fake-audio"
         ai = MockAI(response={"audio": base64.b64encode(fake_audio).decode()})
-        env = MockEnv(db=db, content=r2, ai=ai)
+        env = MockEnv(db=db, content=r2, ai=ai, tts_model="melotts")
 
         from tts.processing import process_tts
 
@@ -592,7 +623,7 @@ class TestTTSEmptyAudioResponse:
         r2 = MockR2()
         # MeloTTS with empty base64 audio
         ai = MockAI(response={"audio": ""})
-        env = MockEnv(db=db, content=r2, ai=ai)
+        env = MockEnv(db=db, content=r2, ai=ai, tts_model="melotts")
 
         from tts.processing import process_tts
 
@@ -735,9 +766,9 @@ class TestTTSTextTruncation:
 
         db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
         r2 = MockR2()
-        fake_audio = b"\xff\xfb\x90\x00" + b"\x00" * 100
+        fake_audio = b"RIFF" + b"\x00" * 100
         ai = MockAI(response={"audio": base64.b64encode(fake_audio).decode()})
-        env = MockEnv(db=db, content=r2, ai=ai)
+        env = MockEnv(db=db, content=r2, ai=ai, tts_model="melotts")
 
         from tts.processing import process_tts
 
@@ -945,7 +976,7 @@ class TestGenerateSentenceTiming:
 
 class TestTTSProcessingStoresTimingData:
     async def test_timing_json_stored_in_r2(self) -> None:
-        """TTS processing stores audio-timing.json alongside audio.mp3."""
+        """TTS processing stores audio-timing.json alongside audio.wav."""
         article = ArticleFactory.create(
             id="art_timing1",
             user_id="user_001",
@@ -954,16 +985,16 @@ class TestTTSProcessingStoresTimingData:
 
         db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
         r2 = MockR2()
-        fake_audio = b"\xff\xfb\x90\x00" + b"\x00" * 200
+        fake_audio = b"RIFF" + b"\x00" * 200
         ai = MockAI(response={"audio": base64.b64encode(fake_audio).decode()})
-        env = MockEnv(db=db, content=r2, ai=ai)
+        env = MockEnv(db=db, content=r2, ai=ai, tts_model="melotts")
 
         from tts.processing import process_tts
 
         await process_tts("art_timing1", env, user_id="user_001")
 
-        # Verify audio was stored
-        assert "articles/art_timing1/audio.mp3" in r2._store
+        # Verify audio was stored (MeloTTS returns WAV)
+        assert "articles/art_timing1/audio.wav" in r2._store
 
         # Verify timing JSON was stored
         import json
@@ -1149,8 +1180,9 @@ class TestMultiChunkTTS:
         db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
         r2 = MockR2()
 
-        # Each chunk should return distinct audio bytes so we can verify concatenation
-        chunk_responses = [b"\xff\xfb" + bytes([i]) * 200 for i in range(10)]
+        # Each chunk should return distinct audio bytes so we can verify concatenation.
+        # First chunk starts with RIFF (WAV magic bytes) so concatenation is detected as WAV.
+        chunk_responses = [b"RIFF" + bytes([i]) * 200 for i in range(10)]
         call_idx = {"n": 0}
 
         class MultiResponseAI:
@@ -1168,7 +1200,7 @@ class TestMultiChunkTTS:
                 return {"audio": base64.b64encode(chunk_responses[idx]).decode()}
 
         ai = MultiResponseAI()
-        env = MockEnv(db=db, content=r2, ai=ai)
+        env = MockEnv(db=db, content=r2, ai=ai, tts_model="melotts")
 
         from tts.processing import process_tts
 
@@ -1177,8 +1209,8 @@ class TestMultiChunkTTS:
         # Multiple AI calls should have been made
         assert len(ai.calls) > 1, f"Expected multiple chunks, got {len(ai.calls)}"
 
-        # Audio stored in R2 should be concatenation of ALL chunks
-        stored = r2._store.get("articles/art_multi1/audio.mp3")
+        # Audio stored in R2 should be concatenation of ALL chunks (WAV format)
+        stored = r2._store.get("articles/art_multi1/audio.wav")
         assert stored is not None
         assert len(stored) > 202, "Audio should be larger than a single chunk"
 
@@ -1220,11 +1252,11 @@ class TestMultiChunkTTS:
                 # Every other chunk returns empty (MeloTTS format)
                 if call_idx["n"] % 2 == 0:
                     return {"audio": ""}
-                audio = b"\xff\xfb\x90\x00" + b"\x00" * 100
+                audio = b"RIFF" + b"\x00" * 100
                 return {"audio": base64.b64encode(audio).decode()}
 
         ai = SometimesEmptyAI()
-        env = MockEnv(db=db, content=r2, ai=ai)
+        env = MockEnv(db=db, content=r2, ai=ai, tts_model="melotts")
 
         from tts.processing import process_tts
 

@@ -5,7 +5,7 @@ calling Workers AI for text-to-speech conversion, and storing the resulting
 audio in R2.
 
 The TTS model is configurable via the ``TTS_MODEL`` env var.  Supported
-values: ``melotts`` (default), ``aura-2-en``, ``aura-2-es``, ``aura-1``.
+values: ``aura-2-en`` (default), ``melotts``, ``aura-2-es``, ``aura-1``.
 A raw Workers AI model ID is also accepted.
 
 Steps:
@@ -36,7 +36,7 @@ _TTS_MODELS = {
     "aura-2-es": "@cf/deepgram/aura-2-es",
     "aura-1": "@cf/deepgram/aura-1",
 }
-_DEFAULT_TTS_MODEL = "melotts"
+_DEFAULT_TTS_MODEL = "aura-2-en"
 
 
 def _resolve_tts_model(env: object) -> tuple[str, str]:
@@ -436,7 +436,21 @@ async def process_tts(
             evt.set("tts_total_audio_bytes", len(audio_data))
 
         # Step 5: Store audio in R2
-        audio_r2_key = article_key(article_id, "audio.mp3")
+        # Detect actual format via magic bytes — some models return WAV despite docs claiming MP3.
+        ext = "wav" if audio_data[:4] == b"RIFF" else "mp3"
+        if ext == "wav":
+            print(
+                json.dumps(
+                    {
+                        "event": "tts_wav_warning",
+                        "article_id": article_id,
+                        "audio_bytes": len(audio_data),
+                        "message": "TTS model returned WAV. "
+                        "Consider switching to a model that outputs MP3.",
+                    }
+                )
+            )
+        audio_r2_key = article_key(article_id, f"audio.{ext}")
         audio_data_len = len(audio_data)
         await r2.put(audio_r2_key, audio_data)
 
