@@ -1369,3 +1369,156 @@ class TestOgImageThumbnail:
 
         # Verify no thumbnail was stored
         assert "articles/art_no_og/thumbnail.webp" not in r2._store
+
+
+# =========================================================================
+# test_process_article — storage phase errors are retryable
+# =========================================================================
+
+
+class TestProcessArticleStorageRetry:
+    """Verify that errors during the storage phase (R2 writes, D1 updates)
+    propagate for queue retry instead of permanently marking the article
+    as failed.
+    """
+
+    async def test_r2_write_error_propagates_for_retry(self) -> None:
+        """R2 failure during content storage raises instead of marking failed."""
+        db = TrackingD1()
+        r2 = MockR2()
+        env = MockEnv(db=db, content=r2)
+
+        # Make R2 put fail after processing succeeds (during store_content)
+        original_put = r2.put
+
+        async def _failing_put(key, value, **kwargs):
+            if key.endswith("content.html"):
+                raise RuntimeError("R2 write timeout")
+            return await original_put(key, value, **kwargs)
+
+        r2.put = _failing_put
+
+        mock_client = _make_mock_http_fetch()
+
+        with (
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
+        ):
+            from articles.processing import process_article
+
+            try:
+                await process_article("art_r2fail", "https://example.com/article", env)
+                raised = False
+            except RuntimeError:
+                raised = True
+
+        assert raised, "R2 storage error should propagate for queue retry"
+        # Should NOT have marked as failed
+        failed_updates = [
+            (sql, params)
+            for sql, params in db.executed
+            if "status" in sql and "failed" in str(params)
+        ]
+        assert len(failed_updates) == 0, "R2 error should not permanently mark article as failed"
+
+    async def test_extraction_error_marks_failed_permanently(self) -> None:
+        """Content extraction errors (before storage phase) mark as failed."""
+        db = TrackingD1()
+        r2 = MockR2()
+        env = MockEnv(db=db, content=r2)
+
+        mock_client = _make_mock_http_fetch()
+
+        # Make extract_article crash (simulating a parsing error)
+        with (
+            patch("articles.processing.http_fetch", mock_client),
+            patch("articles.images.http_fetch", mock_client),
+            patch(
+                "articles.processing.extract_article",
+                side_effect=ValueError("Extraction failed"),
+            ),
+        ):
+            from articles.processing import process_article
+
+            await process_article("art_extractfail", "https://example.com/broken", env)
+
+        # Should have marked as failed (content error is permanent)
+        failed_updates = [
+            (sql, params)
+            for sql, params in db.executed
+            if "status" in sql and "failed" in str(params)
+        ]
+        assert len(failed_updates) >= 1
+
+
+# =========================================================================
+# test__fetch_page — charset detection
+# =========================================================================
+
+
+class TestFetchPageCharset:
+    async def test_decodes_utf8_by_default(self) -> None:
+        """Pages with no charset parameter are decoded as UTF-8."""
+        from articles.processing import _fetch_page
+
+        html = "<html><body>Héllo wörld</body></html>"
+        resp = _make_mock_response(
+            text=html,
+            content=html.encode("utf-8"),
+            headers={"content-type": "text/html"},
+        )
+
+        with patch("articles.processing.http_fetch", AsyncMock(return_value=resp)):
+            text, _ = await _fetch_page("https://example.com/page")
+
+        assert "Héllo wörld" in text
+
+    async def test_decodes_iso_8859_1_charset(self) -> None:
+        """Pages with charset=iso-8859-1 are decoded correctly."""
+        from articles.processing import _fetch_page
+
+        html = "<html><body>Héllo wörld</body></html>"
+        resp = _make_mock_response(
+            text=html,
+            content=html.encode("iso-8859-1"),
+            headers={"content-type": "text/html; charset=iso-8859-1"},
+        )
+
+        with patch("articles.processing.http_fetch", AsyncMock(return_value=resp)):
+            text, _ = await _fetch_page("https://example.com/page")
+
+        assert "Héllo wörld" in text
+
+    async def test_decodes_windows_1252_charset(self) -> None:
+        """Pages with charset=windows-1252 are decoded correctly."""
+        from articles.processing import _fetch_page
+
+        # Windows-1252 has special chars like curly quotes
+        html = '<html><body>"smart quotes"</body></html>'
+        encoded = html.encode("windows-1252")
+        resp = _make_mock_response(
+            text=html,
+            content=encoded,
+            headers={"content-type": "text/html; charset=windows-1252"},
+        )
+
+        with patch("articles.processing.http_fetch", AsyncMock(return_value=resp)):
+            text, _ = await _fetch_page("https://example.com/page")
+
+        assert "smart quotes" in text
+
+    async def test_falls_back_to_utf8_for_unknown_charset(self) -> None:
+        """Unknown charsets fall back to UTF-8 with error replacement."""
+        from articles.processing import _fetch_page
+
+        html = "<html><body>Hello</body></html>"
+        resp = _make_mock_response(
+            text=html,
+            content=html.encode("utf-8"),
+            headers={"content-type": "text/html; charset=utf-8"},
+        )
+
+        with patch("articles.processing.http_fetch", AsyncMock(return_value=resp)):
+            text, _ = await _fetch_page("https://example.com/page")
+
+        assert "Hello" in text

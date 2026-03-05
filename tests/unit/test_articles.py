@@ -99,6 +99,43 @@ class TestCreateArticle:
         assert data["id"] == existing["id"]
         assert len(updates) == 1
 
+    async def test_reprocess_cleans_up_old_r2_content(self) -> None:
+        """POST /api/articles re-processing cleans up old R2 images/html but preserves audio."""
+        existing = ArticleFactory.create(
+            id="art_cleanup",
+            user_id="user_001",
+            original_url="https://example.com/cleanup",
+        )
+
+        def execute(sql: str, params: list) -> list:
+            if "original_url = ?" in sql:
+                return [existing]
+            return []
+
+        db = MockD1(execute=execute)
+        r2 = MockR2()
+        env = MockEnv(db=db, content=r2)
+
+        # Pre-populate R2 with old content + audio
+        await r2.put("articles/art_cleanup/content.html", b"<p>old</p>")
+        await r2.put("articles/art_cleanup/images/abc.webp", b"IMG")
+        await r2.put("articles/art_cleanup/audio.ogg", b"AUDIO")
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles",
+            json={"url": "https://example.com/cleanup"},
+        )
+
+        assert resp.status_code == 201
+
+        # Old content should be cleaned up
+        assert await r2.get("articles/art_cleanup/content.html") is None
+        assert await r2.get("articles/art_cleanup/images/abc.webp") is None
+
+        # Audio should be preserved
+        assert await r2.get("articles/art_cleanup/audio.ogg") is not None
+
     async def test_finds_duplicate_via_final_url(self) -> None:
         """POST /api/articles detects duplicate when submitted URL matches final_url."""
         # Scenario: article was saved with original_url="https://example.com/old"

@@ -980,3 +980,109 @@ if ext == "wav":
 ```
 
 **Lesson:** Never trust a model's documented output format — verify with magic bytes. A `RIFF` header means WAV regardless of what the API docs say. Log a warning when unexpected formats appear so model changes don't silently regress file sizes. The difference between WAV and MP3 can be 25x in file size, which matters when the data must cross an FFI boundary or be stored in R2.
+
+---
+
+## Save Userflow Audit (2026-03-05)
+
+End-to-end audit of the Save article flow: frontend `handleSave()` → API `create_article()` → queue `process_article()` → frontend polling. Five issues found and fixed with 10 new tests.
+
+### 67. Apply Known Fixes Comprehensively — StreamingResponse Truncation Affected More Than Audio
+
+The StreamingResponse truncation bug (ASGI adapter only consumes the first chunk from async generators) was already known and fixed for audio serving in `src/entry.py` with a JS-side bypass. But the same bug also affected thumbnail and image serving in `src/articles/routes.py` via `_stream_r2_object()`. These endpoints used `StreamingResponse` with `stream_r2_body()`, silently truncating responses to the first ~64KB chunk.
+
+**Fix:** Replaced `_stream_r2_object` with `_serve_r2_object` that uses `consume_readable_stream()` (reads full body) + plain `Response`. Safe for thumbnails (≤200KB) and images (≤2MB) where the full body fits in Wasm memory.
+
+```python
+async def _serve_r2_object(r2_obj, media_type, cache_control="public, max-age=86400"):
+    body = await consume_readable_stream(r2_obj)
+    headers = {"Cache-Control": cache_control}
+    size = get_r2_size(r2_obj)
+    if size is not None:
+        headers["Content-Length"] = str(size)
+    return Response(content=body, media_type=media_type, headers=headers)
+```
+
+**Lesson:** When a platform bug is discovered, grep the entire codebase for all instances — not just the one that surfaced the symptom. The StreamingResponse truncation was fixed for audio (the largest, most visible case) but the same pattern existed in two other endpoints. A known bug, once identified, should trigger a codebase-wide sweep.
+
+### 68. Phase-Based Error Classification for Queue Retry
+
+The article processing pipeline had a single catch-all `except Exception` that marked articles as permanently failed regardless of error type. But R2/D1 transient errors (network blips, rate limits) are retryable — the queue should retry them. Extraction errors (bad HTML, empty content) are permanent — retrying won't help.
+
+Rather than trying to classify exception types (fragile across Pyodide/CPython), used a positional flag:
+
+```python
+in_storage_phase = False
+try:
+    # ... extraction steps (permanent failures) ...
+
+    in_storage_phase = True
+    # ... R2/D1 writes (transient failures) ...
+except Exception:
+    if in_storage_phase:
+        raise  # Let queue retry
+    await _mark_failed(db, article_id)  # Permanent failure
+```
+
+**Lesson:** In a multi-step pipeline, classify errors by *where* they occur, not *what* they are. A boolean phase flag is simpler and more robust than exception-type matching, especially when the same exception class (`RuntimeError`, `OSError`) can mean different things at different pipeline stages. The queue runtime's built-in retry handles transient errors — just let them propagate.
+
+### 69. R2 Content Orphaning During Re-Processing
+
+When a user saves a URL that already exists, the system re-processes the article (re-fetches, re-extracts). But the old R2 content (HTML, images, thumbnails, markdown) was never cleaned up. Each re-process accumulated orphaned objects in R2 — old thumbnails, images from previous versions, stale HTML.
+
+Audio files needed special handling: TTS generation is an independent, expensive pipeline. Deleting audio during a content re-process would force unnecessary re-generation.
+
+**Fix:** Added `delete_non_audio_content()` that selectively removes R2 objects while preserving audio files:
+
+```python
+_AUDIO_SUFFIXES = ("audio.ogg", "audio.mp3", "audio.wav", "audio-timing.json")
+
+async def delete_non_audio_content(r2, article_id):
+    prefix = f"articles/{article_id}/"
+    # ... paginated list + selective delete ...
+    for obj in objects:
+        if key and not any(key.endswith(s) for s in _AUDIO_SUFFIXES):
+            await r2.delete(key)
+```
+
+Called before re-enqueuing for re-processing in the duplicate URL path.
+
+**Lesson:** When one resource (article) has content spread across two stores (D1 metadata + R2 blobs), any operation that replaces content must clean up both stores. R2 objects don't have foreign keys — there's no cascade delete. And when the resource has multiple independent content pipelines (text extraction vs. audio generation), cleanup must be selective. Design the cleanup function at the same time as the store function.
+
+### 70. Missing Success Toast — Asymmetric UX Feedback
+
+The article poller (`articlePoller` in `state.js`) had toasts for `failed` and `timeout` states but not for `ready`. The audio poller (`audioPoller`) had all three. Users saw no feedback when article processing completed successfully — it just silently appeared in the library.
+
+```javascript
+// Before: no ready toast
+var articlePoller = createPoller(5000, 'status', {
+  failed: ['Article processing failed', 'error'],
+  timeout: ['...', 'info'],
+});
+
+// After: success toast added
+var articlePoller = createPoller(5000, 'status', {
+  ready: ['Article is ready!', 'success'],
+  failed: ['Article processing failed', 'error'],
+  timeout: ['...', 'info'],
+});
+```
+
+**Lesson:** When building notification systems with multiple outcome states, always define feedback for ALL terminal states — including success. It's natural to focus on error handling and forget that success also needs acknowledgment. Compare similar components in the same codebase to spot asymmetries.
+
+### 71. Charset Detection from Content-Type Headers
+
+The article fetcher decoded all HTTP response bodies as UTF-8 regardless of the server's declared charset. Pages encoded in ISO-8859-1, Windows-1252, or other charsets would have garbled characters — accented letters, smart quotes, em dashes all corrupted.
+
+```python
+# Parse charset from Content-Type: text/html; charset=iso-8859-1
+charset = "utf-8"
+for part in content_type.split(";")[1:]:
+    part = part.strip().lower()
+    if part.startswith("charset="):
+        charset = part[len("charset="):].strip().strip("'\"")
+        break
+return body_bytes.decode(charset, errors="replace"), str(resp.url)
+```
+
+**Lesson:** When fetching web pages, always check the `Content-Type` charset parameter before decoding. UTF-8 is the right default, but many sites still serve ISO-8859-1 or Windows-1252. Use `errors="replace"` as a safety net so unknown bytes become `�` instead of crashing the pipeline.

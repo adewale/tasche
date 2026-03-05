@@ -14,6 +14,7 @@ import pytest
 from articles.storage import (
     article_key,
     delete_article_content,
+    delete_non_audio_content,
     get_content,
     get_metadata,
     store_content,
@@ -259,3 +260,52 @@ class TestMissingKeyReturnsNone:
         await r2.put("articles/art_x/content.html", b"<p>hi</p>")
         await delete_article_content(r2, "art_x")
         assert await get_content(r2, "articles/art_x/content.html") is None
+
+
+# ---------------------------------------------------------------------------
+# delete_non_audio_content() — selective cleanup preserving audio
+# ---------------------------------------------------------------------------
+
+
+class TestDeleteNonAudioContent:
+    async def test_preserves_audio_files(self) -> None:
+        """delete_non_audio_content keeps audio.ogg, audio.mp3, audio.wav, and timing."""
+        r2 = MockR2()
+        await r2.put("articles/art_re/content.html", b"<p>html</p>")
+        await r2.put("articles/art_re/metadata.json", b"{}")
+        await r2.put("articles/art_re/thumbnail.webp", b"WEBP")
+        await r2.put("articles/art_re/images/abc.webp", b"IMG")
+        await r2.put("articles/art_re/audio.ogg", b"AUDIO_OGG")
+        await r2.put("articles/art_re/audio.mp3", b"AUDIO_MP3")
+        await r2.put("articles/art_re/audio.wav", b"AUDIO_WAV")
+        await r2.put("articles/art_re/audio-timing.json", b"TIMING")
+
+        await delete_non_audio_content(r2, "art_re")
+
+        # Non-audio content should be deleted
+        assert await r2.get("articles/art_re/content.html") is None
+        assert await r2.get("articles/art_re/metadata.json") is None
+        assert await r2.get("articles/art_re/thumbnail.webp") is None
+        assert await r2.get("articles/art_re/images/abc.webp") is None
+
+        # Audio files should be preserved
+        assert await r2.get("articles/art_re/audio.ogg") is not None
+        assert await r2.get("articles/art_re/audio.mp3") is not None
+        assert await r2.get("articles/art_re/audio.wav") is not None
+        assert await r2.get("articles/art_re/audio-timing.json") is not None
+
+    async def test_does_not_affect_other_articles(self) -> None:
+        """delete_non_audio_content only touches the specified article."""
+        r2 = MockR2()
+        await r2.put("articles/art_a/content.html", b"A")
+        await r2.put("articles/art_b/content.html", b"B")
+
+        await delete_non_audio_content(r2, "art_a")
+
+        assert await r2.get("articles/art_a/content.html") is None
+        assert await r2.get("articles/art_b/content.html") is not None
+
+    async def test_noop_on_empty_prefix(self) -> None:
+        """delete_non_audio_content does not raise when no objects exist."""
+        r2 = MockR2()
+        await delete_non_audio_content(r2, "nonexistent")

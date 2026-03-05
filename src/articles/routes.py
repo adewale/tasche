@@ -12,19 +12,20 @@ import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, Response, StreamingResponse
+from fastapi.responses import HTMLResponse, Response
 
 from articles.health import check_original_url
 from articles.storage import (
     article_key,
     delete_article_content,
+    delete_non_audio_content,
     get_content,
     get_metadata,
 )
 from articles.urls import check_duplicate, extract_domain, validate_url
 from auth.dependencies import get_current_user
 from utils import generate_id, get_user_entity, now_iso
-from wrappers import stream_r2_body
+from wrappers import consume_readable_stream, get_r2_size
 
 router = APIRouter()
 
@@ -50,21 +51,27 @@ async def _enqueue_or_fail(
         raise HTTPException(status_code=503, detail="Failed to enqueue processing job")
 
 
-async def _stream_r2_object(
+async def _serve_r2_object(
     r2_obj: Any,
     media_type: str,
     cache_control: str = "public, max-age=86400",
 ) -> Response:
-    """Stream an R2 object as an HTTP response.
+    """Serve an R2 object as an HTTP response.
 
-    Uses :func:`wrappers.stream_r2_body` for all JS ReadableStream
-    interaction.  Falls back gracefully in mock / non-streaming environments.
+    Reads the full body via :func:`wrappers.consume_readable_stream` and
+    returns a plain ``Response``.  ``StreamingResponse`` with async generators
+    is broken in the Python Workers ASGI adapter (it truncates after the
+    first chunk), so we must read the full body into memory.
+
+    These are bounded-size objects (thumbnails <= 2 MB, images <= 2 MB)
+    so reading into memory is safe.
     """
-    return StreamingResponse(
-        stream_r2_body(r2_obj),
-        media_type=media_type,
-        headers={"Cache-Control": cache_control},
-    )
+    body = await consume_readable_stream(r2_obj)
+    headers: dict[str, str] = {"Cache-Control": cache_control}
+    size = get_r2_size(r2_obj)
+    if size is not None:
+        headers["Content-Length"] = str(size)
+    return Response(content=body, media_type=media_type, headers=headers)
 
 
 # Column list for the list endpoint — excludes large fields like markdown_content.
@@ -192,6 +199,11 @@ async def create_article(
 
     if is_update:
         article_id = existing["id"]
+        # Clean up old R2 content (HTML, images, thumbnail) to prevent
+        # orphaned objects.  Audio files are preserved since TTS is
+        # an independent pipeline.
+        r2 = env.CONTENT
+        await delete_non_audio_content(r2, article_id)
         # Reset status so the pipeline re-processes the article
         update_sql = "UPDATE articles SET status = 'pending'"
         if listen_later:
@@ -661,7 +673,7 @@ async def get_article_thumbnail(
             detail="Thumbnail not found in storage",
         )
 
-    return await _stream_r2_object(obj, media_type="image/webp")
+    return await _serve_r2_object(obj, media_type="image/webp")
 
 
 # Extension-to-media-type mapping for article images.
@@ -712,7 +724,7 @@ async def get_article_image(
         ext = filename[dot_pos:].lower()
     media_type = _IMAGE_MEDIA_TYPES.get(ext, "application/octet-stream")
 
-    return await _stream_r2_object(
+    return await _serve_r2_object(
         obj,
         media_type=media_type,
         cache_control="public, max-age=31536000, immutable",

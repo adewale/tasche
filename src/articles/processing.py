@@ -190,6 +190,11 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
     original_key: str | None = None
     markdown: str = ""
 
+    # Track processing phase: errors during storage (R2 writes, D1 updates)
+    # are transient and should propagate for queue retry, while errors during
+    # content extraction are permanent (the content won't change on retry).
+    in_storage_phase = False
+
     try:
         # Step 1: Update status to 'processing'
         await (
@@ -295,6 +300,9 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
         markdown = html_to_markdown(clean_html)
         word_count = count_words(markdown)
         reading_time = calculate_reading_time(word_count)
+
+        # --- Storage phase: errors from here are transient (R2/D1) ---
+        in_storage_phase = True
 
         # Step 10: Store content.html to R2
         keys = await store_content(r2, article_id, clean_html)
@@ -438,7 +446,19 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
         # Client errors (4xx) are permanent — mark as failed
         await _mark_failed(db, article_id)
     except Exception:
-        # Other permanent errors (invalid content, etc.) — mark as failed
+        if in_storage_phase:
+            # R2/D1 errors are transient — let propagate for queue retry
+            evt = current_event()
+            if evt:
+                evt.set_many(
+                    {
+                        "outcome": "error",
+                        "error.message": traceback.format_exc()[-500:],
+                        "retryable": True,
+                    }
+                )
+            raise
+        # Content extraction errors are permanent — mark as failed
         await _mark_failed(db, article_id)
 
 
@@ -490,4 +510,13 @@ async def _fetch_page(
             f"Response body too large: {len(body_bytes)} bytes exceeds "
             f"limit of {_MAX_CONTENT_LENGTH} bytes"
         )
-    return body_bytes.decode("utf-8", errors="replace"), str(resp.url)
+
+    # Detect charset from Content-Type header, fall back to UTF-8
+    charset = "utf-8"
+    for part in content_type.split(";")[1:]:
+        part = part.strip().lower()
+        if part.startswith("charset="):
+            charset = part[len("charset=") :].strip().strip("'\"")
+            break
+
+    return body_bytes.decode(charset, errors="replace"), str(resp.url)

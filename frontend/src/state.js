@@ -126,6 +126,7 @@ var audioPoller = createPoller(10000, 'audio_status', {
 });
 
 var articlePoller = createPoller(5000, 'status', {
+  ready: ['Article is ready!', 'success'],
   failed: ['Article processing failed', 'error'],
   timeout: ['Article processing is taking longer than expected. Check back later.', 'info'],
 });
