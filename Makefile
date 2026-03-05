@@ -36,10 +36,22 @@ frontend-check: frontend-lint frontend-format-check frontend-test frontend-build
 
 check: lint test frontend-check
 
+smoke-staging:
+	@python3 scripts/smoke-test.py https://tasche-staging.adewale-883.workers.dev
+
+smoke-production:
+	@python3 scripts/smoke-test.py https://tasche-production.adewale-883.workers.dev
+
+verify-staging: smoke-staging
+	RUN_E2E_TESTS=1 uv run pytest tests/e2e/ -x -q
+	cd frontend && E2E_BASE_URL=https://tasche-staging.adewale-883.workers.dev npx playwright test
+
 deploy-staging: check frontend-build
 	npx wrangler d1 migrations apply tasche-staging-db --env staging --remote
 	uv run pywrangler deploy --env staging
+	$(MAKE) smoke-staging
 
 deploy-production: check frontend-build
 	npx wrangler d1 migrations apply tasche-production-db --env production --remote
 	uv run pywrangler deploy --env production
+	$(MAKE) smoke-production

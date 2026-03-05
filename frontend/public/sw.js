@@ -43,7 +43,7 @@ self.addEventListener('install', function (event) {
 });
 
 // ---------------------------------------------------------------------------
-// Activate — clean old caches, purge API cache, claim clients
+// Activate — clean old caches, claim clients
 // ---------------------------------------------------------------------------
 
 self.addEventListener('activate', function (event) {
@@ -55,11 +55,6 @@ self.addEventListener('activate', function (event) {
           .filter(function (key) { return !KEEP.includes(key); })
           .map(function (key) { return caches.delete(key); })
       );
-    })
-    // Purge the entire API cache on activation — API responses are ephemeral
-    // and keeping stale data across SW updates causes the worst staleness bugs
-    .then(function () {
-      return caches.delete(API_CACHE);
     })
     .then(function () {
       return self.clients.claim();
@@ -80,27 +75,43 @@ self.addEventListener('fetch', function (event) {
   // Hashed assets (/assets/index-CnPyFRMI.js) — cache first is safe because
   // the hash changes on every build, so a cache hit is always correct.
   if (url.pathname.startsWith('/assets/')) {
-    event.respondWith(cacheFirstHashedAsset(event.request));
+    event.respondWith(
+      cacheFirstHashedAsset(event.request).catch(function () {
+        return fetch(event.request);
+      })
+    );
     return;
   }
 
   // Navigation and app shell (/, /manifest.json, /static/*) — network first
   // with timeout so slow connections fall back to cached shell quickly.
   if (url.pathname === '/' || url.pathname === '/manifest.json' || url.pathname.startsWith('/static/')) {
-    event.respondWith(networkFirstNavigation(event.request));
+    event.respondWith(
+      networkFirstNavigation(event.request).catch(function () {
+        return fetch(event.request);
+      })
+    );
     return;
   }
 
   // API GET requests — network first with timeout, then cache fallback
   if (url.pathname.startsWith('/api/') && event.request.method === 'GET') {
-    event.respondWith(networkFirstWithOffline(event.request));
+    event.respondWith(
+      networkFirstWithOffline(event.request).catch(function () {
+        return fetch(event.request);
+      })
+    );
     return;
   }
 
   // API mutations (POST, PATCH, PUT, DELETE) — pass through to network,
   // then invalidate related API cache entries on success
   if (url.pathname.startsWith('/api/') && event.request.method !== 'GET') {
-    event.respondWith(networkWithCacheInvalidation(event.request));
+    event.respondWith(
+      networkWithCacheInvalidation(event.request).catch(function () {
+        return fetch(event.request);
+      })
+    );
     return;
   }
 

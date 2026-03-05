@@ -177,7 +177,16 @@ export function Login() {
   }
 
   var isError = config && config.status === 'error';
+  var isUnreachable = config && config.status === 'unreachable';
   var environment = (config && config.environment) || '';
+
+  function retryHealthCheck() {
+    setLoading(true);
+    getHealthConfig().then(function (data) {
+      setConfig(data);
+      setLoading(false);
+    });
+  }
 
   return (
     <div class="login-page">
@@ -194,7 +203,17 @@ export function Login() {
           </p>
         </div>
       )}
-      {isError ? (
+      {isUnreachable ? (
+        <div class="setup-checklist">
+          <h2 class="setup-heading">Connection Issue</h2>
+          <p class="setup-subtext">
+            Could not reach the server. This usually resolves in a few seconds after a deploy.
+          </p>
+          <button class="btn btn-primary" onClick={retryHealthCheck}>
+            Retry
+          </button>
+        </div>
+      ) : isError ? (
         <SetupChecklist checks={config.checks} status={config.status} environment={environment} />
       ) : (
         <>

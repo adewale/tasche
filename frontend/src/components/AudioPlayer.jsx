@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect } from 'preact/hooks';
 import { signal } from '@preact/signals';
 import { addToast } from '../state.js';
+import { getAudioUrl } from '../api.js';
 import { formatTime } from '../utils.js';
 import { IconPlay, IconPause, IconSkipBack, IconSkipForward, IconX } from './Icons.jsx';
 
@@ -28,14 +29,19 @@ export function playAudio(articleId, title, domain, thumbnailKey) {
     articleTitle: title || 'Untitled',
     articleDomain: domain || '',
     articleThumbnail: thumbnailKey ? '/api/articles/' + articleId + '/thumbnail' : null,
-    isPlaying: true,
+    isPlaying: false,
     visible: true,
   };
-  audio.src = '/api/articles/' + articleId + '/audio';
-  audio.play().catch(function (e) {
-    addToast('Could not play audio: ' + e.message, 'error');
-  });
   document.body.classList.add('has-audio-player');
+  getAudioUrl(articleId)
+    .then(function (blobUrl) {
+      audio.src = blobUrl;
+      audioState.value = { ...audioState.value, isPlaying: true };
+      return audio.play();
+    })
+    .catch(function (e) {
+      addToast('Could not play audio: ' + e.message, 'error');
+    });
 }
 
 export function AudioPlayer() {
@@ -73,7 +79,10 @@ export function AudioPlayer() {
       setIsPlaying(false);
     }
     function onError() {
-      addToast('Audio playback error', 'error');
+      var code = audio.error ? audio.error.code : 0;
+      var msg = audio.error ? audio.error.message : 'unknown';
+      console.error('[Audio] playback error code=%d: %s', code, msg);
+      addToast('Audio playback error: ' + msg, 'error');
     }
 
     audio.addEventListener('timeupdate', onTimeUpdate);
@@ -151,6 +160,9 @@ export function AudioPlayer() {
   function stop() {
     const audio = getAudio();
     audio.pause();
+    if (audio.src && audio.src.startsWith('blob:')) {
+      URL.revokeObjectURL(audio.src);
+    }
     audio.src = '';
     audio.load();
     audioState.value = {

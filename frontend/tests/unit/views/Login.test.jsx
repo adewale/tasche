@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/preact';
+import { render, screen, waitFor, fireEvent } from '@testing-library/preact';
 import { Login } from '../../../src/views/Login.jsx';
 
 vi.mock('../../../src/api.js', () => ({
@@ -303,5 +303,33 @@ describe('Login', () => {
       .closest('.setup-item')
       .querySelector('.setup-item-indicator--optional');
     expect(optionalIndicator).toBeInTheDocument();
+  });
+
+  it('shows connection issue when health returns unreachable', async () => {
+    getHealthConfig.mockResolvedValue({ status: 'unreachable', checks: [] });
+    render(<Login />);
+    await waitFor(() => {
+      expect(screen.getByText('Connection Issue')).toBeInTheDocument();
+    });
+    expect(screen.getByText(/Could not reach the server/)).toBeInTheDocument();
+    expect(screen.getByText('Retry')).toBeInTheDocument();
+    expect(screen.queryByText('Sign in with GitHub')).not.toBeInTheDocument();
+    expect(screen.queryByText('Setup Checklist')).not.toBeInTheDocument();
+  });
+
+  it('retry button re-fetches health config', async () => {
+    getHealthConfig.mockResolvedValueOnce({ status: 'unreachable', checks: [] });
+    render(<Login />);
+    await waitFor(() => {
+      expect(screen.getByText('Retry')).toBeInTheDocument();
+    });
+
+    getHealthConfig.mockResolvedValueOnce({ status: 'ok', checks: [] });
+    fireEvent.click(screen.getByText('Retry'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Sign in with GitHub')).toBeInTheDocument();
+    });
+    expect(getHealthConfig).toHaveBeenCalledTimes(2);
   });
 });

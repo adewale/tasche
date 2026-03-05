@@ -25,28 +25,15 @@
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function () {
-        navigator.serviceWorker.register('/sw.js').then(function (reg) {
-          console.log('Service Worker registered:', reg.scope);
-
-          // Detect SW updates and reload cleanly (#4)
-          reg.addEventListener('updatefound', function () {
-            var newWorker = reg.installing;
-            if (!newWorker) return;
-            newWorker.addEventListener('statechange', function () {
-              if (newWorker.state === 'activated') {
-                // New SW has activated — reload to use fresh assets
-                window.location.reload();
-              }
-            });
-          });
-        }).catch(function (err) {
+        var reloading = false;
+        navigator.serviceWorker.register('/sw.js').catch(function (err) {
           console.warn('Service Worker registration failed:', err);
         });
-
-        // When a new SW takes over via skipWaiting + clients.claim,
-        // reload to avoid half-old-half-new state (#4)
         navigator.serviceWorker.addEventListener('controllerchange', function () {
-          window.location.reload();
+          if (!reloading) {
+            reloading = true;
+            window.location.reload();
+          }
         });
       });
     }
