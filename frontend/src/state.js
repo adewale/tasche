@@ -92,6 +92,9 @@ function createPoller(intervalMs, field, toasts) {
     var intervalId = setInterval(async function () {
       if (Date.now() - startTime > 600000) {
         stop(articleId);
+        if (toasts.timeout) {
+          addToast(toasts.timeout[0], toasts.timeout[1]);
+        }
         return;
       }
       try {
@@ -119,10 +122,12 @@ function createPoller(intervalMs, field, toasts) {
 var audioPoller = createPoller(10000, 'audio_status', {
   ready: ['Audio is ready!', 'success'],
   failed: ['Audio generation failed', 'error'],
+  timeout: ['Audio generation is taking longer than expected. Check back later.', 'info'],
 });
 
 var articlePoller = createPoller(5000, 'status', {
   failed: ['Article processing failed', 'error'],
+  timeout: ['Article processing is taking longer than expected. Check back later.', 'info'],
 });
 
 export var pollAudioStatus = audioPoller.start;

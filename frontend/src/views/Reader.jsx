@@ -617,9 +617,10 @@ export function Reader({ id }) {
   const isFav = article.is_favorite;
   const ostatus = article.original_status || 'unknown';
   const hasAudio = article.audio_status === 'ready';
-  const canRequestAudio =
-    !audioRequested && article.audio_status !== 'pending' && article.audio_status !== 'ready';
-  const audioPending = audioRequested || article.audio_status === 'pending';
+  const audioPending =
+    audioRequested || article.audio_status === 'pending' || article.audio_status === 'generating';
+  const audioFailed = article.audio_status === 'failed';
+  const canRequestAudio = !hasAudio && !audioPending;
 
   return (
     <>
@@ -741,7 +742,7 @@ export function Reader({ id }) {
                 )}
               </button>
             )}
-            {canRequestAudio && (
+            {canRequestAudio && !audioFailed && (
               <button
                 class="btn btn-sm btn-secondary"
                 onClick={handleListenLater}
@@ -754,6 +755,23 @@ export function Reader({ id }) {
                 ) : (
                   <>
                     <IconHeadphones size={14} /> Listen Later
+                  </>
+                )}
+              </button>
+            )}
+            {audioFailed && (
+              <button
+                class="btn btn-sm btn-secondary"
+                onClick={handleListenLater}
+                disabled={listeningLoading}
+              >
+                {listeningLoading ? (
+                  <>
+                    <IconClock size={14} /> Requesting...
+                  </>
+                ) : (
+                  <>
+                    <IconRefresh size={14} /> Retry audio
                   </>
                 )}
               </button>

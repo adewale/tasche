@@ -19,6 +19,7 @@ import {
   IconPlay,
   IconClock,
   IconArchive,
+  IconRefresh,
 } from './Icons.jsx';
 import { InkFavicon } from './InkFavicon.jsx';
 import { InkWashThumbnail } from './InkWashThumbnail.jsx';
@@ -123,7 +124,8 @@ export function ArticleCard({ article, selectMode, selected, onToggleSelect }) {
   var audioStatus = a.audio_status;
   var hasAudio = audioStatus === 'ready';
   var audioPending = audioStatus === 'pending' || audioStatus === 'generating';
-  var canRequestAudio = !hasAudio && !audioPending;
+  var audioFailed = audioStatus === 'failed';
+  var canRequestAudio = !hasAudio && !audioPending && !audioFailed;
   var isArchived = a.reading_status === 'archived';
 
   var thumbnailSrc = a.thumbnail_key ? '/api/articles/' + a.id + '/thumbnail' : null;
@@ -203,6 +205,11 @@ export function ArticleCard({ article, selectMode, selected, onToggleSelect }) {
           {!isProcessing && audioPending && (
             <button class="audio-pending" title="Generating audio..." disabled>
               <IconClock />
+            </button>
+          )}
+          {!isProcessing && audioFailed && (
+            <button title="Retry audio" onClick={handleListenLater} disabled={audioLoading}>
+              {audioLoading ? <IconClock /> : <IconRefresh />}
             </button>
           )}
           {!isProcessing && canRequestAudio && (

@@ -550,11 +550,12 @@ class TestTTSProcessing:
 
 class TestTTSProcessingFailure:
     async def test_sets_failed_on_missing_markdown(self) -> None:
-        """When no markdown content is found, audio_status is set to 'failed'."""
+        """When article is ready but has no markdown, audio_status is set to 'failed'."""
         article = ArticleFactory.create(
             id="art_fail1",
             user_id="user_001",
             markdown_content=None,
+            status="ready",
         )
 
         db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
@@ -576,6 +577,53 @@ class TestTTSProcessingFailure:
         # The last such update should have "failed" as the first bound param
         last_sql, last_params = failed_updates[-1]
         assert last_params[0] == "failed"
+
+    async def test_retries_when_article_still_processing(self) -> None:
+        """When article is still processing, TTS raises RuntimeError for queue retry."""
+        article = ArticleFactory.create(
+            id="art_race",
+            user_id="user_001",
+            markdown_content=None,
+            status="processing",
+        )
+
+        db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
+        r2 = MockR2()
+        ai = MockAI(response=b"fake-audio")
+        env = MockEnv(db=db, content=r2, ai=ai)
+
+        from tts.processing import process_tts
+
+        # Should raise RuntimeError (retryable), NOT set audio_status to 'failed'
+        with pytest.raises(RuntimeError, match="still processing"):
+            await process_tts("art_race", env, user_id="user_001", raise_on_error=True)
+
+        # audio_status should NOT be set to 'failed'
+        failed_updates = [
+            (sql, params)
+            for sql, params in db.executed
+            if sql.startswith("UPDATE") and "audio_status" in sql and "failed" in str(params)
+        ]
+        assert len(failed_updates) == 0
+
+    async def test_retries_when_article_still_pending(self) -> None:
+        """When article is still pending, TTS raises RuntimeError for queue retry."""
+        article = ArticleFactory.create(
+            id="art_race_pending",
+            user_id="user_001",
+            markdown_content=None,
+            status="pending",
+        )
+
+        db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
+        r2 = MockR2()
+        ai = MockAI(response=b"fake-audio")
+        env = MockEnv(db=db, content=r2, ai=ai)
+
+        from tts.processing import process_tts
+
+        with pytest.raises(RuntimeError, match="still pending"):
+            await process_tts("art_race_pending", env, user_id="user_001", raise_on_error=True)
 
     async def test_ai_runtime_error_is_transient(self) -> None:
         """RuntimeError from Workers AI is treated as transient and re-raised."""

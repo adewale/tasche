@@ -381,9 +381,9 @@ async def process_tts(
             .run()
         )
 
-        # Step 2: Fetch markdown content from D1
+        # Step 2: Fetch markdown content and article status from D1
         article = await (
-            db.prepare("SELECT markdown_content FROM articles WHERE id = ? AND user_id = ?")
+            db.prepare("SELECT markdown_content, status FROM articles WHERE id = ? AND user_id = ?")
             .bind(article_id, user_id)
             .first()
         )
@@ -391,6 +391,16 @@ async def process_tts(
         markdown_text = article.get("markdown_content") if article else None
 
         if not markdown_text:
+            # If the article is still being processed, the content isn't
+            # available yet.  Raise a retryable error so the queue re-delivers
+            # the message — by the time the retry runs, process_article will
+            # likely have finished and populated markdown_content.
+            article_status = article.get("status") if article else None
+            if article_status in ("pending", "processing"):
+                raise RuntimeError(
+                    f"Article {article_id} is still {article_status} — "
+                    f"markdown content not yet available, will retry"
+                )
             raise ValueError(f"No markdown content found for article {article_id}")
 
         # Strip markdown syntax for cleaner speech output

@@ -83,6 +83,7 @@ vi.mock('../../../src/hooks/useSWMessage.js', () => ({
 vi.mock('../../../src/state.js', () => ({
   articles: { value: [] },
   addToast: vi.fn(),
+  pollAudioStatus: vi.fn(),
 }));
 
 vi.mock('../../../src/readerPrefs.js', () => ({
@@ -211,7 +212,7 @@ describe('Reader', () => {
     });
   });
 
-  it('shows Listen Later when audio_status is generating (stuck)', async () => {
+  it('shows Generating audio spinner when audio_status is generating', async () => {
     const { getArticle } = await import('../../../src/api.js');
     getArticle.mockResolvedValueOnce({
       id: 'art-1',
@@ -232,10 +233,37 @@ describe('Reader', () => {
 
     render(<Reader id="art-1" />);
     await waitFor(() => {
-      expect(screen.getByText('Listen Later')).toBeInTheDocument();
+      expect(screen.getByText('Generating audio...')).toBeInTheDocument();
     });
-    // Should NOT show a disabled "Generating audio..." button
-    expect(screen.queryByText('Generating audio...')).not.toBeInTheDocument();
+    // Should NOT show Listen Later — generating is an in-progress state
+    expect(screen.queryByText('Listen Later')).not.toBeInTheDocument();
+  });
+
+  it('shows Retry audio when audio_status is failed', async () => {
+    const { getArticle } = await import('../../../src/api.js');
+    getArticle.mockResolvedValueOnce({
+      id: 'art-1',
+      title: 'Test Article',
+      domain: 'example.com',
+      original_url: 'https://example.com/test',
+      excerpt: 'An excerpt',
+      reading_status: 'unread',
+      reading_time_minutes: 5,
+      is_favorite: 0,
+      audio_status: 'failed',
+      status: 'ready',
+      original_status: 'unknown',
+      scroll_position: 0,
+      word_count: 1000,
+      markdown_content: null,
+    });
+
+    render(<Reader id="art-1" />);
+    await waitFor(() => {
+      expect(screen.getByText('Retry audio')).toBeInTheDocument();
+    });
+    // Should NOT show Listen Later — distinct button for failed state
+    expect(screen.queryByText('Listen Later')).not.toBeInTheDocument();
   });
 
   it('renders Favourite button', async () => {
