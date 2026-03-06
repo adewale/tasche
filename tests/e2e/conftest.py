@@ -1,7 +1,8 @@
 """E2E test fixtures — run against a live Cloudflare Workers deployment.
 
 Staging URL: https://tasche-staging.adewale-883.workers.dev
-Auth: DISABLE_AUTH=true (no OAuth needed, implicit "dev" user)
+Auth: `make test-e2e` toggles DISABLE_AUTH on/off via wrangler secret.
+      Auth bypass is only active for the duration of the test run.
 
 Gate: set RUN_E2E_TESTS=1 to enable. Without it, all E2E tests are skipped.
 """

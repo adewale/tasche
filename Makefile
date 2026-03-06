@@ -2,7 +2,14 @@ test:
 	uv run pytest tests/unit -x -q
 
 test-e2e:
-	RUN_E2E_TESTS=1 uv run pytest tests/e2e/ -x -q
+	@echo "Enabling auth bypass on staging..."
+	@echo "true" | npx wrangler secret put DISABLE_AUTH --env staging
+	@echo "Running E2E tests..."
+	@RUN_E2E_TESTS=1 uv run pytest tests/e2e/ -x -q; \
+		EXIT_CODE=$$?; \
+		echo "Restoring auth on staging..."; \
+		yes | npx wrangler secret delete DISABLE_AUTH --env staging 2>/dev/null; \
+		exit $$EXIT_CODE
 
 lint:
 	uv run ruff check src/ tests/
@@ -43,8 +50,17 @@ smoke-production:
 	@python3 scripts/smoke-test.py https://tasche-production.adewale-883.workers.dev
 
 verify-staging: smoke-staging
-	RUN_E2E_TESTS=1 uv run pytest tests/e2e/ -x -q
-	cd frontend && E2E_BASE_URL=https://tasche-staging.adewale-883.workers.dev npx playwright test
+	@echo "Enabling auth bypass on staging..."
+	@echo "true" | npx wrangler secret put DISABLE_AUTH --env staging
+	@echo "Running E2E + Playwright tests..."
+	@RUN_E2E_TESTS=1 uv run pytest tests/e2e/ -x -q; \
+		PYTEST_EXIT=$$?; \
+		cd frontend && E2E_BASE_URL=https://tasche-staging.adewale-883.workers.dev npx playwright test; \
+		PW_EXIT=$$?; \
+		echo "Restoring auth on staging..."; \
+		yes | npx wrangler secret delete DISABLE_AUTH --env staging 2>/dev/null; \
+		if [ $$PYTEST_EXIT -ne 0 ]; then exit $$PYTEST_EXIT; fi; \
+		exit $$PW_EXIT
 
 deploy-staging: check frontend-build
 	npx wrangler d1 migrations apply tasche-staging-db --env staging --remote
