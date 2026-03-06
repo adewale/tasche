@@ -77,9 +77,9 @@ The window name stays `'Tasche'` so repeated clicks reuse the same popup.
 │  │ ★ web  │ │ dev │ │ tutorials │  │
 │  └────────┘ └─────┘ └───────────┘  │
 │                                      │
-│  ┌─────────────────┐ ┌────────────┐ │
-│  │      Save       │ │  🎧 Listen │ │
-│  └─────────────────┘ └────────────┘ │
+│  ┌─────────────────┐ ┌──────────────┐│
+│  │      Save       │ │ 🎧 Save audio││
+│  └─────────────────┘ └──────────────┘│
 │                                      │
 └──────────────────────────────────────┘
 ```
@@ -94,8 +94,8 @@ The window name stays `'Tasche'` so repeated clicks reuse the same popup.
 | **Autocomplete dropdown** | Appears below the tags input when typing. Shows matching tags from the user's tag list, sorted by relevance (see §Autocomplete). Each entry shows the tag name and article count. |
 | **Suggested tags** | Clickable chips shown below the input. Two sources: tag rules that match this URL/domain/title (marked with ★) and the user's most-used tags. Click to add. |
 | **Save button** | Submits the form with `listen_later: false`. Disabled while saving. Shows spinner during request. |
-| **Listen button** | Labeled "🎧 Listen". Submits the form with `listen_later: true`, which saves the article _and_ queues TTS generation. Same disabled/spinner behavior as Save. Visually secondary to the Save button (outlined style, not filled). |
-| **Status area** | Below the buttons. Shows "Saved!" / "Saved! Audio queued." / "Already saved." / error messages. On success, auto-closes after 1.5s (same as current behavior). |
+| **Save audio button** | Labeled "🎧 Save audio" (matching the library's save form). Submits the form with `listen_later: true`, which saves the article _and_ queues TTS generation. Same disabled/spinner behavior as Save. Visually secondary to the Save button (outlined style, not filled). |
+| **Status area** | Below the buttons. Shows "Saved!" / "Saved! Audio will be generated." / "Already saved." / error messages. On success, auto-closes after 1.5s (same as current behavior). |
 
 ### Keyboard Shortcuts
 
@@ -110,7 +110,7 @@ The window name stays `'Tasche'` so repeated clicks reuse the same popup.
 | `,` or `Space` | Tags input, text present | Commit current text as a tag (if it matches an existing tag) |
 | `Escape` | Autocomplete open | Close dropdown |
 | `Escape` | Autocomplete closed | Close popup window |
-| `Ctrl+Enter` / `⌘+Enter` | Anywhere in form | Save + Listen Later (equivalent to clicking the Listen button) |
+| `Ctrl+Enter` / `⌘+Enter` | Anywhere in form | Save audio (equivalent to clicking the Save audio button) |
 
 ---
 
@@ -149,7 +149,7 @@ If either fetch fails, the popup degrades gracefully — the tags input still wo
 user clicks Save (or presses Enter)
   │
   ├─ collect: url, title, tag_ids[], listen_later
-  │            (listen_later = false for Save, true for Listen)
+  │            (listen_later = false for Save, true for Save audio)
   │
   ├─ POST /api/articles ─────────────────► creates article (status: pending)
   │     { url, title, tag_ids,              if listen_later: also sets
@@ -158,7 +158,7 @@ user clicks Save (or presses Enter)
   │
   ├─ show status message:
   │     listen_later=false → "Saved!"
-  │     listen_later=true  → "Saved! Audio queued."
+  │     listen_later=true  → "Saved! Audio will be generated."
   ├─ auto-close after 1.5s
   └─ done
 ```
@@ -300,22 +300,22 @@ A checkbox labeled "Also generate audio" adds cognitive overhead to every save. 
 | Button | Label | Sends | Status message |
 |--------|-------|-------|----------------|
 | **Save** (primary) | "Save" | `listen_later: false` | "Saved!" |
-| **Listen** (secondary) | "🎧 Listen" | `listen_later: true` | "Saved! Audio queued." |
+| **Save audio** (secondary) | "🎧 Save audio" | `listen_later: true` | "Saved! Audio will be generated." |
 
-The Save button is primary (filled, prominent). The Listen button is secondary (outlined, slightly smaller). This keeps the default path fast — Enter key triggers Save, not Listen — while making audio a single extra click away.
+The Save button is primary (filled, prominent). The Save audio button is secondary (outlined, slightly smaller) — matching the library's `btn-save-audio` styling. This keeps the default path fast — Enter key triggers Save, not Save audio — while making audio a single extra click away.
 
-### Keyboard: `Ctrl+Enter` / `⌘+Enter` for Listen
+### Keyboard: `Ctrl+Enter` / `⌘+Enter` for Save Audio
 
-Enter submits via Save (the common case). `Ctrl+Enter` / `⌘+Enter` submits via Listen. This matches the "modifier key = enhanced action" convention used by chat apps (send vs. send + something) and avoids adding a new shortcut to memorize.
+Enter submits via Save (the common case). `Ctrl+Enter` / `⌘+Enter` submits via Save audio. This matches the "modifier key = enhanced action" convention used by chat apps (send vs. send + something) and avoids adding a new shortcut to memorize.
 
 ### No Backend Changes
 
-The `listen_later` field already exists on `POST /api/articles`. The bookmarklet popup simply needs to send `listen_later: true` when the Listen button is clicked. No new endpoint, no schema change, no queue changes.
+The `listen_later` field already exists on `POST /api/articles`. The bookmarklet popup simply needs to send `listen_later: true` when the Save audio button is clicked. No new endpoint, no schema change, no queue changes.
 
 ### Status Message
 
 When `listen_later: true`:
-- Success: **"Saved! Audio queued."** — confirms both the save and the audio intent in a single message. The 🎧 icon mirrors the library's headphone filter tab, reinforcing the visual language.
+- Success: **"Saved! Audio will be generated."** — matches the library's toast message (`Library.jsx:256`). Confirms both the save and the audio intent.
 - The popup still auto-closes after 1.5s. Audio generation happens asynchronously in the queue; the popup doesn't wait for it.
 
 ---
@@ -362,8 +362,8 @@ Mount the new bookmarklet suggestions router.
 | Tag deleted between popup load and save | `INSERT OR IGNORE` handles this; the invalid tag_id is silently skipped. |
 | Very long title from `document.title` | Title input is editable and has `maxlength="500"` (matching the existing API constraint). Titles longer than 500 characters are truncated on pre-fill. |
 | Popup opened from CSP-restricted page | Bookmarklet code is minimal (`open()` + `encodeURIComponent()`). The popup loads on Tasche's own origin, so CSP of the source page doesn't affect the popup's fetches. No change needed. |
-| User clicks Listen on a duplicate URL (409 re-process) | The existing `create_article()` re-process path already handles `listen_later` — if the article exists and `listen_later: true`, it sets `audio_status = 'pending'` alongside resetting article status. Popup shows "Re-saved! Audio queued." |
-| User clicks Listen but TTS is unavailable (no AI binding) | Article saves normally. Audio generation fails asynchronously in the queue (sets `audio_status = 'failed'`). The popup doesn't know — it shows "Saved! Audio queued." and closes. The user sees the failure in the reader view later. This is the existing behavior for all TTS failures. |
+| User clicks Save audio on a duplicate URL (409 re-process) | The existing `create_article()` re-process path already handles `listen_later` — if the article exists and `listen_later: true`, it sets `audio_status = 'pending'` alongside resetting article status. Popup shows "Re-saved! Audio will be generated." |
+| User clicks Save audio but TTS is unavailable (no AI binding) | Article saves normally. Audio generation fails asynchronously in the queue (sets `audio_status = 'failed'`). The popup doesn't know — it shows "Saved! Audio will be generated." and closes. The user sees the failure in the reader view later. This is the existing behavior for all TTS failures. |
 
 ---
 
@@ -389,19 +389,19 @@ The popup respects `prefers-color-scheme: dark` (same as current implementation)
 10. Status shows "Saved!" → popup auto-closes after 1.5s
 11. In the library, the article appears with "python" and "tutorials" tags already applied
 
-### Test 2: Save with Tags + Listen Later
+### Test 2: Save with Tags + Audio
 
 1. User visits a long-form article and clicks the bookmarklet
 2. Popup opens. User adds a tag via autocomplete
-3. User clicks "🎧 Listen" button (instead of Save)
-4. Status shows "Saved! Audio queued." → popup auto-closes after 1.5s
+3. User clicks "🎧 Save audio" button (instead of Save)
+4. Status shows "Saved! Audio will be generated." → popup auto-closes after 1.5s
 5. In the library, the article appears with the tag applied and a headphone icon indicating audio is being generated
 6. After processing completes, the article appears in the 🎧 filter tab with playable audio
 
-### Test 3: Listen Later via Keyboard
+### Test 3: Save Audio via Keyboard
 
 1. User clicks the bookmarklet on any page
 2. Popup opens with cursor in tags input
 3. User presses `Ctrl+Enter` (or `⌘+Enter` on macOS) without adding any tags
-4. Status shows "Saved! Audio queued." → popup auto-closes after 1.5s
+4. Status shows "Saved! Audio will be generated." → popup auto-closes after 1.5s
 5. Article is saved with `audio_status = 'pending'`, no tags
