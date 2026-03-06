@@ -77,12 +77,12 @@ async def get_current_user(request: Request) -> dict[str, Any]:
 
     # Auth bypass — return dev user without any session or OAuth.
     if env.get("DISABLE_AUTH") == "true":
-        site_url = env.get("SITE_URL", "")
-        if site_url.startswith("https://") and "localhost" not in site_url:
-            print(json.dumps({"event": "disable_auth_blocked", "site_url": site_url}))
+        worker_env = env.get("WORKER_ENV", "")
+        if worker_env == "production":
+            print(json.dumps({"event": "disable_auth_blocked", "worker_env": worker_env}))
             raise HTTPException(
                 status_code=500,
-                detail="DISABLE_AUTH cannot be used with HTTPS SITE_URL",
+                detail="DISABLE_AUTH cannot be used in production",
             )
         user_data = await _get_or_create_dev_user(env.DB)
         request.state.user_id = user_data["user_id"]

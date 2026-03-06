@@ -47,7 +47,7 @@
     },
     "staging": {
       "workers_dev": true,
-      "vars": { "SITE_URL": "https://tasche-staging.adewale-883.workers.dev", "TTS_MODEL": "aura-2-en", "WORKER_ENV": "staging" },
+      "vars": { "SITE_URL": "https://tasche-staging.adewale-883.workers.dev", "TTS_MODEL": "aura-2-en", "WORKER_ENV": "staging", "DISABLE_AUTH": "true" },
       "ai": { "binding": "AI" },
       "services": [{ "binding": "READABILITY", "service": "readability-worker", "entrypoint": "ReadabilityService" }],
       "d1_databases": [{ "binding": "DB", "database_name": "tasche-staging-db", "database_id": "4a1d5914-2446-4cfd-be0b-a1c78a7d495e" }],

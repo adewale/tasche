@@ -451,15 +451,17 @@ async def process_tts(
                 # Deepgram Aura models return a ReadableStream
                 inputs = {"text": chunk}
                 if is_deepgram:
-                    inputs.update(
-                        {
-                            "speaker": voice,
-                            "encoding": _DEEPGRAM_ENCODING,
-                            "container": _DEEPGRAM_CONTAINER,
-                            "bit_rate": _DEEPGRAM_BIT_RATE,
-                            "sample_rate": _DEEPGRAM_SAMPLE_RATE,
-                        }
-                    )
+                    deepgram_params = {
+                        "speaker": voice,
+                        "encoding": _DEEPGRAM_ENCODING,
+                        "container": _DEEPGRAM_CONTAINER,
+                        "bit_rate": _DEEPGRAM_BIT_RATE,
+                    }
+                    # Opus handles sample rate internally; the API
+                    # rejects sample_rate when encoding=opus.
+                    if _DEEPGRAM_ENCODING != "opus":
+                        deepgram_params["sample_rate"] = _DEEPGRAM_SAMPLE_RATE
+                    inputs.update(deepgram_params)
                 chunk_audio = await ai.run(model_id, inputs)
                 chunk_bytes = await consume_readable_stream(chunk_audio)
 

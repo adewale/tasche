@@ -466,7 +466,7 @@ class TestTTSProcessing:
         assert call["encoding"] == "opus"
         assert call["container"] == "ogg"
         assert call["bit_rate"] == 24000
-        assert call["sample_rate"] == 24000
+        assert "sample_rate" not in call  # Opus handles sample rate internally
 
         # Verify audio was stored as .ogg in R2
         assert "articles/art_aura/audio.ogg" in r2._store

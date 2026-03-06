@@ -518,7 +518,7 @@ class TestConfigCheck:
 
 
 class TestDisableAuthGuard:
-    """DISABLE_AUTH must be blocked when SITE_URL is HTTPS (production)."""
+    """DISABLE_AUTH must be blocked in production (WORKER_ENV=production)."""
 
     def _make_client(self, env: MockEnv):
         from fastapi import FastAPI
@@ -540,19 +540,29 @@ class TestDisableAuthGuard:
 
         return TC(test_app, raise_server_exceptions=False)
 
-    def test_disable_auth_blocked_with_https_site_url(self) -> None:
-        """DISABLE_AUTH + HTTPS SITE_URL returns 500."""
+    def test_disable_auth_blocked_in_production(self) -> None:
+        """DISABLE_AUTH + WORKER_ENV=production returns 500."""
         env = MockEnv(
             disable_auth="true",
-            site_url="https://tasche.example.com",
+            worker_env="production",
         )
         client = self._make_client(env)
         resp = client.get("/api/articles")
         assert resp.status_code == 500
         assert "DISABLE_AUTH" in resp.json()["detail"]
 
-    def test_disable_auth_allowed_with_http_site_url(self) -> None:
-        """DISABLE_AUTH + HTTP SITE_URL is allowed (local dev)."""
+    def test_disable_auth_allowed_in_staging(self) -> None:
+        """DISABLE_AUTH + WORKER_ENV=staging is allowed (E2E testing)."""
+        env = MockEnv(
+            disable_auth="true",
+            worker_env="staging",
+        )
+        client = self._make_client(env)
+        resp = client.get("/api/articles")
+        assert resp.status_code == 200
+
+    def test_disable_auth_allowed_without_worker_env(self) -> None:
+        """DISABLE_AUTH without WORKER_ENV is allowed (local dev)."""
         env = MockEnv(
             disable_auth="true",
             site_url="http://localhost:8787",

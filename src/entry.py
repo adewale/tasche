@@ -347,7 +347,8 @@ class Default(WorkerEntrypoint):
 
         # --- Auth ---
         disable_auth = getattr(self.env, "DISABLE_AUTH", None)
-        if str(disable_auth) == "true":
+        worker_env = getattr(self.env, "WORKER_ENV", None)
+        if str(disable_auth) == "true" and str(worker_env) != "production":
             user_id = "dev"
         else:
             cookie_raw = request.headers.get("cookie")
