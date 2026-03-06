@@ -508,6 +508,153 @@ class TestCreateArticle:
         assert len(updates) == 1
         assert "audio_status" in updates[0]["sql"]
 
+    async def test_creates_article_with_tag_ids(self) -> None:
+        """POST /api/articles with tag_ids inserts into article_tags."""
+        calls: list[dict[str, Any]] = []
+        user_tags = [
+            {"id": "tag_aaa", "user_id": "user_001", "name": "python"},
+            {"id": "tag_bbb", "user_id": "user_001", "name": "testing"},
+        ]
+
+        def execute(sql: str, params: list) -> list:
+            calls.append({"sql": sql, "params": params})
+            # Return tag row when validating tag ownership
+            if "FROM tags WHERE id" in sql:
+                return [t for t in user_tags if t["id"] == params[0]]
+            return []
+
+        queue = MockQueue()
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db, article_queue=queue)
+
+        client, _session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles",
+            json={
+                "url": "https://example.com/tagged",
+                "title": "Tagged Article",
+                "tag_ids": ["tag_aaa", "tag_bbb"],
+            },
+        )
+
+        assert resp.status_code == 201
+
+        tag_inserts = [c for c in calls if "INSERT" in c["sql"] and "article_tags" in c["sql"]]
+        assert len(tag_inserts) == 2
+        inserted_tag_ids = {c["params"][1] for c in tag_inserts}
+        assert inserted_tag_ids == {"tag_aaa", "tag_bbb"}
+
+    async def test_tag_ids_skips_invalid_tags(self) -> None:
+        """POST /api/articles with unknown tag_ids silently skips them."""
+        calls: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            calls.append({"sql": sql, "params": params})
+            # No tags belong to this user
+            return []
+
+        queue = MockQueue()
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db, article_queue=queue)
+
+        client, _session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles",
+            json={
+                "url": "https://example.com/bad-tags",
+                "tag_ids": ["nonexistent_tag"],
+            },
+        )
+
+        assert resp.status_code == 201
+
+        tag_inserts = [c for c in calls if "INSERT" in c["sql"] and "article_tags" in c["sql"]]
+        assert len(tag_inserts) == 0
+
+    async def test_tag_ids_skips_other_users_tags(self) -> None:
+        """POST /api/articles won't apply tags owned by a different user."""
+        calls: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            calls.append({"sql": sql, "params": params})
+            # Tag exists but query filters by user_id so it won't match
+            if "FROM tags WHERE id" in sql:
+                return []  # No match for this user
+            return []
+
+        queue = MockQueue()
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db, article_queue=queue)
+
+        client, _session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles",
+            json={
+                "url": "https://example.com/wrong-user-tag",
+                "tag_ids": ["tag_other_user"],
+            },
+        )
+
+        assert resp.status_code == 201
+        tag_inserts = [c for c in calls if "INSERT" in c["sql"] and "article_tags" in c["sql"]]
+        assert len(tag_inserts) == 0
+
+    async def test_tag_ids_empty_list_is_noop(self) -> None:
+        """POST /api/articles with empty tag_ids does nothing extra."""
+        calls: list[dict[str, Any]] = []
+
+        def execute(sql: str, params: list) -> list:
+            calls.append({"sql": sql, "params": params})
+            return []
+
+        queue = MockQueue()
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db, article_queue=queue)
+
+        client, _session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles",
+            json={
+                "url": "https://example.com/no-tags",
+                "tag_ids": [],
+            },
+        )
+
+        assert resp.status_code == 201
+        tag_inserts = [c for c in calls if "article_tags" in c["sql"]]
+        assert len(tag_inserts) == 0
+
+    async def test_tag_ids_capped_at_twenty(self) -> None:
+        """POST /api/articles applies at most 20 tags even if more are sent."""
+        calls: list[dict[str, Any]] = []
+        # Create 25 valid tags
+        many_tags = [
+            {"id": f"tag_{i:03d}", "user_id": "user_001", "name": f"t{i}"} for i in range(25)
+        ]
+
+        def execute(sql: str, params: list) -> list:
+            calls.append({"sql": sql, "params": params})
+            if "FROM tags WHERE id" in sql:
+                return [t for t in many_tags if t["id"] == params[0]]
+            return []
+
+        queue = MockQueue()
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db, article_queue=queue)
+
+        client, _session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles",
+            json={
+                "url": "https://example.com/many-tags",
+                "tag_ids": [t["id"] for t in many_tags],
+            },
+        )
+
+        assert resp.status_code == 201
+        tag_inserts = [c for c in calls if "INSERT" in c["sql"] and "article_tags" in c["sql"]]
+        assert len(tag_inserts) == 20
+
 
 # ---------------------------------------------------------------------------
 # POST /api/articles — listen_later behaviour tests (value-level assertions)
