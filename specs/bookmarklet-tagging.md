@@ -23,11 +23,13 @@ Pinboard solved tagging in 2009 by focusing the bookmarklet cursor on the tags f
 
 3. **Suggest, don't require.** Show the user's existing tags, highlight ones that match via tag rules, but never force tagging.
 
-4. **Stay small and self-contained.** The popup is still a single HTML file with inline CSS/JS. No framework, no build step, no external dependencies. Target: under 8KB.
+4. **Reuse existing patterns.** The popup is a standalone HTML page (no Preact), but it loads the app's built stylesheet for visual consistency and reuses existing API endpoints (`GET /api/tags`, `GET /api/tag-rules`, `POST /api/tags`, `POST /api/articles`) rather than introducing bookmarklet-specific endpoints. Tag chips use the same `.tag-chip` class; Save audio uses the same `.btn-save-audio` class.
 
 5. **Keyboard-completable.** The entire flow — open popup, type tag prefix, accept suggestion, save — must work without the mouse. Target: under 5 seconds for a user who knows their tags.
 
-6. **Capture intent, not just URL.** The moment of saving is when the user knows _why_ they're saving. "I want to read this on the train" (save) vs. "I want to listen to this on my walk" (save + listen later) are different intents. The popup should let users express both.
+6. **Stay small.** The popup is a single HTML file with inline JS and minimal inline CSS (layout only — visual styles come from the app's stylesheet). No framework, no build step. Target: under 4KB.
+
+7. **Capture intent, not just URL.** The moment of saving is when the user knows _why_ they're saving. "I want to read this on the train" (save) vs. "I want to listen to this on my walk" (save + listen later) are different intents. The popup should let users express both.
 
 ---
 
@@ -64,13 +66,12 @@ The window name stays `'Tasche'` so repeated clicks reuse the same popup.
 │  example.com/blog/bookmarklet        │
 │                                      │
 │  Tags                                │
+│  ┌────────────┐ ┌───────┐           │
+│  │ javascript ×│ │ web × │           │ ◄ selected tag chips (.tag-chip)
+│  └────────────┘ └───────┘           │
 │  ┌──────────────────────────────────┐│
-│  │ javascript, web ×               ││
-│  │ ┌─ autocomplete ──────────────┐ ││
-│  │ │  javascript  (12 articles)  │ ││
-│  │ │  java        (3 articles)   │ ││
-│  │ └────────────────────────────-┘ ││
-│  └──────────────────────────────────┘│
+│  │ tu|                     [↕ list] ││ ◄ text input + native <datalist>
+│  └──────────────────────────────────┘│   browser provides autocomplete
 │                                      │
 │  Suggested                           │
 │  ┌────────┐ ┌─────┐ ┌───────────┐  │
@@ -90,8 +91,8 @@ The window name stays `'Tasche'` so repeated clicks reuse the same popup.
 |---------|----------|
 | **Title** | Pre-filled from `document.title` (passed via query param). Editable single-line text input. Sent as `title` in the POST body. |
 | **URL display** | Shown as static text (not editable). Truncated with ellipsis if longer than ~50 chars. Shows domain prominently. Provides visual confirmation the user is saving the right page. |
-| **Tags input** | Text input with inline chips for already-added tags. Cursor starts here on page load. Typing filters the autocomplete dropdown. |
-| **Autocomplete dropdown** | Appears below the tags input when typing. Shows matching tags from the user's tag list, sorted by relevance (see §Autocomplete). Each entry shows the tag name and article count. |
+| **Selected tags** | Tag chips rendered above the input using the existing `.tag-chip` class (same as `TagPicker.jsx` and `ArticleCard.jsx`). Each chip has a × remove button (`.tag-chip-remove`). Displayed in a `.flex-wrap-gap` container. |
+| **Tags input** | `<input>` with a `<datalist>` for browser-native autocomplete. The datalist is populated from `GET /api/tags`. Cursor starts here on page load. Typing triggers the browser's built-in autocomplete dropdown — no custom dropdown JS needed. When the user selects or types a matching tag name and presses Enter/comma/space, a chip is added above and the input clears. |
 | **Suggested tags** | Clickable chips shown below the input. Two sources: tag rules that match this URL/domain/title (marked with ★) and the user's most-used tags. Click to add. |
 | **Save button** | Submits the form with `listen_later: false`. Disabled while saving. Shows spinner during request. |
 | **Save audio button** | Labeled "🎧 Save audio" (matching the library's save form). Submits the form with `listen_later: true`, which saves the article _and_ queues TTS generation. Same disabled/spinner behavior as Save. Visually secondary to the Save button (outlined style, not filled). |
@@ -101,15 +102,12 @@ The window name stays `'Tasche'` so repeated clicks reuse the same popup.
 
 | Key | Context | Action |
 |-----|---------|--------|
-| Any character | Tags input | Filters autocomplete dropdown |
-| `↓` / `↑` | Autocomplete open | Navigate suggestions |
-| `Enter` | Autocomplete open, suggestion highlighted | Accept suggestion (add tag chip) |
-| `Enter` | Autocomplete closed or empty input | Submit form (save) |
+| Any character | Tags input | Browser filters `<datalist>` suggestions |
+| `Enter` | Tags input with matching text | Add tag chip, clear input |
+| `Enter` | Tags input empty | Submit form (save) |
+| `,` or `Space` | Tags input with matching text | Add tag chip, clear input |
 | `Backspace` | Tags input, cursor at start | Remove last tag chip |
-| `Tab` | Tags input | Accept top autocomplete suggestion if one is shown |
-| `,` or `Space` | Tags input, text present | Commit current text as a tag (if it matches an existing tag) |
-| `Escape` | Autocomplete open | Close dropdown |
-| `Escape` | Autocomplete closed | Close popup window |
+| `Escape` | Tags input | Close popup window |
 | `Ctrl+Enter` / `⌘+Enter` | Anywhere in form | Save audio (equivalent to clicking the Save audio button) |
 
 ---
@@ -126,22 +124,23 @@ popup opens
   ├─ render URL display (read-only)
   ├─ focus cursor on tags input
   │
-  ├─ GET /api/tags ──────────────────────► returns all user tags
-  │     │                                   with article_count
-  │     └─ store in memory as tagList
+  ├─ GET /api/tags ──────────────────────► returns all user tags with article_count
+  │     │                                   (same endpoint used by TagPicker.jsx
+  │     │                                    and Tags.jsx)
+  │     ├─ populate <datalist> for autocomplete
+  │     └─ render top tags by article_count as suggestion chips
   │
-  ├─ GET /api/bookmarklet/suggestions ───► returns { matched_rules, recent_tags }
-  │     ?url=...&title=...                  for this URL
-  │     │
-  │     ├─ render ★ chips for matched rule tags
-  │     └─ render chips for recent/frequent tags
+  ├─ GET /api/tag-rules ─────────────────► returns all tag rules
+  │     │                                   (same endpoint used by Tags.jsx)
+  │     └─ match rules against url/title/domain client-side
+  │        render ★ chips for matched rule tags
   │
   └─ ready for user input
 ```
 
-Both fetches happen in parallel. The tags input is functional immediately (the autocomplete works as soon as `/api/tags` returns). Suggested tags appear as soon as `/api/bookmarklet/suggestions` returns.
+Both fetches happen in parallel. Both endpoints already exist (`tags/routes.py` for `/api/tags`, `tag_rules/routes.py` for `/api/tag-rules`). The tag rule matching logic is simple enough to duplicate in ~15 lines of JS (domain exact match, `title_contains`, `url_contains` — the same three checks as `apply_auto_tags()` in `processing.py`).
 
-If either fetch fails, the popup degrades gracefully — the tags input still works for manual entry, and Save still works (tags are sent as names, resolved server-side).
+If either fetch fails, the popup degrades gracefully — the tags input still works for manual entry, and Save still works.
 
 ### On Save
 
@@ -165,41 +164,30 @@ user clicks Save (or presses Enter)
 
 ---
 
-## New API Endpoint
+## API Changes
 
-### `GET /api/bookmarklet/suggestions`
+### No New Endpoints
 
-Returns tag suggestions for a given URL. Used exclusively by the bookmarklet popup.
+The bookmarklet reuses two existing endpoints:
 
-**Query parameters:**
+| Endpoint | Already used by | What the bookmarklet uses it for |
+|----------|----------------|----------------------------------|
+| `GET /api/tags` | `TagPicker.jsx`, `Tags.jsx` | Populate `<datalist>` for autocomplete + frequent tag chips |
+| `GET /api/tag-rules` | `Tags.jsx` | Client-side rule matching → ★ suggested tag chips |
 
-| Param | Required | Description |
-|-------|----------|-------------|
-| `url` | Yes | The page URL being saved |
-| `title` | No | The page title (for `title_contains` rule matching) |
+Tag rule matching runs client-side in the popup. The logic is simple (~15 lines of JS):
 
-**Response:**
-
-```json
-{
-  "matched_rules": [
-    { "tag_id": "abc123", "tag_name": "python", "match_type": "domain", "pattern": "docs.python.org" },
-    { "tag_id": "def456", "tag_name": "tutorial", "match_type": "title_contains", "pattern": "tutorial" }
-  ],
-  "recent_tags": [
-    { "id": "ghi789", "name": "web", "article_count": 34 },
-    { "id": "jkl012", "name": "javascript", "article_count": 28 }
-  ]
-}
+```javascript
+// Mirrors apply_auto_tags() in processing.py
+rules.forEach(function (rule) {
+  var p = rule.pattern.toLowerCase();
+  if (rule.match_type === 'domain' && domain === p) matched.add(rule.tag_id);
+  if (rule.match_type === 'title_contains' && title.toLowerCase().includes(p)) matched.add(rule.tag_id);
+  if (rule.match_type === 'url_contains' && url.toLowerCase().includes(p)) matched.add(rule.tag_id);
+});
 ```
 
-**`matched_rules`** — Tags whose rules match the given URL/title/domain. The server runs the same matching logic as `apply_auto_tags()` in `src/articles/processing.py` (domain exact/glob match, `title_contains`, `url_contains`) but returns the matches instead of applying them. These tags are shown with a ★ indicator in the popup to signal "Tasche thinks this tag applies."
-
-**`recent_tags`** — The user's most-used tags (by `article_count`), excluding any already present in `matched_rules`. Capped at 8 tags. These give quick access to the user's common tags.
-
-**Implementation:** New route in `src/tags/routes.py` (or a new `src/bookmarklet/routes.py` if preferred). Reuses the tag rule evaluation logic from `processing.py` — extract it into a shared helper.
-
-**Auth:** Requires session cookie (same as all `/api/` endpoints). Returns 401 if not authenticated.
+This avoids creating a bookmarklet-specific endpoint. The tradeoff: glob matching for domain rules (e.g., `*.example.com`) is not replicated — only exact domain match. This is acceptable because glob domain rules are rare and the queue consumer's `apply_auto_tags()` will still apply them during processing.
 
 ### Changes to `POST /api/articles`
 
@@ -230,46 +218,50 @@ Accept an optional `tag_ids` field in the request body. The existing `listen_lat
 
 ## Autocomplete Behavior
 
-The autocomplete operates entirely client-side against the tag list fetched on popup load. No server round-trips per keystroke.
+Uses the native HTML `<datalist>` element — no custom dropdown code. The browser provides type-to-filter, keyboard navigation, and visual rendering for free.
 
-### Matching
+### Implementation
 
-Given user input `q` and a tag name `name`:
-
-1. **Prefix match** (highest priority): `name.toLowerCase().startsWith(q.toLowerCase())`
-2. **Substring match** (secondary): `name.toLowerCase().includes(q.toLowerCase())`
-
-Results are sorted: prefix matches first (by `article_count` descending), then substring matches (by `article_count` descending). Maximum 6 suggestions shown.
-
-### Display
-
-Each autocomplete entry shows:
-
-```
-  tag-name                    (12)
+```html
+<input list="tag-options" id="tag-input" placeholder="Add tags..." />
+<datalist id="tag-options">
+  <!-- populated from GET /api/tags on load -->
+  <option value="python">python (12)</option>
+  <option value="javascript">javascript (8)</option>
+  ...
+</datalist>
 ```
 
-Tag name on the left, article count in parentheses on the right (dimmed). The article count helps the user distinguish between similarly-named tags and signals which tags are well-established.
+The datalist is populated once from `GET /api/tags` (the same endpoint `TagPicker.jsx` uses via `listTags()`). The `option` labels include the article count for context. The browser handles filtering, keyboard navigation, and display.
 
-### Tag Creation
+### Accepting a Tag
 
-If the user types a tag name that doesn't match any existing tag, the autocomplete shows:
+When the user presses Enter, comma, or space with text in the input:
+1. Match the text against the tag list (case-insensitive)
+2. If matched: add a `.tag-chip` above the input, clear the input, update the datalist to exclude already-selected tags
+3. If not matched: ignore (no inline creation — the user should create tags in Settings, consistent with how the app works everywhere else)
 
-```
-  Create "newtag"              +
-```
+### Why `<datalist>` over a Custom Autocomplete
 
-Selecting this option creates the tag via `POST /api/tags` inline, adds it to the local tag list, and inserts it as a chip in the input. This matches the behavior of the existing tag creation flow in the app's Tags view.
+| | `<datalist>` | Custom autocomplete |
+|--|-------------|---------------------|
+| Lines of JS | ~0 (browser-native) | ~80-120 (dropdown, keyboard nav, positioning) |
+| Accessibility | Built-in ARIA, screen reader support | Must implement manually |
+| Mobile | Native picker on iOS/Android | Custom dropdown on small screens |
+| Consistency | Platform-native look | Must match app styling |
+| Article count in suggestions | Via option label text | Full control over display |
+
+The TagPicker component in the app uses a native `<select>` for the same reason — platform controls over custom widgets. The `<datalist>` is the input-with-autocomplete equivalent of that choice.
 
 ---
 
 ## Suggested Tags Section
 
-Below the tags input, a row of clickable chips. Two categories, visually distinguished:
+Below the tags input, a row of clickable chips in a `.flex-wrap-gap` container. Two categories, visually distinguished:
 
 ### Rule-matched tags (★)
 
-Tags whose rules match this URL. Rendered with a ★ prefix and a subtle highlight background (e.g., a faint accent color border). These are the strongest suggestions — the user explicitly configured these rules.
+Tags whose rules match this URL (matched client-side against rules from `GET /api/tag-rules`). Rendered as `.tag-chip` with a ★ prefix and a subtle highlight background. These are the strongest suggestions — the user explicitly configured these rules.
 
 Example: If the user has a tag rule `domain = "github.com"` → tag "github", and they're saving a GitHub page, the "github" chip appears with ★.
 
@@ -320,31 +312,44 @@ When `listen_later: true`:
 
 ---
 
+## Reuse Inventory
+
+What the bookmarklet reuses from the existing app:
+
+| Existing asset | Reused how |
+|----------------|-----------|
+| `GET /api/tags` (`tags/routes.py`) | Fetch tag list for `<datalist>` + frequent chips. Same endpoint `TagPicker.jsx` calls via `listTags()`. |
+| `GET /api/tag-rules` (`tag_rules/routes.py`) | Fetch rules for client-side matching → ★ chips. Same endpoint `Tags.jsx` calls via `getTagRules()`. |
+| `POST /api/tags` (`tags/routes.py`) | Not used by bookmarklet. Tag creation stays in Settings. |
+| `POST /api/articles` (`articles/routes.py`) | Save the article. Extended with `tag_ids` (new). `listen_later` already supported. |
+| `.tag-chip`, `.tag-chip-remove` CSS | Selected tag chips in the popup — identical to `TagPicker.jsx` and `ArticleCard.jsx`. |
+| `.btn-save-audio` CSS | Save audio button styling — identical to `Library.jsx`. |
+| `.btn-primary` CSS | Save button styling. |
+| `.flex-wrap-gap` CSS | Tag chip container layout. |
+| CSS custom properties | All colors, radii, fonts via `--text`, `--bg-card`, `--border`, etc. Dark mode handled by the same `prefers-color-scheme` media queries. |
+| `apply_auto_tags()` matching logic | Replicated as ~15 lines of JS for client-side rule matching (domain exact, title_contains, url_contains). |
+
+### What's new (not reusable from existing code)
+
+| New thing | Why it can't reuse existing code |
+|-----------|----------------------------------|
+| `tag_ids` on `POST /api/articles` | ~15 lines added to `create_article()`. Can't use `addArticleTag()` because the article doesn't exist yet at save time. |
+| Chip management JS in popup | `TagPicker.jsx` is a Preact component — can't import into standalone HTML. The popup reimplements add/remove chip logic in vanilla JS (~30 lines). |
+| `<datalist>` population | `TagPicker.jsx` uses `<select>`. The popup uses `<datalist>` (more appropriate for type-to-filter). Different HTML element, same data source. |
+
 ## Changes to Existing Files
 
 ### `frontend/public/bookmarklet.html`
 
-Complete rewrite of this file. Grows from ~90 lines / <2KB to ~300-400 lines / ~6-8KB. Still fully self-contained: inline CSS, inline JS, no external dependencies, no build step.
+Rewrite. Grows from ~90 lines / <2KB to ~150-200 lines / ~3-4KB. Loads the app's built CSS via `<link>` (same origin, cached). Inline JS only — no framework, no build step.
 
 ### `frontend/src/utils.js`
 
 One-line change: update popup window height from `180` to `480`.
 
-### `src/tags/routes.py` (or new `src/bookmarklet/routes.py`)
-
-New `GET /api/bookmarklet/suggestions` endpoint (~40-60 lines). Add a router and mount it in `entry.py`.
-
-### `src/articles/processing.py`
-
-Extract the rule-matching loop from `apply_auto_tags()` into a reusable function (e.g., `match_tag_rules(rules, domain, title, url) -> set[str]`) so both the processing pipeline and the suggestions endpoint can use it.
-
 ### `src/articles/routes.py`
 
-Extend `create_article()` to accept and process the optional `tag_ids` list (~15-20 lines of additional code).
-
-### `src/entry.py`
-
-Mount the new bookmarklet suggestions router.
+Extend `create_article()` to accept and process the optional `tag_ids` list (~15 lines of additional code).
 
 ---
 
@@ -356,9 +361,9 @@ Mount the new bookmarklet suggestions router.
 | User has tags but no rules | No ★ suggestions. Recent/frequent tags still shown. |
 | URL is a duplicate (409) | Show "Already saved." and auto-close. No tag form needed — the article is already in the library and can be tagged there. |
 | Not logged in (401) | Redirect to `/?url=...` (same as current behavior). No tag form shown. |
-| `/api/tags` fetch fails | Tags input still renders. User can type tag names; they'll be resolved on save. No autocomplete or suggestions. |
-| `/api/bookmarklet/suggestions` fetch fails | No suggested tags section. Tags input with autocomplete still works. |
-| User types a tag name that exists but they don't click the autocomplete suggestion | On save, resolve the raw text against the user's tag list by name (case-insensitive). If it matches, use that tag's ID. If not, silently ignore (don't auto-create from raw text — only from the explicit "Create" autocomplete entry). |
+| `/api/tags` fetch fails | Tags input still renders but `<datalist>` is empty (no autocomplete). No frequent tag suggestions. Save still works — tags are sent as IDs of whatever was selected before the failure. |
+| `/api/tag-rules` fetch fails | No ★ rule-matched suggestions. Frequent tag chips and autocomplete still work (they come from `/api/tags`). |
+| User types a tag name that doesn't match any existing tag | Input is ignored on Enter — no chip is created. Tags must exist first (created in Settings). This matches the app's existing convention: `TagPicker.jsx` only allows selecting existing tags, not creating new ones inline. |
 | Tag deleted between popup load and save | `INSERT OR IGNORE` handles this; the invalid tag_id is silently skipped. |
 | Very long title from `document.title` | Title input is editable and has `maxlength="500"` (matching the existing API constraint). Titles longer than 500 characters are truncated on pre-fill. |
 | Popup opened from CSP-restricted page | Bookmarklet code is minimal (`open()` + `encodeURIComponent()`). The popup loads on Tasche's own origin, so CSP of the source page doesn't affect the popup's fetches. No change needed. |
@@ -369,7 +374,7 @@ Mount the new bookmarklet suggestions router.
 
 ## Dark Mode
 
-The popup respects `prefers-color-scheme: dark` (same as current implementation). All new elements — input fields, chips, autocomplete dropdown, suggested tags — have dark mode variants defined in the inline `<style>` block.
+Handled automatically. The popup loads the app's stylesheet, which already defines dark mode variants for all reused classes (`.tag-chip`, `.btn-save-audio`, `.btn-primary`, CSS custom properties) via `@media (prefers-color-scheme: dark)`. The popup's minimal inline `<style>` only handles layout — no color definitions to duplicate.
 
 ---
 
@@ -383,8 +388,8 @@ The popup respects `prefers-color-scheme: dark` (same as current implementation)
 4. Popup opens. Title shows "Python Lists and List Manipulation – Real Python". URL shows `realpython.com/python-lists/`
 5. Tags input is focused. Suggested tags section shows: `★ python` (rule-matched), `web` (frequent), `tutorials` (frequent)
 6. User clicks `★ python` chip → chip appears in the input
-7. User types `tu` → autocomplete shows "tutorials (5)"
-8. User presses Enter → "tutorials" chip added to input
+7. User types `tu` → browser datalist suggests "tutorials (5)"
+8. User selects suggestion and presses Enter → "tutorials" chip added
 9. User presses Enter again (empty input) → form submits via Save
 10. Status shows "Saved!" → popup auto-closes after 1.5s
 11. In the library, the article appears with "python" and "tutorials" tags already applied
