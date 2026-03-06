@@ -87,6 +87,6 @@ export function getBookmarkletCode() {
     "javascript:void(open('" +
     origin +
     "/bookmarklet?url='+encodeURIComponent(location.href)+'&title='+encodeURIComponent(document.title),'" +
-    "Tasche','toolbar=no,width=420,height=180'))"
+    "Tasche','toolbar=no,width=420,height=480'))"
   );
 }
