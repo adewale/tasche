@@ -126,8 +126,10 @@ test.describe('Search', () => {
     await searchInput.fill('test');
     await page.locator('.search-container .btn-primary').click();
 
-    // Wait for search to complete — either results or empty state
-    await expect(page.locator('.article-card, .empty-state').first()).toBeVisible({
+    // Wait for search to complete — results info, results, or empty state
+    await expect(
+      page.locator('.search-results-info, .article-card, .empty-state').first(),
+    ).toBeVisible({
       timeout: 10000,
     });
   });
@@ -222,11 +224,14 @@ test.describe('Navigation', () => {
     await page.locator('a[href="#/search"]').click();
     await expect(page.locator('input[type="search"]')).toBeVisible({ timeout: 5000 });
 
+    // Tags and Settings are inside the hamburger menu
+    await page.locator('.hamburger-menu button').click();
     await page.locator('a[href="#/tags"]').click();
     await expect(page.locator('input[placeholder="New tag name..."]')).toBeVisible({
       timeout: 5000,
     });
 
+    await page.locator('.hamburger-menu button').click();
     await page.locator('a[href="#/settings"]').click();
     await expect(page.locator('h2.section-title').first()).toHaveText('Settings', {
       timeout: 5000,

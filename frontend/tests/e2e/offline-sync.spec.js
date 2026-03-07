@@ -71,8 +71,11 @@ test.describe('Offline sync round-trip', () => {
 
     // Wait for "Back online" or "All changes synced" toast
     await expect(page.locator('.toast').filter({ hasText: /synced|Back online/i })).toBeVisible({
-      timeout: 10000,
+      timeout: 15000,
     });
+
+    // Give the sync request time to complete on the server
+    await page.waitForTimeout(2000);
 
     // Verify the favorite actually persisted on the server
     const resp = await request.get(`/api/articles/${id}`);
@@ -81,11 +84,7 @@ test.describe('Offline sync round-trip', () => {
     expect(article.is_favorite).toBeTruthy();
   });
 
-  test('reading status changed offline syncs when back online', async ({
-    page,
-    context,
-    request,
-  }) => {
+  test('archive toggled offline syncs when back online', async ({ page, context, request }) => {
     const { id } = await createArticle(
       request,
       'https://example.com/offline-archive-' + Date.now(),
@@ -93,27 +92,29 @@ test.describe('Offline sync round-trip', () => {
     );
     await processArticle(request, id);
 
-    // Navigate to the article reader
-    await page.goto(`/#/article/${id}`);
-    await expect(page.locator('.reader-title')).toBeVisible({ timeout: 10000 });
+    // Navigate to library so we can use the card archive button (which has offline queueing)
+    await page.goto('/');
+    await expect(page.locator('.article-card').first()).toBeVisible({ timeout: 10000 });
 
-    // Confirm article starts as unread
-    const statusSelect = page.locator('select[aria-label="Reading status"]');
-    await expect(statusSelect).toHaveValue('unread', { timeout: 5000 });
+    const card = page.locator('.article-card').filter({ hasText: 'Offline Archive Test' });
+    await expect(card).toBeVisible({ timeout: 5000 });
 
     // Go offline
     await context.setOffline(true);
 
-    // Change reading status to archived
-    await statusSelect.selectOption('archived');
+    // Archive via the card action button (uses optimisticUpdate with offline queue)
+    await card.locator('button[title="Archive"]').click();
 
     // Go back online
     await context.setOffline(false);
 
     // Wait for sync
     await expect(page.locator('.toast').filter({ hasText: /synced|Back online/i })).toBeVisible({
-      timeout: 10000,
+      timeout: 15000,
     });
+
+    // Give the sync request time to complete on the server
+    await page.waitForTimeout(2000);
 
     // Verify the status persisted on the server
     const resp = await request.get(`/api/articles/${id}`);

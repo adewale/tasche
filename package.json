@@ -19,5 +19,8 @@
         "description": "Your GitHub email address (the one you log in with). Comma-separated for multiple users."
       }
     }
+  },
+  "devDependencies": {
+    "wrangler": "^4.71.0"
   }
 }
