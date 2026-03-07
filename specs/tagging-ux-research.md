@@ -82,19 +82,22 @@ The most sophisticated tagging system among current read-it-later apps:
 - Two distinct tag types: **document tags** and **highlight tags** (no inheritance between them).
 - **Inline tagging** lets users tag highlights in the moment while reading — significantly less friction than retroactive tagging.
 - **AI auto-tagging via Ghostreader**: When enabled, new documents are automatically tagged using GPT. The most effective approach is a "taxonomy prompt" where users explicitly describe all tags and their purposes (recommended: no more than 50 tags). The AI cannot reliably learn tags just from names alone — it needs a described system.
-- Keyboard shortcuts: `T` in list view, `Shift+T` in document view.
+- **Keyboard shortcuts**: `T` in list view, `Shift+T` in document view, `Enter` to apply and close, `Cmd+Enter` to apply and keep picker open for multi-tagging. `Cmd+K` opens a command palette that includes tagging as one of many actions.
+- **Inline tagging with shorthand**: In highlight notes, type `.tagname` to apply a tag inline. Supports alias training — tag `.prob` once, rename to `.probability`, and Readwise auto-converts `.prob` forever after. Multiple inline tags with `.design .ux`.
+- **Filtered views**: `Shift+F` opens filter where `tag:design` creates a smart view. Saved filters function as virtual folders.
 - A dedicated **Tags management page** for bulk cleanup.
 
-Sources: [Ghostreader Custom Prompts](https://docs.readwise.io/reader/guides/ghostreader/custom-prompts), [Inline Tagging](https://blog.readwise.io/tag-your-highlights-while-you-read/), [Document Tags](https://readwise.io/changelog/document-tags)
+Sources: [Ghostreader Custom Prompts](https://docs.readwise.io/reader/guides/ghostreader/custom-prompts), [Inline Tagging](https://blog.readwise.io/tag-your-highlights-while-you-read/), [Document Tags](https://readwise.io/changelog/document-tags), [Navigation & Shortcuts](https://docs.readwise.io/reader/docs/faqs/navigation)
 
 ### Raindrop.io
 - Tags allow **any characters, any language, and spaces** in names.
-- **AI-powered suggestions** (via "Stella" assistant): When saving a bookmark, existing tags are suggested first, followed by new AI-generated tag ideas marked with a "+" icon to distinguish them from existing tags.
+- **Stella AI assistant** (launched February 2026, Pro users): A conversational interface that can move unsorted bookmarks to collections, tag them, merge duplicate tags, and reorganize — all via natural language. Runs open-source models on Raindrop's own servers (data never leaves).
+- **AI tag suggestions at save time**: Existing tags are suggested first, followed by new AI-generated tag ideas marked with a "+" icon to distinguish them. The system learns from your vocabulary over time.
 - Tags visible in the sidebar; typing `#` in search shows all tags.
 - Supports **negative tag filtering** with `-` prefix.
 - Hierarchical tags are a frequently-requested but not yet implemented feature. Nested collections (folders) compensate.
 
-Sources: [Raindrop Tags](https://help.raindrop.io/tags), [AI Suggestions](https://help.raindrop.io/ai-suggestions)
+Sources: [Raindrop Tags](https://help.raindrop.io/tags), [AI Suggestions](https://help.raindrop.io/ai-suggestions), [Stella AI](https://help.raindrop.io/stella)
 
 ### Karakeep (formerly Hoarder)
 The most relevant open-source comparison — a self-hosted bookmark manager with **AI auto-tagging** at its core:
@@ -127,6 +130,12 @@ Source: [Karakeep on GitHub](https://github.com/karakeep-app/karakeep)
 - Added tagging in October 2024 update.
 - Hybrid model: folders (single) + tags (multiple) — an article lives in one folder but can have many tags.
 - Tags persist through archiving.
+
+### Linkding (self-hosted bookmark manager)
+- **Rule-based auto-tagging**: Define URL pattern rules that automatically apply tags. Any URL matching `github.com/*` gets tagged `dev`. Rules are URL-based only (not content-based).
+- Closest parallel to Tasche's existing auto-tagging feature, though Tasche also supports title and URL substring matching plus glob patterns.
+
+Source: [Linkding Auto Tagging](https://linkding.link/auto-tagging/)
 
 ---
 
@@ -188,6 +197,14 @@ The industry has largely settled on **flat tags with optional structural overlay
 - AI suggestions drawn from the existing vocabulary first.
 - Periodic tag review/cleanup workflows.
 - Tag merge to consolidate duplicates ("javascript", "JavaScript", "JS").
+
+### Emerging Patterns Worth Watching
+
+- **Conversational tag management** (Raindrop Stella): "Clean up my tags" as a natural language command. Batch operations like "Move all untagged bookmarks about design into the Design collection and tag them."
+- **Inline tagging with shorthand** (Readwise): `.tag` syntax in highlight notes with alias training. Reduces tagging friction to near-zero while reading.
+- **Semantic/vector search as a tag alternative** (Bookmarkjar): Instead of tagging, search by meaning — "Find that article about database migration patterns" works without any tags. May reduce the need for extensive tagging over time.
+- **RSS feed auto-tagging** (Feeds.Fun): AI-based tagging of incoming feed items before the user sees them.
+- **Saved filters as virtual folders** (Readwise, Omnivore): Combining tags with other criteria (status, date, domain) into reusable smart views replaces the need for hierarchical tags.
 
 ---
 
