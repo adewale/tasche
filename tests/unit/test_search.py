@@ -6,10 +6,13 @@ empty query handling, pagination, FTS5 sanitization, and result shape.
 
 from __future__ import annotations
 
+import sqlite3
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
+from articles.routes import _LIST_COLUMNS
 from src.search.routes import _sanitize_fts5_query, router
 from tests.conftest import (
     ArticleFactory,
@@ -530,6 +533,238 @@ class TestBm25ColumnWeights:
         assert match, f"bm25() call not found in SQL: {sql}"
         weights = [w.strip() for w in match.group(1).split(",")]
         assert len(weights) == 3, f"Expected 3 weights for 3 FTS5 columns, got {len(weights)}"
+
+
+# ---------------------------------------------------------------------------
+# SQLite-backed integration tests — run the actual search SQL against a real
+# FTS5 index to verify bm25() validity and ranking behavior.
+# ---------------------------------------------------------------------------
+
+
+def _create_test_db() -> sqlite3.Connection:
+    """Create an in-memory SQLite DB with articles + FTS5 tables and triggers."""
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute("""
+        CREATE TABLE articles (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            original_url TEXT NOT NULL,
+            final_url TEXT,
+            canonical_url TEXT,
+            domain TEXT,
+            title TEXT,
+            excerpt TEXT,
+            author TEXT,
+            word_count INTEGER,
+            reading_time_minutes INTEGER,
+            image_count INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'ready',
+            reading_status TEXT DEFAULT 'unread',
+            is_favorite INTEGER DEFAULT 0,
+            audio_key TEXT,
+            audio_duration_seconds INTEGER,
+            audio_status TEXT DEFAULT NULL,
+            html_key TEXT,
+            thumbnail_key TEXT,
+            original_key TEXT,
+            markdown_content TEXT,
+            original_status TEXT DEFAULT 'unknown',
+            last_checked_at TEXT DEFAULT NULL,
+            scroll_position REAL DEFAULT 0,
+            reading_progress REAL DEFAULT 0,
+            created_at TEXT DEFAULT '2026-01-01T00:00:00.000+00:00',
+            updated_at TEXT DEFAULT '2026-01-01T00:00:00.000+00:00'
+        )
+    """)
+    conn.execute("""
+        CREATE VIRTUAL TABLE articles_fts USING fts5(
+            title, excerpt, markdown_content,
+            content=articles, content_rowid=rowid
+        )
+    """)
+    # Content-sync triggers (same as 0001_initial.sql)
+    conn.execute("""
+        CREATE TRIGGER articles_fts_ai AFTER INSERT ON articles BEGIN
+            INSERT INTO articles_fts(rowid, title, excerpt, markdown_content)
+            VALUES (new.rowid, new.title, new.excerpt, new.markdown_content);
+        END
+    """)
+    conn.execute("""
+        CREATE TRIGGER articles_fts_au AFTER UPDATE ON articles BEGIN
+            INSERT INTO articles_fts(articles_fts, rowid, title, excerpt, markdown_content)
+            VALUES ('delete', old.rowid, old.title, old.excerpt, old.markdown_content);
+            INSERT INTO articles_fts(rowid, title, excerpt, markdown_content)
+            VALUES (new.rowid, new.title, new.excerpt, new.markdown_content);
+        END
+    """)
+    return conn
+
+
+def _insert_article(
+    conn: sqlite3.Connection,
+    *,
+    id: str,
+    title: str = "",
+    excerpt: str = "",
+    markdown_content: str = "",
+    user_id: str = "user_001",
+) -> None:
+    conn.execute(
+        """INSERT INTO articles (id, user_id, original_url, title, excerpt, markdown_content)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (id, user_id, f"https://example.com/{id}", title, excerpt, markdown_content),
+    )
+
+
+def _search(conn: sqlite3.Connection, query: str, user_id: str = "user_001") -> list[dict]:
+    """Run the same SQL the search endpoint generates against real SQLite."""
+    prefixed = ", ".join(f"articles.{c.strip()}" for c in _LIST_COLUMNS.split(","))
+    sql = (
+        f"SELECT {prefixed} FROM articles "
+        "INNER JOIN articles_fts ON articles.rowid = articles_fts.rowid "
+        "WHERE articles_fts MATCH ? AND articles.user_id = ? "
+        "ORDER BY bm25(articles_fts, 10.0, 5.0, 1.0) "
+        "LIMIT ? OFFSET ?"
+    )
+    rows = conn.execute(sql, (f'"{query}"', user_id, 20, 0)).fetchall()
+    return [dict(r) for r in rows]
+
+
+class TestBm25SqliteIntegration:
+    """Run the search SQL against a real SQLite FTS5 index."""
+
+    def test_bm25_query_is_valid_sql(self) -> None:
+        """The bm25() ORDER BY clause is valid SQLite syntax."""
+        conn = _create_test_db()
+        _insert_article(conn, id="a1", title="Test article")
+        # Should not raise — proves the SQL is valid
+        results = _search(conn, "test")
+        assert len(results) == 1
+        assert results[0]["id"] == "a1"
+
+    def test_title_match_ranks_above_content_match(self) -> None:
+        """An article with the query in its title ranks above one with it only in content."""
+        conn = _create_test_db()
+        _insert_article(
+            conn,
+            id="content_only",
+            title="Unrelated Topic",
+            excerpt="Nothing here",
+            markdown_content="This article discusses python programming at length",
+        )
+        _insert_article(
+            conn,
+            id="title_match",
+            title="Python Programming Guide",
+            excerpt="Not relevant",
+            markdown_content="Some other content entirely",
+        )
+        results = _search(conn, "python")
+        assert len(results) == 2
+        assert results[0]["id"] == "title_match", (
+            f"Title match should rank first, got: {[r['id'] for r in results]}"
+        )
+
+    def test_excerpt_match_ranks_above_content_match(self) -> None:
+        """An article with the query in its excerpt ranks above one with it only in content."""
+        conn = _create_test_db()
+        _insert_article(
+            conn,
+            id="content_only",
+            title="Unrelated",
+            excerpt="Nothing relevant",
+            markdown_content="This covers rust language features in detail",
+        )
+        _insert_article(
+            conn,
+            id="excerpt_match",
+            title="Unrelated",
+            excerpt="A comprehensive guide to rust programming",
+            markdown_content="Other content",
+        )
+        results = _search(conn, "rust")
+        assert len(results) == 2
+        assert results[0]["id"] == "excerpt_match", (
+            f"Excerpt match should rank first, got: {[r['id'] for r in results]}"
+        )
+
+    def test_title_match_ranks_above_excerpt_match(self) -> None:
+        """Title match (10x weight) outranks excerpt match (5x weight)."""
+        conn = _create_test_db()
+        _insert_article(
+            conn,
+            id="excerpt_only",
+            title="Unrelated Topic",
+            excerpt="Learn everything about kubernetes orchestration",
+            markdown_content="Other content",
+        )
+        _insert_article(
+            conn,
+            id="title_match",
+            title="Kubernetes Deep Dive",
+            excerpt="Not relevant at all",
+            markdown_content="Other content",
+        )
+        results = _search(conn, "kubernetes")
+        assert len(results) == 2
+        assert results[0]["id"] == "title_match", (
+            f"Title match should rank above excerpt match, got: {[r['id'] for r in results]}"
+        )
+
+    def test_filters_by_user_id(self) -> None:
+        """Search results only include articles for the queried user."""
+        conn = _create_test_db()
+        _insert_article(conn, id="mine", title="My Python Article", user_id="user_001")
+        _insert_article(conn, id="theirs", title="Their Python Article", user_id="user_002")
+        results = _search(conn, "python", user_id="user_001")
+        assert len(results) == 1
+        assert results[0]["id"] == "mine"
+
+    def test_no_matches_returns_empty(self) -> None:
+        """Search for a term that doesn't exist returns an empty list."""
+        conn = _create_test_db()
+        _insert_article(conn, id="a1", title="Something else")
+        results = _search(conn, "nonexistent")
+        assert results == []
+
+    def test_result_contains_expected_columns(self) -> None:
+        """Search results include all columns from _LIST_COLUMNS."""
+        conn = _create_test_db()
+        _insert_article(conn, id="a1", title="Column Check")
+        conn.execute("UPDATE articles SET domain = 'example.com' WHERE id = 'a1'")
+        results = _search(conn, "column")
+        assert len(results) == 1
+        row = results[0]
+        for col in _LIST_COLUMNS.split(","):
+            col = col.strip()
+            assert col in row, f"Missing column {col} in search result"
+
+    @pytest.mark.parametrize(
+        "query",
+        ["python", "hello world", "café", "test123"],
+        ids=["simple", "multi_word", "unicode", "alphanumeric"],
+    )
+    def test_various_queries_execute_without_error(self, query: str) -> None:
+        """Various query patterns don't cause SQLite errors."""
+        conn = _create_test_db()
+        _insert_article(conn, id="a1", title="Python hello world café test123")
+        safe_q = _sanitize_fts5_query(query)
+        if safe_q:
+            _search_raw(conn, safe_q)
+
+
+def _search_raw(conn: sqlite3.Connection, fts_query: str, user_id: str = "user_001") -> list:
+    """Run search with a pre-sanitized FTS5 query string."""
+    prefixed = ", ".join(f"articles.{c.strip()}" for c in _LIST_COLUMNS.split(","))
+    sql = (
+        f"SELECT {prefixed} FROM articles "
+        "INNER JOIN articles_fts ON articles.rowid = articles_fts.rowid "
+        "WHERE articles_fts MATCH ? AND articles.user_id = ? "
+        "ORDER BY bm25(articles_fts, 10.0, 5.0, 1.0) "
+        "LIMIT ? OFFSET ?"
+    )
+    return conn.execute(sql, (fts_query, user_id, 20, 0)).fetchall()
 
 
 class TestSearchAuthRequired:
