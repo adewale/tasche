@@ -79,11 +79,13 @@ async def search_articles(
 
     # Prefix columns with "articles." to avoid ambiguity with FTS5 table columns.
     prefixed = ", ".join(f"articles.{c.strip()}" for c in _LIST_COLUMNS.split(","))
+    # bm25() weights correspond to FTS5 column order: title, excerpt, markdown_content.
+    # Title matches are boosted 10x over content, excerpt 5x.
     sql = (
         f"SELECT {prefixed} FROM articles "
         "INNER JOIN articles_fts ON articles.rowid = articles_fts.rowid "
         "WHERE articles_fts MATCH ? AND articles.user_id = ? "
-        "ORDER BY articles_fts.rank "
+        "ORDER BY bm25(articles_fts, 10.0, 5.0, 1.0) "
         "LIMIT ? OFFSET ?"
     )
 
