@@ -78,7 +78,7 @@ export function Settings() {
       <main class="main-content">
         <h2 class="section-title">Settings</h2>
 
-        <div class="mt-4">
+        <div class="settings-section">
           <h3 class="section-title">Offline Reading</h3>
           <div class="settings-toggle-row">
             <div class="settings-toggle-info">
@@ -141,7 +141,7 @@ export function Settings() {
           </div>
         </div>
 
-        <div class="mt-8">
+        <div class="settings-section">
           <h3 class="section-title">Listen Later Voice</h3>
           <p class="settings-detail">Choose the voice for text-to-speech audio generation.</p>
           <div class="voice-picker">
@@ -188,7 +188,7 @@ export function Settings() {
           </div>
         </div>
 
-        <div class="mt-8">
+        <div class="settings-section">
           <h3 class="section-title">Bookmarklet</h3>
           <p class="bookmarklet-hint">
             Drag this link to your bookmarks bar to save articles from any page.
@@ -204,7 +204,9 @@ export function Settings() {
           </a>
         </div>
 
-        <div class="mt-8">
+        <hr class="setup-divider" />
+        <div>
+          <h3 class="section-title">Account</h3>
           {u && (
             <p class="settings-detail">
               Logged in as: <strong>{u.email || u.username || 'Unknown'}</strong>

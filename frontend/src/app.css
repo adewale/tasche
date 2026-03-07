@@ -17,8 +17,6 @@
   --warning: #9a7030;
   --favorite: #1d1d1f;
   --link: #1d1d1f;
-  --shadow: none;
-  --shadow-lg: none;
   --shadow-float: 0 1px 4px rgba(0, 0, 0, 0.08);
   --radius: 2px;
   --radius-sm: 1px;
@@ -30,7 +28,6 @@
   --duration-fast: 0.15s;
   --duration-slow: 0.3s;
   --overlay-bg: rgba(0, 0, 0, 0.15);
-  --shadow-up: none;
   --text-on-color: #fff;
   --status-available-bg: #eff1f0;
   --status-available-text: #5a7068;
@@ -67,9 +64,6 @@
     --warning: #c49850;
     --favorite: #f5f5f7;
     --link: #f5f5f7;
-    --shadow: none;
-    --shadow-lg: none;
-    --shadow-up: none;
     --shadow-float: 0 1px 6px rgba(0, 0, 0, 0.25);
     --status-available-bg: #1c201e;
     --status-available-text: #8aab94;
@@ -106,9 +100,6 @@
   --warning: #c49850;
   --favorite: #f5f5f7;
   --link: #f5f5f7;
-  --shadow: none;
-  --shadow-lg: none;
-  --shadow-up: none;
   --shadow-float: 0 1px 6px rgba(0, 0, 0, 0.25);
   --status-available-bg: #1c201e;
   --status-available-text: #8aab94;
@@ -528,8 +519,8 @@ textarea {
 }
 
 .filter-tab.active {
-  color: var(--text);
-  background: transparent;
+  color: var(--bg);
+  background: var(--text);
   border-color: transparent;
   border-bottom: 2px solid var(--text);
   border-radius: 0;
@@ -794,6 +785,10 @@ textarea {
   color: var(--text);
 }
 
+.article-card-actions .delete-btn {
+  color: var(--danger);
+}
+
 @media (pointer: coarse) {
   .article-card-actions button {
     min-width: 44px;
@@ -865,6 +860,12 @@ textarea {
   color: var(--text-secondary);
   font-variant: small-caps;
   letter-spacing: 0.03em;
+}
+
+.reader-meta > .reader-meta-item + .reader-meta-item::before {
+  content: '\00b7';
+  margin-right: 6px;
+  color: var(--text-muted);
 }
 
 .reader-meta-item {
@@ -953,8 +954,22 @@ textarea {
 .reader-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 16px;
   margin-top: 16px;
+}
+
+.reader-actions-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding-right: 8px;
+  border-right: 1px solid var(--border);
+}
+
+.reader-actions-group:last-child {
+  padding-right: 0;
+  border-right: none;
 }
 
 /* Original status */
@@ -1258,7 +1273,6 @@ textarea {
   --accent-hover: #7a6652;
   --accent-light: #ebe3cf;
   --link: #5b4636;
-  --shadow: none;
   background: var(--bg);
   color: var(--text);
   border-radius: 2px;
@@ -1277,7 +1291,6 @@ textarea {
   --accent-hover: #aaa;
   --accent-light: #252528;
   --link: #f5f5f7;
-  --shadow: none;
   background: var(--bg);
   color: var(--text);
   border-radius: 2px;
@@ -1298,6 +1311,11 @@ textarea {
 
   .reader-actions {
     gap: 6px;
+  }
+
+  .reader-actions-group {
+    border-right: none;
+    padding-right: 0;
   }
 
   .reader-content {
@@ -1584,33 +1602,16 @@ mark {
 /* Save form */
 
 .save-form {
-  margin-bottom: 24px;
+  margin-bottom: 0;
 }
 
-.btn-save-audio {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  border-radius: var(--radius);
-  color: var(--text-secondary);
-  border: 1px solid var(--border);
-  background: transparent;
-  cursor: pointer;
-  font-size: 0.85rem;
-  white-space: nowrap;
-  flex-shrink: 0;
+.save-filter-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 16px 0;
 }
 
-.btn-save-audio:hover {
-  color: var(--text);
-  border-color: var(--text);
-}
-
-.btn-save-audio:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+/* btn-save-audio consolidated into .btn .btn-sm .btn-secondary */
 
 /* Empty state */
 
@@ -1746,15 +1747,15 @@ mark {
 }
 
 .toast.success {
-  background: var(--bg);
-  color: var(--text);
-  border-color: var(--success);
+  background: var(--status-available-bg);
+  color: var(--status-available-text);
+  border-color: var(--status-available-border);
 }
 
 .toast.error {
-  background: var(--bg);
-  color: var(--text);
-  border-color: var(--danger);
+  background: var(--status-dead-bg);
+  color: var(--status-dead-text);
+  border-color: var(--status-dead-border);
 }
 
 .toast.info {
@@ -2016,6 +2017,10 @@ mark {
 }
 
 /* Inline helper classes (used in 1-2 places) */
+
+.settings-section {
+  margin-top: 32px;
+}
 
 .settings-detail {
   font-size: 0.875rem;
@@ -2315,8 +2320,13 @@ body.has-audio-player {
   font-size: 0.875rem;
   font-weight: 600;
   color: var(--accent);
-  margin-right: auto;
   font-variant: small-caps;
+}
+
+.bulk-action-bar-destructive {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
 }
 
 .bulk-action-bar-close {

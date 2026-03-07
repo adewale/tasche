@@ -456,7 +456,6 @@ export function Reader({ id }) {
               </span>
             )}
           </div>
-          <TagPicker articleId={id} />
           <div class={'original-status original-status--' + ostatus}>
             {ostatus === 'available' && (
               <span>
@@ -484,120 +483,127 @@ export function Reader({ id }) {
               </span>
             )}
           </div>
+          <TagPicker articleId={id} />
           <div class="reader-actions">
-            <button
-              class={'btn btn-sm ' + (isFav ? 'btn-primary' : 'btn-secondary')}
-              onClick={handleFavorite}
-            >
-              <IconStar filled={!!isFav} size={14} /> {isFav ? 'Favourited' : 'Favourite'}
-            </button>
-            <select
-              class="input input-inline-select"
-              value={statusClass}
-              onChange={handleStatusChange}
-              aria-label="Reading status"
-            >
-              <option value="unread">Unread</option>
-              <option value="archived">Archived</option>
-            </select>
-            <button
-              class={
-                'btn btn-sm offline-btn' + (offlineStatus.hasContent ? ' offline-btn--saved' : '')
-              }
-              onClick={handleSaveOffline}
-              disabled={savingOffline}
-            >
-              {savingOffline ? (
-                'Saving...'
-              ) : offlineStatus.hasContent ? (
-                <>
-                  <IconCheck size={14} /> Saved offline
-                </>
-              ) : (
-                <>
-                  <IconDownload size={14} /> Save for offline
-                </>
-              )}
-            </button>
-            {hasAudio && (
-              <button class="btn btn-sm btn-secondary" onClick={handlePlayAudio}>
-                <IconPlay size={14} /> Listen
+            <div class="reader-actions-group">
+              <button
+                class={'btn btn-sm ' + (isFav ? 'btn-primary' : 'btn-secondary')}
+                onClick={handleFavorite}
+              >
+                <IconStar filled={!!isFav} size={14} /> {isFav ? 'Favourited' : 'Favourite'}
               </button>
-            )}
-            {hasAudio && (
+              <select
+                class="input input-inline-select"
+                value={statusClass}
+                onChange={handleStatusChange}
+                aria-label="Reading status"
+              >
+                <option value="unread">Unread</option>
+                <option value="archived">Archived</option>
+              </select>
               <button
                 class={
-                  'btn btn-sm offline-btn' + (offlineStatus.hasAudio ? ' offline-btn--saved' : '')
+                  'btn btn-sm offline-btn' + (offlineStatus.hasContent ? ' offline-btn--saved' : '')
                 }
-                onClick={handleSaveAudioOffline}
-                disabled={savingAudioOffline}
+                onClick={handleSaveOffline}
+                disabled={savingOffline}
               >
-                {savingAudioOffline ? (
-                  'Downloading...'
-                ) : offlineStatus.hasAudio ? (
+                {savingOffline ? (
+                  'Saving...'
+                ) : offlineStatus.hasContent ? (
                   <>
-                    <IconCheck size={14} /> Audio offline
+                    <IconCheck size={14} /> Saved offline
                   </>
                 ) : (
                   <>
-                    <IconDownload size={14} /> Download audio
+                    <IconDownload size={14} /> Save for offline
                   </>
                 )}
               </button>
-            )}
-            {canRequestAudio && !audioFailed && (
-              <button
+            </div>
+            <div class="reader-actions-group">
+              {hasAudio && (
+                <button class="btn btn-sm btn-secondary" onClick={handlePlayAudio}>
+                  <IconPlay size={14} /> Listen
+                </button>
+              )}
+              {hasAudio && (
+                <button
+                  class={
+                    'btn btn-sm offline-btn' + (offlineStatus.hasAudio ? ' offline-btn--saved' : '')
+                  }
+                  onClick={handleSaveAudioOffline}
+                  disabled={savingAudioOffline}
+                >
+                  {savingAudioOffline ? (
+                    'Downloading...'
+                  ) : offlineStatus.hasAudio ? (
+                    <>
+                      <IconCheck size={14} /> Audio offline
+                    </>
+                  ) : (
+                    <>
+                      <IconDownload size={14} /> Download audio
+                    </>
+                  )}
+                </button>
+              )}
+              {canRequestAudio && !audioFailed && (
+                <button
+                  class="btn btn-sm btn-secondary"
+                  onClick={handleListenLater}
+                  disabled={listeningLoading}
+                >
+                  {listeningLoading ? (
+                    <>
+                      <IconClock size={14} /> Requesting...
+                    </>
+                  ) : (
+                    <>
+                      <IconHeadphones size={14} /> Listen Later
+                    </>
+                  )}
+                </button>
+              )}
+              {(audioFailed || audioStuck) && (
+                <button
+                  class="btn btn-sm btn-secondary"
+                  onClick={handleListenLater}
+                  disabled={listeningLoading}
+                >
+                  {listeningLoading ? (
+                    <>
+                      <IconClock size={14} /> Requesting...
+                    </>
+                  ) : (
+                    <>
+                      <IconRefresh size={14} /> Retry audio
+                    </>
+                  )}
+                </button>
+              )}
+              {audioPending && (
+                <button class="btn btn-sm btn-secondary" disabled>
+                  <IconClock size={14} /> Generating audio...
+                </button>
+              )}
+            </div>
+            <div class="reader-actions-group">
+              <a
+                href={article.original_url}
+                target="_blank"
+                rel="noopener noreferrer"
                 class="btn btn-sm btn-secondary"
-                onClick={handleListenLater}
-                disabled={listeningLoading}
               >
-                {listeningLoading ? (
-                  <>
-                    <IconClock size={14} /> Requesting...
-                  </>
-                ) : (
-                  <>
-                    <IconHeadphones size={14} /> Listen Later
-                  </>
-                )}
+                <IconExternalLink /> Original
+              </a>
+              <button class="btn btn-sm btn-secondary" onClick={handleRetry} disabled={retrying}>
+                <IconRefresh size={14} /> {retrying ? 'Retrying...' : 'Retry'}
               </button>
-            )}
-            {(audioFailed || audioStuck) && (
-              <button
-                class="btn btn-sm btn-secondary"
-                onClick={handleListenLater}
-                disabled={listeningLoading}
-              >
-                {listeningLoading ? (
-                  <>
-                    <IconClock size={14} /> Requesting...
-                  </>
-                ) : (
-                  <>
-                    <IconRefresh size={14} /> Retry audio
-                  </>
-                )}
+              <button class="btn btn-sm btn-danger" onClick={handleDelete} disabled={deleting}>
+                {deleting ? 'Deleting...' : 'Delete'}
               </button>
-            )}
-            {audioPending && (
-              <button class="btn btn-sm btn-secondary" disabled>
-                <IconClock size={14} /> Generating audio...
-              </button>
-            )}
-            <a
-              href={article.original_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              class="btn btn-sm btn-secondary"
-            >
-              <IconExternalLink /> Original
-            </a>
-            <button class="btn btn-sm btn-secondary" onClick={handleRetry} disabled={retrying}>
-              <IconRefresh size={14} /> {retrying ? 'Retrying...' : 'Retry'}
-            </button>
-            <button class="btn btn-sm btn-danger" onClick={handleDelete} disabled={deleting}>
-              {deleting ? 'Deleting...' : 'Delete'}
-            </button>
+            </div>
           </div>
         </div>
         <div
