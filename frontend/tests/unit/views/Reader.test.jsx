@@ -33,7 +33,6 @@ vi.mock('../../../src/api.js', () => ({
   isOfflineCached: vi.fn(() =>
     Promise.resolve({ cached: false, hasContent: false, hasAudio: false }),
   ),
-  getAudioTiming: vi.fn(() => Promise.resolve(null)),
 }));
 
 vi.mock('../../../src/nav.js', () => ({
@@ -68,8 +67,6 @@ vi.mock('../../../src/components/ReaderToolbar.jsx', () => ({
 
 vi.mock('../../../src/components/AudioPlayer.jsx', () => ({
   playAudio: vi.fn(),
-  audioState: { value: { articleId: null, articleTitle: '', isPlaying: false, visible: false } },
-  getAudio: vi.fn(),
 }));
 
 vi.mock('../../../src/hooks/useKeyboardShortcuts.js', () => ({

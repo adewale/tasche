@@ -5,7 +5,6 @@ import { user, addToast } from '../state.js';
 import { useSWMessage } from '../hooks/useSWMessage.js';
 import {
   performLogout,
-  exportData,
   getCacheStats,
   triggerAutoPrecache,
   clearAllCaches,
@@ -26,7 +25,6 @@ function formatBytes(bytes) {
 
 export function Settings() {
   const u = user.value;
-  const exporting = useSignal(null);
   const autoCacheEnabled = useSignal(localStorage.getItem('tasche-auto-cache') !== 'false');
   const cacheStats = useSignal(null);
   const precaching = useSignal(false);
@@ -72,17 +70,6 @@ export function Settings() {
   function handlePrecacheNow() {
     precaching.value = true;
     triggerAutoPrecache(20);
-  }
-
-  function handleExport(format) {
-    exporting.value = format;
-    exportData(format)
-      .catch(function (err) {
-        addToast('Export failed: ' + (err.message || 'unknown error'), 'error');
-      })
-      .finally(function () {
-        exporting.value = null;
-      });
   }
 
   return (
@@ -215,31 +202,6 @@ export function Settings() {
           >
             <IconBookmark /> Save to Tasche
           </a>
-        </div>
-
-        <div class="mt-8">
-          <h3 class="section-title">Export Data</h3>
-          <p class="settings-detail">Download your saved articles for backup or migration.</p>
-          <div class="flex-wrap-gap">
-            <button
-              class="btn btn-secondary"
-              disabled={exporting.value !== null}
-              onClick={function () {
-                handleExport('json');
-              }}
-            >
-              {exporting.value === 'json' ? 'Exporting...' : 'Export as JSON'}
-            </button>
-            <button
-              class="btn btn-secondary"
-              disabled={exporting.value !== null}
-              onClick={function () {
-                handleExport('html');
-              }}
-            >
-              {exporting.value === 'html' ? 'Exporting...' : 'Export as HTML Bookmarks'}
-            </button>
-          </div>
         </div>
 
         <div class="mt-8">

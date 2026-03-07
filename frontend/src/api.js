@@ -172,28 +172,6 @@ function fetchText(path) {
     });
 }
 
-// Download a file as a blob with auto-detected filename
-function downloadFile(path, defaultName) {
-  return authenticatedFetch(path).then(function (resp) {
-    if (!resp.ok) {
-      throw new Error('Download failed');
-    }
-    var disposition = resp.headers.get('content-disposition') || '';
-    var match = disposition.match(/filename="([^"]+)"/);
-    var filename = match ? match[1] : defaultName;
-    return resp.blob().then(function (blob) {
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    });
-  });
-}
-
 // Article content from R2
 export function getArticleContent(articleId) {
   return fetchText('/api/articles/' + articleId + '/content');
@@ -229,19 +207,6 @@ export function renameTag(id, newName) {
   return request('PATCH', '/api/tags/' + id, { name: newName });
 }
 
-// Tag Rules (auto-tagging)
-export function getTagRules() {
-  return request('GET', '/api/tag-rules');
-}
-
-export function createTagRule(data) {
-  return request('POST', '/api/tag-rules', data);
-}
-
-export function deleteTagRule(ruleId) {
-  return request('DELETE', '/api/tag-rules/' + ruleId);
-}
-
 export function getArticleTags(articleId) {
   return request('GET', '/api/articles/' + articleId + '/tags');
 }
@@ -267,10 +232,6 @@ export function checkOriginal(articleId) {
 // TTS / Audio
 export function listenLater(articleId) {
   return request('POST', '/api/articles/' + articleId + '/listen-later');
-}
-
-export function getAudioTiming(articleId) {
-  return request('GET', '/api/articles/' + articleId + '/audio-timing');
 }
 
 // Audio (fetches via fetch() so HTTP errors are visible in JS)
@@ -307,14 +268,6 @@ export function updatePreferences(data) {
 // Stats
 export function getStats() {
   return request('GET', '/api/stats');
-}
-
-// Export
-export function exportData(format) {
-  return downloadFile(
-    '/api/export/' + format,
-    'tasche-export.' + (format === 'json' ? 'json' : 'html'),
-  );
 }
 
 // Service worker messaging helper

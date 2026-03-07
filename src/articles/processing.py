@@ -41,98 +41,6 @@ from wide_event import current_event
 from wrappers import HttpError, SafeEnv, http_fetch
 
 
-async def apply_auto_tags(
-    env: object,
-    article_id: str,
-    domain: str,
-    title: str,
-    url: str,
-) -> int:
-    """Apply tag rules to an article based on its metadata.
-
-    Fetches all tag_rules from D1, evaluates each against the article's
-    domain, title, and URL, and creates article-tag associations for
-    matching rules.
-
-    Parameters
-    ----------
-    env:
-        Worker environment with ``DB`` binding.
-    article_id:
-        The article to tag.
-    domain:
-        The article's domain (e.g. ``example.com``).
-    title:
-        The article's title.
-    url:
-        The article's final URL after redirects.
-
-    Returns
-    -------
-    int
-        Number of tags applied.
-    """
-    import fnmatch
-
-    db = env.DB  # type: ignore[attr-defined]
-
-    rules = await db.prepare("SELECT tag_id, match_type, pattern FROM tag_rules").all()
-
-    if not rules:
-        return 0
-
-    matched_tag_ids: set[str] = set()
-    title_lower = (title or "").lower()
-    url_lower = (url or "").lower()
-    domain_lower = (domain or "").lower()
-
-    for rule in rules:
-        match_type = rule.get("match_type", "")
-        pattern = rule.get("pattern", "")
-        tag_id = rule.get("tag_id", "")
-
-        if not pattern or not tag_id:
-            continue
-
-        matched = False
-        if match_type == "domain":
-            # Exact match or glob match (supports wildcards like *.example.com)
-            pattern_lower = pattern.lower()
-            if domain_lower == pattern_lower:
-                matched = True
-            elif fnmatch.fnmatch(domain_lower, pattern_lower):
-                matched = True
-        elif match_type == "title_contains":
-            if pattern.lower() in title_lower:
-                matched = True
-        elif match_type == "url_contains":
-            if pattern.lower() in url_lower:
-                matched = True
-
-        if matched:
-            matched_tag_ids.add(tag_id)
-
-    applied = 0
-    for tag_id in matched_tag_ids:
-        try:
-            await (
-                db.prepare("INSERT OR IGNORE INTO article_tags (article_id, tag_id) VALUES (?, ?)")
-                .bind(article_id, tag_id)
-                .run()
-            )
-            applied += 1
-        except Exception:
-            # Non-fatal: skip this tag association if it fails
-            pass
-
-    if applied > 0:
-        evt = current_event()
-        if evt:
-            evt.set("auto_tags_applied", applied)
-
-    return applied
-
-
 async def _mark_failed(db: object, article_id: str) -> None:
     """Log the error and set article status to 'failed' in D1."""
     evt = current_event()
@@ -373,15 +281,6 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
         )
 
         # Step 14: FTS5 indexing is handled by D1 triggers automatically.
-
-        # Step 15: Apply auto-tagging rules
-        try:
-            await apply_auto_tags(env, article_id, domain, title, final_url)
-        except Exception:
-            # Non-fatal: auto-tagging failure should not block processing
-            evt = current_event()
-            if evt:
-                evt.set("auto_tag_error", traceback.format_exc()[-500:])
 
         evt = current_event()
         if evt:

@@ -172,22 +172,12 @@ from articles.routes import router as articles_router  # noqa: E402
 
 app.include_router(articles_router, prefix="/api/articles", tags=["articles"])
 
-# Data export router
-from articles.export import router as export_router  # noqa: E402
-
-app.include_router(export_router, prefix="/api/export", tags=["export"])
-
 # Phase 5: tags router
 from tags.routes import article_tags_router  # noqa: E402
 from tags.routes import router as tags_router  # noqa: E402
 
 app.include_router(tags_router, prefix="/api/tags", tags=["tags"])
 app.include_router(article_tags_router, prefix="/api/articles", tags=["tags"])
-
-# Tag rules router (auto-tagging)
-from tags.rules import router as tag_rules_router  # noqa: E402
-
-app.include_router(tag_rules_router, prefix="/api/tag-rules", tags=["tag-rules"])
 
 # Phase 5: search router
 from search.routes import router as search_router  # noqa: E402

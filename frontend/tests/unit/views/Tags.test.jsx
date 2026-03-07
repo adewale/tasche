@@ -14,17 +14,6 @@ vi.mock('../../../src/api.js', () => ({
   ),
   deleteTag: vi.fn(() => Promise.resolve()),
   renameTag: vi.fn(() => Promise.resolve({ id: 'tag-1', user_id: 'u1', name: 'Renamed' })),
-  getTagRules: vi.fn(() => Promise.resolve([])),
-  createTagRule: vi.fn(() =>
-    Promise.resolve({
-      id: 'rule-1',
-      tag_id: 'tag-1',
-      tag_name: 'JS',
-      match_type: 'domain',
-      pattern: 'example.com',
-    }),
-  ),
-  deleteTagRule: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('../../../src/components/Header.jsx', () => ({
@@ -49,7 +38,7 @@ vi.mock('../../../src/state.js', () => ({
   addToast: vi.fn(),
 }));
 
-import { listTags, createTag, deleteTag, createTagRule } from '../../../src/api.js';
+import { listTags, createTag, deleteTag } from '../../../src/api.js';
 import { tags as tagsSignal, addToast } from '../../../src/state.js';
 
 describe('Tags', () => {
@@ -112,26 +101,5 @@ describe('Tags', () => {
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith('Tag created', 'success');
     });
-  });
-
-  it('disables Add Rule button while creating rule', async () => {
-    const user = userEvent.setup();
-    listTags.mockResolvedValueOnce([{ id: 'tag-1', name: 'JavaScript', article_count: 0 }]);
-    createTagRule.mockImplementation(() => new Promise(() => {}));
-
-    render(<Tags />);
-
-    // Wait for tags to load (renders rule form)
-    await waitFor(() => screen.getByText('Add Rule'));
-
-    // Fill rule form
-    const selects = screen.getAllByRole('combobox');
-    await user.selectOptions(selects[0], 'tag-1');
-
-    const patternInput = screen.getByPlaceholderText('example.com');
-    await user.type(patternInput, 'test.com');
-    await user.click(screen.getByText('Add Rule'));
-
-    expect(screen.getByText('Adding...')).toBeDisabled();
   });
 });

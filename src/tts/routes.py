@@ -13,7 +13,6 @@ from fastapi.responses import JSONResponse
 from starlette.responses import Response
 
 from articles.routes import _enqueue_or_fail, _get_user_article
-from articles.storage import article_key, get_content
 from auth.dependencies import get_current_user
 from utils import now_iso
 
@@ -164,41 +163,4 @@ async def get_audio(
             "Cache-Control": "public, max-age=86400, immutable",
             "Content-Length": str(len(audio_bytes)),
         },
-    )
-
-
-@router.get("/{article_id}/audio-timing")
-async def get_audio_timing(
-    request: Request,
-    article_id: str,
-    user: dict[str, Any] = Depends(get_current_user),
-) -> JSONResponse:
-    """Return the sentence timing map for an article's TTS audio.
-
-    The timing JSON is generated during TTS processing and stored in R2
-    at ``articles/{article_id}/audio-timing.json``.  Returns 404 if no
-    timing data is available (e.g. audio was generated before timing
-    support was added, or audio has not been generated at all).
-    """
-    import json as _json
-
-    env = request.scope["env"]
-    db = env.DB
-    r2 = env.CONTENT
-    user_id = user["user_id"]
-
-    # Verify article exists and belongs to user
-    await _get_user_article(db, article_id, user_id, fields="id")
-
-    timing_key = article_key(article_id, "audio-timing.json")
-    content = await get_content(r2, timing_key)
-    if content is None:
-        raise HTTPException(
-            status_code=404,
-            detail="No audio timing data available",
-        )
-
-    return JSONResponse(
-        content=_json.loads(content),
-        headers={"Cache-Control": "public, max-age=86400, immutable"},
     )

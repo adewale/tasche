@@ -984,12 +984,6 @@ textarea {
   -webkit-font-smoothing: auto;
 }
 
-.reader-content .sentence-active {
-  background: var(--accent-light);
-  border-radius: 2px;
-  transition: background var(--duration-slow) ease;
-}
-
 .reader-content h1,
 .reader-content h2,
 .reader-content h3,
@@ -1528,73 +1522,6 @@ textarea {
   display: flex;
   gap: 8px;
   flex-shrink: 0;
-}
-
-/* Tag Rules */
-
-.tag-rules-description {
-  font-size: 0.875rem;
-  color: var(--text-secondary);
-  margin-bottom: 16px;
-}
-
-.tag-rule-form {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
-  flex-wrap: wrap;
-}
-
-.tag-rule-form .input {
-  flex: 1;
-  min-width: 120px;
-}
-
-.tag-rule-select {
-  flex: 0 0 auto;
-  width: auto;
-  min-width: 140px;
-}
-
-.tag-rule-info {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 1;
-  min-width: 0;
-}
-
-.tag-rule-match-type {
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-
-.tag-rule-pattern {
-  font-size: 0.875rem;
-  font-family: var(--font-mono);
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-@media (max-width: 639px) {
-  .tag-rule-form {
-    flex-direction: column;
-  }
-
-  .tag-rule-form .input,
-  .tag-rule-select {
-    width: 100%;
-    min-width: 0;
-  }
-
-  .tag-rule-info {
-    flex-wrap: wrap;
-    gap: 6px;
-  }
 }
 
 /* Search */

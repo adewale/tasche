@@ -7,17 +7,8 @@ import {
   createTag as apiCreateTag,
   deleteTag as apiDeleteTag,
   renameTag as apiRenameTag,
-  getTagRules,
-  createTagRule as apiCreateTagRule,
-  deleteTagRule as apiDeleteTagRule,
 } from '../api.js';
 import { IconPencil } from '../components/Icons.jsx';
-
-var MATCH_TYPE_LABELS = {
-  domain: 'Domain',
-  title_contains: 'Title Contains',
-  url_contains: 'URL Contains',
-};
 
 export function Tags() {
   var [tagName, setTagName] = useState('');
@@ -25,23 +16,13 @@ export function Tags() {
   var [creatingTag, setCreatingTag] = useState(false);
   var [deletingTagId, setDeletingTagId] = useState(null);
   var [renamingTagId, setRenamingTagId] = useState(null);
-  var [creatingRule, setCreatingRule] = useState(false);
-  var [deletingRuleId, setDeletingRuleId] = useState(null);
   var [editingTagId, setEditingTagId] = useState(null);
   var [editName, setEditName] = useState('');
   var editInputRef = useRef(null);
   var tagList = tagsSignal.value;
 
-  // Tag rules state
-  var [rules, setRules] = useState([]);
-  var [rulesLoading, setRulesLoading] = useState(true);
-  var [ruleTagId, setRuleTagId] = useState('');
-  var [ruleMatchType, setRuleMatchType] = useState('domain');
-  var [rulePattern, setRulePattern] = useState('');
-
   useEffect(function () {
     loadTags();
-    loadRules();
   }, []);
 
   useEffect(
@@ -62,18 +43,6 @@ export function Tags() {
       addToast('Failed to load tags: ' + e.message, 'error');
     } finally {
       setIsLoading(false);
-    }
-  }
-
-  async function loadRules() {
-    setRulesLoading(true);
-    try {
-      var data = await getTagRules();
-      setRules(data);
-    } catch (e) {
-      addToast('Failed to load tag rules: ' + e.message, 'error');
-    } finally {
-      setRulesLoading(false);
     }
   }
 
@@ -110,12 +79,6 @@ export function Tags() {
       tagsSignal.value = tagsSignal.value.filter(function (t) {
         return t.id !== tagId;
       });
-      // Also remove rules for this tag
-      setRules(
-        rules.filter(function (r) {
-          return r.tag_id !== tagId;
-        }),
-      );
       addToast('Tag deleted', 'success');
     } catch (e) {
       addToast(e.message, 'error');
@@ -182,56 +145,6 @@ export function Tags() {
 
   function handleKeyDown(e) {
     if (e.key === 'Enter') handleCreateTag();
-  }
-
-  async function handleCreateRule() {
-    if (creatingRule) return;
-    if (!ruleTagId) {
-      addToast('Select a tag', 'error');
-      return;
-    }
-    var pattern = rulePattern.trim();
-    if (!pattern) {
-      addToast('Enter a pattern', 'error');
-      return;
-    }
-    setCreatingRule(true);
-    try {
-      var rule = await apiCreateTagRule({
-        tag_id: ruleTagId,
-        match_type: ruleMatchType,
-        pattern: pattern,
-      });
-      setRules([].concat(rules, [rule]));
-      setRulePattern('');
-      addToast('Rule created', 'success');
-    } catch (e) {
-      addToast(e.message, 'error');
-    } finally {
-      setCreatingRule(false);
-    }
-  }
-
-  async function handleDeleteRule(ruleId) {
-    if (deletingRuleId) return;
-    setDeletingRuleId(ruleId);
-    try {
-      await apiDeleteTagRule(ruleId);
-      setRules(
-        rules.filter(function (r) {
-          return r.id !== ruleId;
-        }),
-      );
-      addToast('Rule deleted', 'success');
-    } catch (e) {
-      addToast(e.message, 'error');
-    } finally {
-      setDeletingRuleId(null);
-    }
-  }
-
-  function handleRuleKeyDown(e) {
-    if (e.key === 'Enter') handleCreateRule();
   }
 
   return (
@@ -336,93 +249,6 @@ export function Tags() {
                       </button>
                     </>
                   )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Tag Rules Section */}
-        <h2 class="section-title mt-10">Tag Rules</h2>
-        <p class="tag-rules-description">
-          Rules automatically tag new articles based on their domain, title, or URL.
-        </p>
-
-        {tagList.length > 0 && (
-          <div class="tag-rule-form">
-            <select
-              class="input tag-rule-select"
-              value={ruleTagId}
-              onChange={function (e) {
-                setRuleTagId(e.target.value);
-              }}
-              aria-label="Select tag"
-            >
-              <option value="">Select tag...</option>
-              {tagList.map(function (t) {
-                return (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                );
-              })}
-            </select>
-            <select
-              class="input tag-rule-select"
-              value={ruleMatchType}
-              onChange={function (e) {
-                setRuleMatchType(e.target.value);
-              }}
-              aria-label="Match type"
-            >
-              <option value="domain">Domain</option>
-              <option value="title_contains">Title Contains</option>
-              <option value="url_contains">URL Contains</option>
-            </select>
-            <input
-              class="input"
-              type="text"
-              placeholder={ruleMatchType === 'domain' ? 'example.com' : 'pattern...'}
-              value={rulePattern}
-              onInput={function (e) {
-                setRulePattern(e.target.value);
-              }}
-              onKeyDown={handleRuleKeyDown}
-            />
-            <button class="btn btn-primary" onClick={handleCreateRule} disabled={creatingRule}>
-              {creatingRule ? 'Adding...' : 'Add Rule'}
-            </button>
-          </div>
-        )}
-
-        {rulesLoading && <LoadingSpinner />}
-
-        <div class="tags-list mt-3">
-          {!rulesLoading && rules.length === 0 && (
-            <EmptyState title="No rules yet">
-              Add a rule to automatically tag articles when they are saved.
-            </EmptyState>
-          )}
-          {rules.map(function (r) {
-            return (
-              <div class="tag-row" key={r.id}>
-                <div class="tag-rule-info">
-                  <span class="tag-chip">{r.tag_name}</span>
-                  <span class="tag-rule-match-type">
-                    {MATCH_TYPE_LABELS[r.match_type] || r.match_type}
-                  </span>
-                  <span class="tag-rule-pattern">{r.pattern}</span>
-                </div>
-                <div class="tag-row-actions">
-                  <button
-                    class="btn btn-sm btn-danger"
-                    onClick={function () {
-                      handleDeleteRule(r.id);
-                    }}
-                    disabled={deletingRuleId === r.id}
-                  >
-                    {deletingRuleId === r.id ? 'Deleting...' : 'Delete'}
-                  </button>
                 </div>
               </div>
             );

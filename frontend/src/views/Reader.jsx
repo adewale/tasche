@@ -3,7 +3,7 @@ import { Header } from '../components/Header.jsx';
 import { EmptyState, LoadingSpinner } from '../components/EmptyState.jsx';
 import { TagPicker } from '../components/TagPicker.jsx';
 import { ReaderToolbar } from '../components/ReaderToolbar.jsx';
-import { playAudio, audioState, getAudio } from '../components/AudioPlayer.jsx';
+import { playAudio } from '../components/AudioPlayer.jsx';
 import { articles, addToast, pollAudioStatus } from '../state.js';
 import { toggleArchive, toggleFavorite, removeArticle } from '../articleActions.js';
 import { readerPrefs, getReaderStyle, updatePref } from '../readerPrefs.js';
@@ -32,102 +32,11 @@ import {
   saveForOffline,
   saveAudioOffline,
   isOfflineCached,
-  getAudioTiming,
   getArticleMarkdown,
 } from '../api.js';
 import DOMPurify from 'dompurify';
 import { renderMarkdown } from '../markdown.js';
 import { escapeHtml, formatDate } from '../utils.js';
-
-/**
- * Walk text nodes in the reader content element and wrap sentence boundaries
- * with <span data-sentence-idx="N"> elements for TTS highlight sync.
- */
-function wrapSentences(containerEl, sentences) {
-  if (!containerEl || !sentences || sentences.length === 0) return;
-
-  var textNodes = [];
-  var walker = document.createTreeWalker(containerEl, NodeFilter.SHOW_TEXT, null, false);
-  var node;
-  while ((node = walker.nextNode())) {
-    if (node.textContent.trim()) {
-      textNodes.push(node);
-    }
-  }
-  if (textNodes.length === 0) return;
-
-  var fullText = '';
-  var nodeMap = [];
-  for (var i = 0; i < textNodes.length; i++) {
-    var start = fullText.length;
-    fullText += textNodes[i].textContent;
-    nodeMap.push({ node: textNodes[i], start: start, end: fullText.length });
-    if (i < textNodes.length - 1) fullText += ' ';
-  }
-
-  var normalizedFull = fullText.replace(/\s+/g, ' ');
-  var searchStart = 0;
-
-  for (var si = 0; si < sentences.length; si++) {
-    var sentenceText = sentences[si].text;
-    if (!sentenceText) continue;
-
-    var needle = sentenceText.substring(0, 60).replace(/\s+/g, ' ').trim();
-    if (needle.length === 0) continue;
-
-    var pos = normalizedFull.indexOf(needle, searchStart);
-    if (pos === -1) {
-      needle = sentenceText.substring(0, 20).replace(/\s+/g, ' ').trim();
-      pos = normalizedFull.indexOf(needle, searchStart);
-    }
-    if (pos === -1) continue;
-
-    var startNodeIdx = -1;
-    for (var ni = 0; ni < nodeMap.length; ni++) {
-      if (nodeMap[ni].end > pos) {
-        startNodeIdx = ni;
-        break;
-      }
-    }
-    if (startNodeIdx === -1) continue;
-
-    var wrapper = document.createElement('span');
-    wrapper.setAttribute('data-sentence-idx', si);
-
-    var targetNode = nodeMap[startNodeIdx].node;
-    var parent = targetNode.parentNode;
-
-    try {
-      if (parent && parent !== containerEl) {
-        parent.insertBefore(wrapper, targetNode);
-      } else {
-        containerEl.insertBefore(wrapper, targetNode);
-      }
-      wrapper.appendChild(targetNode);
-    } catch (_e) {
-      continue;
-    }
-
-    searchStart = pos + needle.length;
-  }
-}
-
-/**
- * Remove all sentence wrapper spans, restoring the original DOM structure.
- */
-function unwrapSentences(containerEl) {
-  if (!containerEl) return;
-  var spans = containerEl.querySelectorAll('[data-sentence-idx]');
-  for (var i = 0; i < spans.length; i++) {
-    var span = spans[i];
-    var parent = span.parentNode;
-    while (span.firstChild) {
-      parent.insertBefore(span.firstChild, span);
-    }
-    parent.removeChild(span);
-  }
-  containerEl.normalize();
-}
 
 /**
  * Breath marks: small tick marks in the margin at positions where
@@ -184,9 +93,6 @@ export function Reader({ id }) {
   const [copied, setCopied] = useState(false);
   const [breathMarks, setBreathMarks] = useState([]);
   const contentRef = useRef(null);
-  const timingRef = useRef(null);
-  const prevSentenceRef = useRef(-1);
-  const sentenceWrappedRef = useRef(false);
 
   useEffect(() => {
     const currentId = id;
@@ -320,109 +226,6 @@ export function Reader({ id }) {
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [readerPrefs.value.contentMode, article, id, markdownRaw, markdownLoading],
-  );
-
-  // Sentence highlighting during TTS audio playback
-  useEffect(
-    function () {
-      var state = audioState.value;
-      // Only activate when this article's audio is playing
-      if (!state.visible || state.articleId !== id) {
-        // Clean up highlights if audio stopped or switched to another article
-        if (sentenceWrappedRef.current && contentRef.current) {
-          unwrapSentences(contentRef.current);
-          sentenceWrappedRef.current = false;
-          prevSentenceRef.current = -1;
-          timingRef.current = null;
-        }
-        return;
-      }
-
-      var cancelled = false;
-
-      // Fetch timing data and wrap sentences
-      getAudioTiming(id)
-        .then(function (timing) {
-          if (cancelled || !timing || !timing.sentences || timing.sentences.length === 0) return;
-          timingRef.current = timing;
-
-          // Wrap sentences in the reader content
-          if (contentRef.current && !sentenceWrappedRef.current) {
-            wrapSentences(contentRef.current, timing.sentences);
-            sentenceWrappedRef.current = true;
-          }
-        })
-        .catch(function () {
-          // Timing data not available -- silently skip highlighting
-        });
-
-      var audio = getAudio();
-
-      function onTimeUpdate() {
-        var timing = timingRef.current;
-        if (!timing || !timing.sentences) return;
-
-        var currentTime = audio.currentTime;
-
-        // Find the current sentence — audio.currentTime is always in the
-        // media timeline regardless of playbackRate, so no speed adjustment.
-        var idx = -1;
-        for (var i = 0; i < timing.sentences.length; i++) {
-          var s = timing.sentences[i];
-          if (currentTime >= s.start && currentTime < s.end) {
-            idx = i;
-            break;
-          }
-        }
-
-        if (idx !== prevSentenceRef.current) {
-          // Remove previous highlight
-          if (prevSentenceRef.current >= 0 && contentRef.current) {
-            var prev = contentRef.current.querySelector(
-              '[data-sentence-idx="' + prevSentenceRef.current + '"]',
-            );
-            if (prev) prev.classList.remove('sentence-active');
-          }
-          // Add new highlight
-          if (idx >= 0 && contentRef.current) {
-            var el = contentRef.current.querySelector('[data-sentence-idx="' + idx + '"]');
-            if (el) {
-              el.classList.add('sentence-active');
-              el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
-          }
-          prevSentenceRef.current = idx;
-        }
-      }
-
-      function onEnded() {
-        // Clear all highlights when audio ends
-        if (contentRef.current) {
-          var active = contentRef.current.querySelector('.sentence-active');
-          if (active) active.classList.remove('sentence-active');
-        }
-        prevSentenceRef.current = -1;
-      }
-
-      audio.addEventListener('timeupdate', onTimeUpdate);
-      audio.addEventListener('ended', onEnded);
-
-      var contentEl = contentRef.current;
-      return function () {
-        cancelled = true;
-        audio.removeEventListener('timeupdate', onTimeUpdate);
-        audio.removeEventListener('ended', onEnded);
-        // Clean up highlights on unmount
-        if (sentenceWrappedRef.current && contentEl) {
-          unwrapSentences(contentEl);
-          sentenceWrappedRef.current = false;
-          prevSentenceRef.current = -1;
-          timingRef.current = null;
-        }
-      };
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- signal .value deps are valid in Preact
-    [id, audioState.value.articleId, audioState.value.visible, readerPrefs.value.contentMode],
   );
 
   async function handleArchiveToggle() {
