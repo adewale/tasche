@@ -250,6 +250,27 @@ async def create_article(
         raw_key = article_key(article_id, "raw.html")
         await r2.put(raw_key, content)
 
+    # Apply tags if provided (from bookmarklet popup)
+    tag_ids = body.get("tag_ids")
+    if tag_ids and isinstance(tag_ids, list):
+        for tid in tag_ids[:20]:  # Cap at 20 tags
+            if not isinstance(tid, str) or not tid:
+                continue
+            # Validate tag belongs to user, silently skip invalid
+            tag_exists = await (
+                db.prepare("SELECT id FROM tags WHERE id = ? AND user_id = ?")
+                .bind(tid, user_id)
+                .first()
+            )
+            if tag_exists is not None:
+                await (
+                    db.prepare(
+                        "INSERT OR IGNORE INTO article_tags (article_id, tag_id) VALUES (?, ?)"
+                    )
+                    .bind(article_id, tid)
+                    .run()
+                )
+
     # Enqueue processing job
     await _enqueue_or_fail(
         env,

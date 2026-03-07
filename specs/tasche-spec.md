@@ -201,10 +201,12 @@ Tasche stores articles in **dual format**:
 
 1. User reads an article on the web
 2. Clicks bookmarklet in browser toolbar
-3. Bookmarklet opens a small popup window at `/bookmarklet?url=...&title=...` — this is a top-level navigation to Tasche's own origin, so `SameSite=Lax` session cookies are included
-4. The popup page makes a same-origin `POST /api/articles`, shows "Saved!", and auto-closes after 1.5 seconds
-5. Article appears in library within seconds (thumbnail, title, excerpt)
-6. Original page can now disappear—user has their copy
+3. Bookmarklet opens a popup window at `/bookmarklet?url=...&title=...` — this is a top-level navigation to Tasche's own origin, so `SameSite=Lax` session cookies are included
+4. Popup shows a form: editable title, tag input with autocomplete suggestions (from existing tags + tag-rule matches), and two action buttons — **Save** and **Save audio**
+5. User optionally edits the title, adds/removes tags, then clicks Save (or presses Enter)
+6. The popup makes a same-origin `POST /api/articles` (with optional `tag_ids[]` and `listen_later`), shows "Saved!", and auto-closes after 1.5 seconds
+7. Article appears in library within seconds (thumbnail, title, excerpt, tags applied)
+8. Original page can now disappear—user has their copy
 
 **Important:** The bookmarklet MUST use `window.open()` (top-level navigation), NOT `fetch()`. Cross-origin `fetch()` with `credentials: 'include'` will not send `SameSite=Lax` cookies. The frontend generates the bookmarklet code dynamically with the correct origin baked in.
 
@@ -1003,14 +1005,22 @@ The bookmarklet opens a small popup window pointing at a dedicated `/bookmarklet
 javascript:void(open('https://tasche.example.com/bookmarklet?url='
   +encodeURIComponent(location.href)
   +'&title='+encodeURIComponent(document.title),
-  'Tasche','toolbar=no,width=420,height=180'))
+  'Tasche','toolbar=no,width=420,height=480'))
 ```
 
-The `/bookmarklet` page (`frontend/public/bookmarklet.html`) is a lightweight, self-contained HTML page (<2KB) that:
+The `/bookmarklet` page (`frontend/public/bookmarklet.html`) is a self-contained HTML page that provides a lightweight save form:
+
 1. Reads the `url` and `title` query parameters
-2. Makes a same-origin `POST /api/articles` request (session cookie is sent automatically)
-3. Shows "Saved!" or an error message
-4. Auto-closes after 1.5 seconds via `window.close()`
+2. Pre-fills an editable title input and displays the URL (domain highlighted)
+3. Fetches `GET /api/tags` and `GET /api/tag-rules` in parallel for tag autocomplete and suggestions
+4. Shows suggested tags: rule-matched tags (★ prefix, client-side matching of domain/title/URL rules) and frequent tags (by `article_count`)
+5. Tag input with `<datalist>` autocomplete; selected tags shown as `.tag-chip` chips with × remove; Backspace removes last tag
+6. Two action buttons: **Save** and **🎧 Save audio** (sets `listen_later: true`)
+7. On submit, makes a same-origin `POST /api/articles` with optional `tag_ids[]` array and `listen_later` flag
+8. Shows "Saved!" and auto-closes after 1.5 seconds via `window.close()`
+9. Keyboard shortcuts: Enter = save, Ctrl/⌘+Enter = save audio, Escape = close
+
+The `POST /api/articles` endpoint accepts an optional `tag_ids` array. Each ID is validated (must belong to the user), inserted via `INSERT OR IGNORE INTO article_tags`, and capped at 20 tags. These tags are applied immediately, before the processing pipeline runs `apply_auto_tags()`.
 
 This avoids loading the full SPA and completes in under 2 seconds.
 
@@ -1475,7 +1485,7 @@ Each milestone is a **vertical slice** — it delivers a complete, end-to-end us
 | Data export | `/api/export/json`, `/api/export/bookmarks` | Export full library as JSON or Netscape HTML bookmarks file |
 | Reading statistics | `/api/stats` | Aggregated reading stats: articles saved, read, archived, total reading time, etc. |
 | Batch operations | `/api/articles/batch-update`, `/api/articles/batch-delete` | Bulk status updates and deletions for multiple articles at once |
-| Bookmarklet popup | `frontend/public/bookmarklet.html` | Lightweight save-page opened by the bookmarklet as a popup |
+| Bookmarklet popup | `frontend/public/bookmarklet.html` | Save form with editable title, tag input (autocomplete + rule-based suggestions), Save and Save audio buttons |
 | Markdown view | `#/article/:id/markdown` | View article as rendered Markdown (alternative to the HTML reader view) |
 | Reader preferences | `ReaderToolbar` component | Font size adjustment and theme selection (light/dark) in reader view |
 | Keyboard shortcuts | Library and reader views | `j`/`k` navigation between articles, `?` for help overlay |
