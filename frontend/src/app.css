@@ -280,6 +280,44 @@ textarea {
   background: var(--bg-secondary);
 }
 
+.hamburger-theme-group {
+  padding: 4px 12px 8px;
+}
+
+.hamburger-theme-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.hamburger-theme-options {
+  display: flex;
+  gap: 4px;
+}
+
+.hamburger-theme-btn {
+  flex: 1;
+  padding: 4px 0;
+  font-size: 0.75rem;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.hamburger-theme-btn:hover {
+  background: var(--bg);
+}
+
+.hamburger-theme-btn.active {
+  background: var(--accent);
+  color: var(--accent-text, #fff);
+  border-color: var(--accent);
+}
+
 .main-content {
   flex: 1;
   max-width: 960px;

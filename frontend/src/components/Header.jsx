@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { isOffline, syncStatus, theme, applyTheme, showShortcuts } from '../state.js';
+import { readerPrefs, updatePref } from '../readerPrefs.js';
 import {
   IconLogo,
   IconSearch,
@@ -13,7 +14,14 @@ import {
   IconPencil,
 } from './Icons.jsx';
 
-export function Header() {
+var READER_THEME_OPTIONS = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'light', label: 'Light' },
+  { value: 'sepia', label: 'Sepia' },
+  { value: 'dark', label: 'Dark' },
+];
+
+export function Header({ readerMode }) {
   const offline = isOffline.value;
   const syncing = syncStatus.value;
   const [menuOpen, setMenuOpen] = useState(false);
@@ -123,10 +131,35 @@ export function Header() {
                     <IconSettings size={16} />
                     Settings
                   </a>
-                  <button class="hamburger-item" onClick={toggleTheme}>
-                    {isDark ? <IconSun size={16} /> : <IconMoon size={16} />}
-                    {isDark ? 'Light mode' : 'Dark mode'}
-                  </button>
+                  {readerMode ? (
+                    <div class="hamburger-theme-group">
+                      <span class="hamburger-theme-label">Reader theme</span>
+                      <div class="hamburger-theme-options">
+                        {READER_THEME_OPTIONS.map(function (opt) {
+                          return (
+                            <button
+                              key={opt.value}
+                              class={
+                                'hamburger-theme-btn' +
+                                (readerPrefs.value.theme === opt.value ? ' active' : '')
+                              }
+                              onClick={function () {
+                                updatePref('theme', opt.value);
+                                setMenuOpen(false);
+                              }}
+                            >
+                              {opt.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <button class="hamburger-item" onClick={toggleTheme}>
+                      {isDark ? <IconSun size={16} /> : <IconMoon size={16} />}
+                      {isDark ? 'Light mode' : 'Dark mode'}
+                    </button>
+                  )}
                   <button class="hamburger-item" onClick={handleShortcuts}>
                     <IconKeyboard size={16} />
                     Keyboard shortcuts

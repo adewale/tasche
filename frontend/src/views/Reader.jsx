@@ -388,7 +388,7 @@ export function Reader({ id }) {
   if (loadError) {
     return (
       <>
-        <Header />
+        <Header readerMode />
         <main class="main-content">
           <EmptyState title="Could not load article">
             {loadError}
@@ -405,7 +405,7 @@ export function Reader({ id }) {
   if (!article) {
     return (
       <>
-        <Header />
+        <Header readerMode />
         <main class="main-content">
           <LoadingSpinner />
         </main>
@@ -427,7 +427,7 @@ export function Reader({ id }) {
 
   return (
     <>
-      <Header />
+      <Header readerMode />
       <main class="main-content">
         <div class="reader-header">
           <a href="#/" class="reader-back">
