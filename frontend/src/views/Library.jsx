@@ -426,7 +426,8 @@ export function Library({ tag }) {
                   {savingType === 'save' ? 'Saving...' : 'Save'}
                 </button>
                 <button
-                  class="btn btn-save-audio"
+                  class="btn btn-sm btn-secondary"
+                  style="flex-shrink:0"
                   onClick={function () {
                     handleSave(true);
                   }}
@@ -437,6 +438,7 @@ export function Library({ tag }) {
                 </button>
               </div>
             </div>
+            <hr class="save-filter-divider" />
             <div class="filter-bar">
               <div class="filter-tabs">
                 {FILTERS.map(function (f) {
@@ -492,29 +494,31 @@ export function Library({ tag }) {
             >
               Clear
             </button>
-            <button
-              class="btn btn-sm btn-secondary"
-              onClick={handleBulkArchive}
-              disabled={selected.size === 0 || bulkActing}
-            >
-              <IconArchive size={14} />
-              {bulkActing ? 'Archiving...' : 'Archive'}
-            </button>
-            <button
-              class="btn btn-sm btn-danger"
-              onClick={handleBulkDelete}
-              disabled={selected.size === 0 || bulkActing}
-            >
-              <IconTrash size={14} />
-              {bulkActing ? 'Deleting...' : 'Delete'}
-            </button>
-            <button
-              class="btn btn-sm btn-secondary bulk-action-bar-close"
-              onClick={toggleSelectMode}
-              title="Exit select mode"
-            >
-              <IconX size={14} />
-            </button>
+            <div class="bulk-action-bar-destructive">
+              <button
+                class="btn btn-sm btn-secondary"
+                onClick={handleBulkArchive}
+                disabled={selected.size === 0 || bulkActing}
+              >
+                <IconArchive size={14} />
+                {bulkActing ? 'Archiving...' : 'Archive'}
+              </button>
+              <button
+                class="btn btn-sm btn-danger"
+                onClick={handleBulkDelete}
+                disabled={selected.size === 0 || bulkActing}
+              >
+                <IconTrash size={14} />
+                {bulkActing ? 'Deleting...' : 'Delete'}
+              </button>
+              <button
+                class="btn btn-sm btn-secondary bulk-action-bar-close"
+                onClick={toggleSelectMode}
+                title="Exit select mode"
+              >
+                <IconX size={14} />
+              </button>
+            </div>
           </div>
         )}
 

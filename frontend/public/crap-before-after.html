@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tasche — CRAP Design Audit: Before / After</title>
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background: #f5f5f7;
+  color: #1d1d1f;
+  line-height: 1.5;
+}
+
+.page { max-width: 1100px; margin: 0 auto; padding: 32px 24px 64px; }
+
+.page-header {
+  border-bottom: 2px solid currentColor;
+  padding-bottom: 12px;
+  margin-bottom: 40px;
+}
+.page-title {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.page-subtitle {
+  font-size: 0.8125rem;
+  color: #6e6e73;
+  margin-top: 4px;
+}
+
+section { margin-bottom: 48px; }
+
+.section-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding-bottom: 4px;
+  border-bottom: 2px solid currentColor;
+  margin-bottom: 16px;
+  color: #6e6e73;
+}
+
+.section-note {
+  font-size: 0.8125rem;
+  color: #6e6e73;
+  margin-bottom: 16px;
+}
+
+.compare-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-bottom: 12px;
+}
+
+@media (max-width: 700px) {
+  .compare-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.compare-panel {
+  border: 1px solid #e5e5e7;
+  border-radius: 2px;
+  padding: 20px;
+  background: #fff;
+}
+
+.compare-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6e6e73;
+  margin-bottom: 12px;
+}
+
+.compare-label--before { color: #915550; }
+.compare-label--after { color: #5a7068; }
+
+/* ── Shared component styles ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  text-decoration: none;
+  min-height: 36px;
+}
+.btn-primary { background: #1d1d1f; color: #fff; border-color: #1d1d1f; }
+.btn-secondary { background: #f5f5f7; color: #1d1d1f; border-color: #e5e5e7; }
+.btn-danger { background: transparent; color: #915550; border-color: #915550; }
+
+.tag-chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 2px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  border: 1px solid #e5e5e7;
+  font-variant: small-caps;
+  letter-spacing: 0.03em;
+}
+
+/* ── Filter tabs ── */
+.filter-tab {
+  padding: 8px 16px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+/* ── Toast base ── */
+.toast-demo {
+  padding: 12px 16px;
+  border-radius: 2px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  max-width: 360px;
+  margin-bottom: 8px;
+}
+
+/* ── Card action button ── */
+.card-action-btn {
+  padding: 8px;
+  border-radius: 2px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  min-height: 36px;
+}
+
+/* ── Meta dots ── */
+.meta-demo {
+  font-size: 0.8125rem;
+  color: #6e6e73;
+  font-variant: small-caps;
+  letter-spacing: 0.03em;
+}
+
+/* ── Reader actions ── */
+.reader-actions-demo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.action-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Inline select */
+.inline-select {
+  padding: 4px 10px;
+  font-size: 0.8125rem;
+  border: 1px solid #e5e5e7;
+  border-radius: 2px;
+  background: #fff;
+  color: inherit;
+  font-family: inherit;
+}
+
+/* ── Bulk bar ── */
+.bulk-bar-demo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #f5f5f7;
+  border: 1px solid #e5e5e7;
+  border-radius: 2px;
+  flex-wrap: wrap;
+}
+
+.bulk-count {
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-variant: small-caps;
+}
+
+/* ── Settings section demo ── */
+.settings-demo {
+  border: 1px solid #e5e5e7;
+  border-radius: 2px;
+  padding: 16px;
+  background: #fff;
+}
+
+.settings-heading {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #6e6e73;
+  padding-bottom: 4px;
+  border-bottom: 2px solid #1d1d1f;
+  margin-bottom: 12px;
+}
+
+.settings-text {
+  font-size: 0.875rem;
+  color: #6e6e73;
+  margin-bottom: 8px;
+}
+
+.divider { border: none; border-top: 1px solid #e5e5e7; margin: 24px 0; }
+
+.impact-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 2px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-left: 8px;
+}
+.impact-high { background: #f4efee; color: #915550; border: 1px solid #e3dcdb; }
+.impact-medium { background: #f5f0e8; color: #9a7030; border: 1px solid #e5dcc8; }
+.impact-low { background: #eff1f0; color: #5a7068; border: 1px solid #dde0de; }
+</style>
+</head>
+<body>
+
+<div class="page">
+
+<header class="page-header">
+  <h1 class="page-title" style="display: flex; align-items: center; gap: 12px;">
+    <svg viewBox="0 0 32 32" width="28" height="28" style="transform: translateY(-0.5px); flex-shrink: 0;">
+      <path d="M 3 2 L 3 23 Q 3 29 9 29 L 23 29 Q 29 29 29 23 L 29 2" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="16" y="22.5" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="18" fill="currentColor">T</text>
+    </svg>
+    CRAP Design Audit — Before / After
+  </h1>
+  <p class="page-subtitle">Visual comparison of changes from Robin Williams' Contrast, Repetition, Alignment, Proximity audit</p>
+</header>
+
+
+<!-- ═══ 1. Filter Tabs ═══ -->
+<section>
+  <h2 class="section-title">1. Filter Tab Active State <span class="impact-tag impact-high">High Impact</span></h2>
+  <p class="section-note">Reuses the inverted treatment from <code>.reader-toolbar-seg.active</code>. Active tab now inverts foreground/background for much stronger contrast.</p>
+  <div class="compare-row">
+    <div class="compare-panel">
+      <div class="compare-label compare-label--before">Before</div>
+      <div style="display:flex; gap:4px;">
+        <button class="filter-tab" style="color:#1d1d1f; border-bottom:2px solid #1d1d1f;">Unread</button>
+        <button class="filter-tab" style="color:#6e6e73; border-bottom:2px solid transparent;">Archived</button>
+        <button class="filter-tab" style="color:#6e6e73; border-bottom:2px solid transparent;">Favourites</button>
+        <button class="filter-tab" style="color:#6e6e73; border-bottom:2px solid transparent;">All</button>
+      </div>
+    </div>
+    <div class="compare-panel">
+      <div class="compare-label compare-label--after">After</div>
+      <div style="display:flex; gap:4px;">
+        <button class="filter-tab" style="color:#fff; background:#1d1d1f; border-bottom:2px solid #1d1d1f;">Unread</button>
+        <button class="filter-tab" style="color:#6e6e73; border-bottom:2px solid transparent;">Archived</button>
+        <button class="filter-tab" style="color:#6e6e73; border-bottom:2px solid transparent;">Favourites</button>
+        <button class="filter-tab" style="color:#6e6e73; border-bottom:2px solid transparent;">All</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══ 2. Toast Notifications ═══ -->
+<section>
+  <h2 class="section-title">2. Toast Notifications <span class="impact-tag impact-high">High Impact</span></h2>
+  <p class="section-note">Success and error toasts now reuse the <code>--status-available-*</code> and <code>--status-dead-*</code> design tokens for tinted backgrounds. Much easier to distinguish at a glance.</p>
+  <div class="compare-row">
+    <div class="compare-panel">
+      <div class="compare-label compare-label--before">Before</div>
+      <div class="toast-demo" style="background:#fff; color:#1d1d1f; border:1px solid #5a7068;">Article saved successfully</div>
+      <div class="toast-demo" style="background:#fff; color:#1d1d1f; border:1px solid #915550;">Export failed: network timeout</div>
+      <div class="toast-demo" style="background:#fff; color:#1d1d1f; border:1px solid #aeaeb2;">Audio generation queued</div>
+    </div>
+    <div class="compare-panel">
+      <div class="compare-label compare-label--after">After</div>
+      <div class="toast-demo" style="background:#eff1f0; color:#5a7068; border:1px solid #dde0de;">Article saved successfully</div>
+      <div class="toast-demo" style="background:#f4efee; color:#915550; border:1px solid #e3dcdb;">Export failed: network timeout</div>
+      <div class="toast-demo" style="background:#fff; color:#1d1d1f; border:1px solid #aeaeb2;">Audio generation queued</div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══ 3. Reader Action Groups ═══ -->
+<section>
+  <h2 class="section-title">3. Reader Action Groups <span class="impact-tag impact-high">High Impact</span></h2>
+  <p class="section-note">Buttons split into 3 logical groups (status | audio | meta+destructive) with 1px vertical dividers. Easier to scan, parse, and find the right action.</p>
+  <div class="compare-row">
+    <div class="compare-panel">
+      <div class="compare-label compare-label--before">Before</div>
+      <div class="reader-actions-demo" style="gap:8px;">
+        <button class="btn btn-primary">Favourited</button>
+        <select class="inline-select"><option>Unread</option></select>
+        <button class="btn btn-secondary">Save for offline</button>
+        <button class="btn btn-secondary">Listen Later</button>
+        <button class="btn btn-secondary">Original</button>
+        <button class="btn btn-secondary">Retry</button>
+        <button class="btn btn-secondary">Delete</button>
+      </div>
+    </div>
+    <div class="compare-panel">
+      <div class="compare-label compare-label--after">After</div>
+      <div class="reader-actions-demo" style="gap:16px;">
+        <div class="action-group" style="padding-right:8px; border-right:1px solid #e5e5e7;">
+          <button class="btn btn-primary">Favourited</button>
+          <select class="inline-select"><option>Unread</option></select>
+          <button class="btn btn-secondary">Save for offline</button>
+        </div>
+        <div class="action-group" style="padding-right:8px; border-right:1px solid #e5e5e7;">
+          <button class="btn btn-secondary">Listen Later</button>
+        </div>
+        <div class="action-group">
+          <button class="btn btn-secondary">Original</button>
+          <button class="btn btn-secondary">Retry</button>
+          <button class="btn btn-danger">Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══ 4. Delete Button ═══ -->
+<section>
+  <h2 class="section-title">4. Card Delete Button <span class="impact-tag impact-medium">Medium</span></h2>
+  <p class="section-note">The delete button in card action rows now uses the danger colour (<code>#915550</code>) at rest, not just on hover. Reuses the existing <code>--danger</code> variable.</p>
+  <div class="compare-row">
+    <div class="compare-panel">
+      <div class="compare-label compare-label--before">Before</div>
+      <div style="display:flex; gap:2px;">
+        <button class="card-action-btn" style="color:#aeaeb2;" title="Audio"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0118 0v6"/><path d="M21 19a2 2 0 01-2 2h-1a2 2 0 01-2-2v-3a2 2 0 012-2h3zM3 19a2 2 0 002 2h1a2 2 0 002-2v-3a2 2 0 00-2-2H3z"/></svg></button>
+        <button class="card-action-btn" style="color:#aeaeb2;" title="Archive"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg></button>
+        <button class="card-action-btn" style="color:#aeaeb2;" title="Star"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></button>
+        <button class="card-action-btn" style="color:#aeaeb2;" title="Delete"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
+      </div>
+    </div>
+    <div class="compare-panel">
+      <div class="compare-label compare-label--after">After</div>
+      <div style="display:flex; gap:2px;">
+        <button class="card-action-btn" style="color:#aeaeb2;" title="Audio"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0118 0v6"/><path d="M21 19a2 2 0 01-2 2h-1a2 2 0 01-2-2v-3a2 2 0 012-2h3zM3 19a2 2 0 002 2h1a2 2 0 002-2v-3a2 2 0 00-2-2H3z"/></svg></button>
+        <button class="card-action-btn" style="color:#aeaeb2;" title="Archive"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg></button>
+        <button class="card-action-btn" style="color:#aeaeb2;" title="Star"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></button>
+        <button class="card-action-btn" style="color:#915550;" title="Delete"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══ 5. Save Form / Filter Separator ═══ -->
+<section>
+  <h2 class="section-title">5. Save Form / Filter Bar Separation <span class="impact-tag impact-medium">Medium</span></h2>
+  <p class="section-note">A 1px horizontal rule now separates the save form (adding content) from the filter bar (filtering content), clarifying two distinct functional zones.</p>
+  <div class="compare-row">
+    <div class="compare-panel">
+      <div class="compare-label compare-label--before">Before</div>
+      <div style="display:flex; gap:8px; margin-bottom:24px;">
+        <input type="text" placeholder="Paste a URL to save..." style="flex:1; padding:10px 14px; border:1px solid #e5e5e7; border-radius:2px; font-size:0.9375rem; font-family:inherit;">
+        <button class="btn btn-primary" style="padding:10px 20px;">Save</button>
+      </div>
+      <div style="display:flex; gap:4px;">
+        <button class="filter-tab" style="color:#1d1d1f; border-bottom:2px solid #1d1d1f;">Unread</button>
+        <button class="filter-tab" style="color:#6e6e73; border-bottom:2px solid transparent;">All</button>
+      </div>
+    </div>
+    <div class="compare-panel">
+      <div class="compare-label compare-label--after">After</div>
+      <div style="display:flex; gap:8px;">
+        <input type="text" placeholder="Paste a URL to save..." style="flex:1; padding:10px 14px; border:1px solid #e5e5e7; border-radius:2px; font-size:0.9375rem; font-family:inherit;">
+        <button class="btn btn-primary" style="padding:10px 20px;">Save</button>
+      </div>
+      <hr style="border:none; border-top:1px solid #e5e5e7; margin:16px 0;">
+      <div style="display:flex; gap:4px;">
+        <button class="filter-tab" style="color:#fff; background:#1d1d1f; border-bottom:2px solid #1d1d1f;">Unread</button>
+        <button class="filter-tab" style="color:#6e6e73; border-bottom:2px solid transparent;">All</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══ 6. Reader Meta Separators ═══ -->
+<section>
+  <h2 class="section-title">6. Reader Meta Separators <span class="impact-tag impact-medium">Medium</span></h2>
+  <p class="section-note">Reader metadata now uses the same middle-dot separator pattern as article cards, reusing the <code>.article-card-meta</code> CSS convention.</p>
+  <div class="compare-row">
+    <div class="compare-panel">
+      <div class="compare-label compare-label--before">Before</div>
+      <div class="meta-demo" style="display:flex; gap:12px;">
+        <span>John Smith</span>
+        <span>example.com</span>
+        <span>8 min read</span>
+        <span>2,340 words</span>
+      </div>
+    </div>
+    <div class="compare-panel">
+      <div class="compare-label compare-label--after">After</div>
+      <div class="meta-demo" style="display:flex; gap:12px;">
+        <span>John Smith</span>
+        <span style="display:flex; gap:6px;"><span style="color:#aeaeb2;">&middot;</span> example.com</span>
+        <span style="display:flex; gap:6px;"><span style="color:#aeaeb2;">&middot;</span> 8 min read</span>
+        <span style="display:flex; gap:6px;"><span style="color:#aeaeb2;">&middot;</span> 2,340 words</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══ 7. Bulk Action Bar ═══ -->
+<section>
+  <h2 class="section-title">7. Bulk Action Bar Grouping <span class="impact-tag impact-medium">Medium</span></h2>
+  <p class="section-note">Selection controls stay left; destructive actions push right via <code>margin-left: auto</code> — reusing the pattern already used by <code>.bulk-action-bar-close</code>.</p>
+  <div class="compare-row">
+    <div class="compare-panel">
+      <div class="compare-label compare-label--before">Before</div>
+      <div class="bulk-bar-demo">
+        <span class="bulk-count" style="margin-right:auto;">3 selected</span>
+        <button class="btn btn-secondary">Select All</button>
+        <button class="btn btn-secondary">Clear</button>
+        <button class="btn btn-secondary">Archive</button>
+        <button class="btn btn-danger">Delete</button>
+      </div>
+    </div>
+    <div class="compare-panel">
+      <div class="compare-label compare-label--after">After</div>
+      <div class="bulk-bar-demo">
+        <span class="bulk-count">3 selected</span>
+        <button class="btn btn-secondary">Select All</button>
+        <button class="btn btn-secondary">Clear</button>
+        <div style="display:flex; gap:8px; margin-left:auto;">
+          <button class="btn btn-secondary">Archive</button>
+          <button class="btn btn-danger">Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══ 8. Settings Account Section ═══ -->
+<section>
+  <h2 class="section-title">8. Settings Account Separator <span class="impact-tag impact-low">Low</span></h2>
+  <p class="section-note">Account/logout section now has a visible divider (reusing <code>.setup-divider</code>) and its own section heading, separating it from export controls above.</p>
+  <div class="compare-row">
+    <div class="compare-panel">
+      <div class="compare-label compare-label--before">Before</div>
+      <div class="settings-demo">
+        <div class="settings-heading">Export Data</div>
+        <p class="settings-text">Download your saved articles for backup.</p>
+        <button class="btn btn-secondary" style="margin-bottom:32px;">Export as JSON</button>
+        <p class="settings-text">Logged in as: <strong>user@example.com</strong></p>
+        <button class="btn btn-secondary">Log out</button>
+      </div>
+    </div>
+    <div class="compare-panel">
+      <div class="compare-label compare-label--after">After</div>
+      <div class="settings-demo">
+        <div class="settings-heading">Export Data</div>
+        <p class="settings-text">Download your saved articles for backup.</p>
+        <button class="btn btn-secondary">Export as JSON</button>
+        <hr class="divider">
+        <div class="settings-heading">Account</div>
+        <p class="settings-text">Logged in as: <strong>user@example.com</strong></p>
+        <button class="btn btn-secondary">Log out</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══ 9. Settings Section Spacing ═══ -->
+<section>
+  <h2 class="section-title">9. Consistent Settings Spacing <span class="impact-tag impact-low">Low</span></h2>
+  <p class="section-note">All settings sections now use a uniform <code>.settings-section</code> class with <code>margin-top: 32px</code>, replacing the inconsistent <code>mt-4</code> (16px) / <code>mt-8</code> (32px) mix.</p>
+  <div class="compare-row">
+    <div class="compare-panel">
+      <div class="compare-label compare-label--before">Before</div>
+      <div class="settings-demo">
+        <div class="settings-heading" style="margin-bottom:0;">Settings</div>
+        <div style="height:16px; background:repeating-linear-gradient(90deg, #e5e5e7 0, #e5e5e7 1px, transparent 1px, transparent 4px); margin:4px 0;"></div>
+        <div style="font-size:0.6875rem; color:#aeaeb2; margin-bottom:4px;">mt-4 = 16px gap</div>
+        <div class="settings-heading" style="margin-bottom:0;">Offline Reading</div>
+        <div style="height:32px; background:repeating-linear-gradient(90deg, #e5e5e7 0, #e5e5e7 1px, transparent 1px, transparent 4px); margin:4px 0;"></div>
+        <div style="font-size:0.6875rem; color:#aeaeb2; margin-bottom:4px;">mt-8 = 32px gap</div>
+        <div class="settings-heading" style="margin-bottom:0;">Listen Later Voice</div>
+      </div>
+    </div>
+    <div class="compare-panel">
+      <div class="compare-label compare-label--after">After</div>
+      <div class="settings-demo">
+        <div class="settings-heading" style="margin-bottom:0;">Settings</div>
+        <div style="height:32px; background:repeating-linear-gradient(90deg, #dde0de 0, #dde0de 1px, transparent 1px, transparent 4px); margin:4px 0;"></div>
+        <div style="font-size:0.6875rem; color:#5a7068; margin-bottom:4px;">32px (uniform)</div>
+        <div class="settings-heading" style="margin-bottom:0;">Offline Reading</div>
+        <div style="height:32px; background:repeating-linear-gradient(90deg, #dde0de 0, #dde0de 1px, transparent 1px, transparent 4px); margin:4px 0;"></div>
+        <div style="font-size:0.6875rem; color:#5a7068; margin-bottom:4px;">32px (uniform)</div>
+        <div class="settings-heading" style="margin-bottom:0;">Listen Later Voice</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══ 10. Unused Shadow Tokens ═══ -->
+<section>
+  <h2 class="section-title">10. Cleaned Design Tokens <span class="impact-tag impact-low">Low</span></h2>
+  <p class="section-note">Removed <code>--shadow</code>, <code>--shadow-lg</code>, and <code>--shadow-up</code> (all set to <code>none</code>) from the design system. Only <code>--shadow-float</code> remains — the single shadow actually used in the app.</p>
+  <div class="compare-row">
+    <div class="compare-panel">
+      <div class="compare-label compare-label--before">Before (4 tokens)</div>
+      <pre style="font-family:'SF Mono',Menlo,Consolas,monospace; font-size:0.75rem; padding:12px; background:#f5f5f7; border:1px solid #e5e5e7; border-radius:2px; line-height:1.6;">--shadow: none;
+--shadow-lg: none;
+--shadow-float: 0 1px 4px rgba(0,0,0,0.08);
+--shadow-up: none;</pre>
+    </div>
+    <div class="compare-panel">
+      <div class="compare-label compare-label--after">After (1 token)</div>
+      <pre style="font-family:'SF Mono',Menlo,Consolas,monospace; font-size:0.75rem; padding:12px; background:#f5f5f7; border:1px solid #e5e5e7; border-radius:2px; line-height:1.6;">--shadow-float: 0 1px 4px rgba(0,0,0,0.08);</pre>
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══ 11. btn-save-audio Consolidation ═══ -->
+<section>
+  <h2 class="section-title">11. Save Audio Button Consolidation <span class="impact-tag impact-low">Low</span></h2>
+  <p class="section-note">The bespoke <code>.btn-save-audio</code> class (24 lines of CSS) was replaced with the existing <code>.btn .btn-sm .btn-secondary</code> pattern. Visual result is nearly identical; hover/active/disabled states now match all other buttons.</p>
+  <div class="compare-row">
+    <div class="compare-panel">
+      <div class="compare-label compare-label--before">Before (custom class)</div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <input type="text" placeholder="Paste a URL..." style="flex:1; padding:10px 14px; border:1px solid #e5e5e7; border-radius:2px; font-size:0.9375rem; font-family:inherit;">
+        <button class="btn btn-primary" style="padding:10px 20px;">Save</button>
+        <button style="display:inline-flex; align-items:center; gap:6px; padding:8px 12px; border-radius:2px; color:#6e6e73; border:1px solid #e5e5e7; background:transparent; cursor:pointer; font-size:0.85rem; font-family:inherit; white-space:nowrap;">Save audio</button>
+      </div>
+    </div>
+    <div class="compare-panel">
+      <div class="compare-label compare-label--after">After (.btn .btn-sm .btn-secondary)</div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <input type="text" placeholder="Paste a URL..." style="flex:1; padding:10px 14px; border:1px solid #e5e5e7; border-radius:2px; font-size:0.9375rem; font-family:inherit;">
+        <button class="btn btn-primary" style="padding:10px 20px;">Save</button>
+        <button class="btn btn-secondary" style="flex-shrink:0;">Save audio</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══ 12. Reader Info Reorder ═══ -->
+<section>
+  <h2 class="section-title">12. Original Status Badge Placement <span class="impact-tag impact-medium">Medium</span></h2>
+  <p class="section-note">The original status badge moved from between TagPicker and action buttons to between metadata and TagPicker. All informational elements now group together, all interactive elements group together.</p>
+  <div class="compare-row">
+    <div class="compare-panel">
+      <div class="compare-label compare-label--before">Before</div>
+      <div style="font-size:0.8125rem;">
+        <div style="color:#6e6e73; font-variant:small-caps; margin-bottom:8px;">metadata row</div>
+        <div style="display:flex; gap:4px; margin-bottom:8px;"><span class="tag-chip">design</span><span class="tag-chip">web</span></div>
+        <div style="background:#eff1f0; color:#5a7068; border:1px solid #dde0de; padding:6px 10px; border-radius:2px; margin-bottom:8px; font-size:0.8125rem;">Original available</div>
+        <div style="display:flex; gap:6px;">
+          <button class="btn btn-secondary" style="font-size:0.75rem; padding:4px 10px; min-height:28px;">Favourite</button>
+          <button class="btn btn-danger" style="font-size:0.75rem; padding:4px 10px; min-height:28px;">Delete</button>
+        </div>
+      </div>
+    </div>
+    <div class="compare-panel">
+      <div class="compare-label compare-label--after">After</div>
+      <div style="font-size:0.8125rem;">
+        <div style="color:#6e6e73; font-variant:small-caps; margin-bottom:8px;">metadata row</div>
+        <div style="background:#eff1f0; color:#5a7068; border:1px solid #dde0de; padding:6px 10px; border-radius:2px; margin-bottom:8px; font-size:0.8125rem;">Original available</div>
+        <div style="display:flex; gap:4px; margin-bottom:8px;"><span class="tag-chip">design</span><span class="tag-chip">web</span></div>
+        <div style="display:flex; gap:6px;">
+          <button class="btn btn-secondary" style="font-size:0.75rem; padding:4px 10px; min-height:28px;">Favourite</button>
+          <button class="btn btn-danger" style="font-size:0.75rem; padding:4px 10px; min-height:28px;">Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+</div>
+</body>
+</html>

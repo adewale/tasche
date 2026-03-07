@@ -316,6 +316,8 @@ section { margin-bottom: 48px; }
   min-height: 36px;
 }
 [data-theme='dark'] .demo-card-actions button { color: #a8a8ad; }
+.demo-card-actions .demo-delete-btn { color: #915550; }
+[data-theme='dark'] .demo-card-actions .demo-delete-btn { color: #b89490; }
 .demo-card-label {
   position: absolute;
   top: 8px;
@@ -376,10 +378,10 @@ section { margin-bottom: 48px; }
   background: #fff;
 }
 [data-theme='dark'] .toast-demo { background: #1e1e20; border-color: #333336; }
-.toast-demo--success { border-color: #5a7068; }
-[data-theme='dark'] .toast-demo--success { border-color: #8aab94; }
-.toast-demo--error { border-color: #915550; }
-[data-theme='dark'] .toast-demo--error { border-color: #b89490; }
+.toast-demo--success { background: #eff1f0; color: #5a7068; border-color: #dde0de; }
+[data-theme='dark'] .toast-demo--success { background: #1c201e; color: #8aab94; border-color: #2a322e; }
+.toast-demo--error { background: #f4efee; color: #915550; border-color: #e3dcdb; }
+[data-theme='dark'] .toast-demo--error { background: #201c1c; color: #b89490; border-color: #2d2828; }
 .toast-demo--info { border-color: #aeaeb2; }
 [data-theme='dark'] .toast-demo--info { border-color: #6e6e73; }
 
@@ -591,8 +593,8 @@ section { margin-bottom: 48px; }
   white-space: nowrap;
 }
 [data-theme='dark'] .filter-tab { color: #aeaeb2; }
-.filter-tab--active { color: #1d1d1f; border-bottom-color: #1d1d1f; }
-[data-theme='dark'] .filter-tab--active { color: #f5f5f7; border-bottom-color: #f5f5f7; }
+.filter-tab--active { color: #fff; background: #1d1d1f; border-bottom-color: #1d1d1f; }
+[data-theme='dark'] .filter-tab--active { color: #141416; background: #f5f5f7; border-bottom-color: #f5f5f7; }
 
 /* ── Divider ── */
 .divider { border: none; border-top: 1px solid #e5e5e7; margin: 24px 0; }
@@ -1309,7 +1311,7 @@ section { margin-bottom: 48px; }
           <button><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0118 0v6"/><path d="M21 19a2 2 0 01-2 2h-1a2 2 0 01-2-2v-3a2 2 0 012-2h3zM3 19a2 2 0 002 2h1a2 2 0 002-2v-3a2 2 0 00-2-2H3z"/></svg></button>
           <button><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg></button>
           <button><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></button>
-          <button><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
+          <button class="demo-delete-btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
         </div>
         <div class="progress-demo"><div class="progress-fill" style="width:35%;"></div></div>
       </div>
@@ -1336,7 +1338,7 @@ section { margin-bottom: 48px; }
         <div class="demo-card-excerpt">I thought my eyesight was going bad. Then I realised it was the web's font choices...</div>
         <div class="demo-card-actions">
           <button><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></button>
-          <button><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
+          <button class="demo-delete-btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
         </div>
       </div>
     </div>
@@ -1666,9 +1668,50 @@ section { margin-bottom: 48px; }
           <button><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0118 0v6"/><path d="M21 19a2 2 0 01-2 2h-1a2 2 0 01-2-2v-3a2 2 0 012-2h3zM3 19a2 2 0 002 2h1a2 2 0 002-2v-3a2 2 0 00-2-2H3z"/></svg></button>
           <button><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg></button>
           <button><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></button>
-          <button><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
+          <button class="demo-delete-btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
         </div>
       </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Reader Action Groups</h2>
+  <p class="section-note">Reader actions are grouped into three logical clusters separated by 1px vertical dividers: status actions (favourite, reading status, offline), audio actions (listen, download, request), and meta/destructive actions (original, retry, delete). On mobile (&le;639px) the dividers are hidden and groups wrap naturally.</p>
+  <div style="display:flex; flex-wrap:wrap; gap:16px; align-items:center; max-width:640px;">
+    <div style="display:flex; gap:8px; align-items:center; padding-right:8px; border-right:1px solid #e5e5e7;">
+      <button class="btn btn-primary btn-sm">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        Favourited
+      </button>
+      <select class="inline-select"><option>Unread</option><option>Archived</option></select>
+      <button class="btn btn-secondary btn-sm">Save for offline</button>
+    </div>
+    <div style="display:flex; gap:8px; align-items:center; padding-right:8px; border-right:1px solid #e5e5e7;">
+      <button class="btn btn-secondary btn-sm">Listen Later</button>
+    </div>
+    <div style="display:flex; gap:8px; align-items:center;">
+      <button class="btn btn-secondary btn-sm">Original</button>
+      <button class="btn btn-secondary btn-sm">Retry</button>
+      <button class="btn btn-danger btn-sm">Delete</button>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title">Bulk Action Bar</h2>
+  <p class="section-note">Selection controls (count, Select All, Clear) group on the left; destructive actions (Archive, Delete, Close) are pushed right with <code style="font-size:0.8125em;">margin-left: auto</code>.</p>
+  <div style="display:flex; align-items:center; gap:8px; padding:10px 16px; background:#f5f5f7; border:1px solid #e5e5e7; border-radius:2px; max-width:640px; flex-wrap:wrap;">
+    <span style="font-size:0.875rem; font-weight:600; font-variant:small-caps;">3 selected</span>
+    <button class="btn btn-secondary btn-sm">Select All</button>
+    <button class="btn btn-secondary btn-sm">Clear</button>
+    <div style="display:flex; gap:8px; margin-left:auto;">
+      <button class="btn btn-secondary btn-sm">Archive</button>
+      <button class="btn btn-danger btn-sm">Delete</button>
     </div>
   </div>
 </section>
