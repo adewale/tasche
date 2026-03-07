@@ -1086,3 +1086,69 @@ return body_bytes.decode(charset, errors="replace"), str(resp.url)
 ```
 
 **Lesson:** When fetching web pages, always check the `Content-Type` charset parameter before decoding. UTF-8 is the right default, but many sites still serve ISO-8859-1 or Windows-1252. Use `errors="replace"` as a safety net so unknown bytes become `�` instead of crashing the pipeline.
+
+---
+
+## N+1 Queries, Service Worker Blind Spots, and Stuck State Machines (2026-03-07)
+
+### 72. Service Workers Are a Testing Blind Spot
+
+The service worker's `handleAutoPrecache()` function used `sort=created_at:desc` (raw SQL column syntax) instead of the API's named sort key `newest`. This caused a silent 422 error on every auto-precache cycle. The bug survived from commit `8d05ec2` (Feb 23) to Mar 7 — **12 days** — because:
+
+1. **Backend unit tests** validate sort parameters but don't know what the SW sends
+2. **Frontend unit tests** don't load `sw.js` (it runs in a separate worker context)
+3. **E2E tests** don't exercise the auto-precache path
+4. **`curl` testing** doesn't trigger the SW at all
+
+The SW has 10+ hardcoded API paths and query parameters with zero test coverage. Similar contract-mismatch bugs could be hiding in: cache invalidation URL patterns, offline mutation replay, and precache fetch parameters.
+
+**Lesson:** Service workers are code that calls your API — they need the same contract testing as any other API client. At minimum, add E2E tests that verify every URL the SW constructs returns a 2xx status. The SW is invisible to both backend tests (wrong runtime) and frontend unit tests (wrong context), making it uniquely susceptible to contract drift.
+
+### 73. N+1 Queries Cross the Frontend-Backend Boundary Too
+
+The classic N+1 query problem isn't just a backend ORM issue. The frontend loaded 20 articles then fired 20 parallel `GET /api/articles/{id}/tags` requests — one per `ArticleCard` component's `useEffect`. Each request was fast (~180ms), but the aggregate was 20 D1 queries + 20 KV auth checks for data that could have been a single SQL JOIN.
+
+**Fix:** Added a correlated subquery with `json_group_array(json_object(...))` to the list endpoint. Tags now come inline with each article. The frontend checks for `a.tags` before making individual fetches, falling back to the API call only for articles loaded outside the list (e.g., polling updates).
+
+```sql
+SELECT ...,
+  COALESCE(
+    (SELECT json_group_array(json_object('id', t.id, 'name', t.name))
+     FROM article_tags at2 INNER JOIN tags t ON t.id = at2.tag_id
+     WHERE at2.article_id = articles.id),
+  '[]') AS tags_json
+FROM articles WHERE ...
+```
+
+**Gotcha:** `json_group_array` produces `[null]` (not `[]`) when there are zero matching rows. Must filter nulls after parsing.
+
+**Lesson:** When a list view renders cards that each independently fetch sub-resources, that's a frontend N+1. The fix is the same as the backend: push the JOIN into the list query. If your API returns a list of items and the UI immediately fetches per-item details, the list endpoint is missing fields.
+
+### 74. Stuck State Machines Need Both Prevention and Recovery
+
+The TTS pipeline had a stuck-state bug: `audio_status` was set to `'generating'` at the start of processing, but if a transient error occurred (AI model timeout, network failure), the error handler re-raised for queue retry **without resetting the status**. If queue retries were exhausted, the article was permanently stuck at `'generating'` — not `'failed'`, not `'ready'`, just stuck.
+
+The frontend compounded this: when `audio_status === 'generating'`, it showed a disabled "Generating audio..." button with no way to retry. The backend already supported re-queueing from `'generating'` state (the `/listen-later` endpoint explicitly allowed it), but the UI never exposed this recovery path.
+
+**Two fixes applied:**
+
+1. **Prevention:** The `except Exception` handler now sets `audio_status = 'failed'` before re-raising. If the queue retries, `process_tts` resets to `'generating'` at the top. If retries are exhausted, the status correctly shows `'failed'`.
+
+2. **Recovery:** The frontend now shows a clickable "Retry audio" button for both `'failed'` and `'generating'` states. Users can manually re-trigger TTS from a stuck state.
+
+A subtlety: "article still processing" (markdown not yet available) is a *timing* issue, not an error. This case uses a `_RetryableError` subclass that bypasses the `'failed'` marking — the article content will definitely be available on the next retry attempt.
+
+**Lesson:** Every state machine needs three things: (1) all terminal states must be reachable from every non-terminal state, (2) error handlers must transition to a terminal state before allowing infrastructure retry, and (3) the UI must expose recovery actions for stuck states. If the backend supports recovery but the UI doesn't expose it, the recovery doesn't exist from the user's perspective.
+
+### 75. Large Commits Create Long-Lived Latent Bugs
+
+Commit `8d05ec2` added 16 features in a single 14,143-line commit. Several bugs introduced in that commit survived for days or weeks:
+
+- `sort=created_at:desc` in the SW (12 days, fixed in this session)
+- Highlights, Feeds, and Review views (added then removed in `def6c02`)
+- Browser extension (added, never worked with SameSite cookies)
+- Newsletter email ingestion (added, never wired to any UI)
+
+The commit was too large to review effectively. Each of the 16 features touched the service worker, API, frontend, and tests — making it impossible to isolate which feature introduced which bug.
+
+**Lesson:** Large feature-dump commits are a liability. Each feature should be a separate commit (or PR) so bugs can be bisected and reverted independently. When you can't tell which of 16 features broke the service worker, you've lost the primary value of version control.

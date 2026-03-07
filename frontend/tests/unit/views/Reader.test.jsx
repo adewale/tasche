@@ -212,7 +212,7 @@ describe('Reader', () => {
     });
   });
 
-  it('shows Generating audio spinner when audio_status is generating', async () => {
+  it('shows Retry audio button when audio_status is generating (stuck state)', async () => {
     const { getArticle } = await import('../../../src/api.js');
     getArticle.mockResolvedValueOnce({
       id: 'art-1',
@@ -233,10 +233,11 @@ describe('Reader', () => {
 
     render(<Reader id="art-1" />);
     await waitFor(() => {
-      expect(screen.getByText('Generating audio...')).toBeInTheDocument();
+      expect(screen.getByText('Retry audio')).toBeInTheDocument();
     });
-    // Should NOT show Listen Later — generating is an in-progress state
+    // Should NOT show Listen Later or disabled Generating spinner
     expect(screen.queryByText('Listen Later')).not.toBeInTheDocument();
+    expect(screen.queryByText('Generating audio...')).not.toBeInTheDocument();
   });
 
   it('shows Retry audio when audio_status is failed', async () => {

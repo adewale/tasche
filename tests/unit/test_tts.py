@@ -625,8 +625,8 @@ class TestTTSProcessingFailure:
         with pytest.raises(RuntimeError, match="still pending"):
             await process_tts("art_race_pending", env, user_id="user_001", raise_on_error=True)
 
-    async def test_ai_runtime_error_is_transient(self) -> None:
-        """RuntimeError from Workers AI is treated as transient and re-raised."""
+    async def test_ai_runtime_error_sets_failed_then_reraises(self) -> None:
+        """RuntimeError from Workers AI sets audio_status='failed' then re-raises."""
         article = ArticleFactory.create(
             id="art_fail2",
             user_id="user_001",
@@ -650,6 +650,14 @@ class TestTTSProcessingFailure:
 
         with pytest.raises(RuntimeError, match="AI model unavailable"):
             await process_tts("art_fail2", env, user_id="user_001")
+
+        # audio_status should be set to 'failed' before re-raising
+        failed_updates = [
+            (sql, params)
+            for sql, params in db.executed
+            if sql.startswith("UPDATE") and "audio_status" in sql and "failed" in str(params)
+        ]
+        assert len(failed_updates) == 1
 
     async def test_sets_failed_on_value_error(self) -> None:
         """ValueError (permanent error) sets audio_status to 'failed'."""
@@ -685,8 +693,13 @@ class TestTTSProcessingFailure:
 
 
 class TestTTSTransientErrorRetry:
-    async def test_connection_error_reraises_for_retry(self) -> None:
-        """ConnectionError re-raises so the queue can retry; audio_status stays generating."""
+    async def test_connection_error_sets_failed_then_reraises(self) -> None:
+        """ConnectionError sets audio_status='failed' then re-raises for queue retry.
+
+        If the queue retries, process_tts will reset to 'generating' at the top.
+        If retries are exhausted, the article correctly shows 'failed' instead
+        of being stuck at 'generating' forever.
+        """
         article = ArticleFactory.create(
             id="art_transient",
             user_id="user_001",
@@ -713,15 +726,15 @@ class TestTTSTransientErrorRetry:
         with pytest.raises(ConnectionError):
             await process_tts("art_transient", env, user_id="user_001")
 
-        # audio_status should NOT be set to 'failed' (only 'generating' from step 1)
+        # audio_status should be set to 'failed' before re-raising
         failed_updates = [
             (sql, params)
             for sql, params in db.executed
             if sql.startswith("UPDATE") and "audio_status" in sql and "failed" in str(params)
         ]
-        assert len(failed_updates) == 0
+        assert len(failed_updates) == 1
 
-        # Verify 'generating' was set (step 1)
+        # Verify 'generating' was also set (step 1, before the error)
         generating_updates = [
             (sql, params)
             for sql, params in db.executed

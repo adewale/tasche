@@ -617,10 +617,10 @@ export function Reader({ id }) {
   const isFav = article.is_favorite;
   const ostatus = article.original_status || 'unknown';
   const hasAudio = article.audio_status === 'ready';
-  const audioPending =
-    audioRequested || article.audio_status === 'pending' || article.audio_status === 'generating';
+  const audioPending = audioRequested || article.audio_status === 'pending';
+  const audioStuck = !audioRequested && article.audio_status === 'generating';
   const audioFailed = article.audio_status === 'failed';
-  const canRequestAudio = !hasAudio && !audioPending;
+  const canRequestAudio = !hasAudio && !audioPending && !audioStuck;
 
   return (
     <>
@@ -759,7 +759,7 @@ export function Reader({ id }) {
                 )}
               </button>
             )}
-            {audioFailed && (
+            {(audioFailed || audioStuck) && (
               <button
                 class="btn btn-sm btn-secondary"
                 onClick={handleListenLater}

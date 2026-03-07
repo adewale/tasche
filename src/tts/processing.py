@@ -29,6 +29,15 @@ from utils import now_iso
 from wide_event import current_event
 from wrappers import consume_readable_stream
 
+
+class _RetryableError(RuntimeError):
+    """Raised when TTS should be retried without marking audio_status as failed.
+
+    Used for transient conditions like the article still being processed —
+    the content will be available on the next retry attempt.
+    """
+
+
 # Supported TTS models: short key → Workers AI model ID
 _TTS_MODELS = {
     "melotts": "@cf/myshell-ai/melotts",
@@ -397,7 +406,7 @@ async def process_tts(
             # likely have finished and populated markdown_content.
             article_status = article.get("status") if article else None
             if article_status in ("pending", "processing"):
-                raise RuntimeError(
+                raise _RetryableError(
                     f"Article {article_id} is still {article_status} — "
                     f"markdown content not yet available, will retry"
                 )
@@ -588,8 +597,10 @@ async def process_tts(
                 evt.set("status_update_error", traceback.format_exc()[-500:])
         if raise_on_error:
             raise
-    except Exception:
-        # All other errors (network, JS, AI model) — let propagate for queue retry
+    except _RetryableError:
+        # Transient timing issue (article still processing) — re-raise for
+        # queue retry without marking as failed.  The content will be
+        # available on the next attempt.
         evt = current_event()
         if evt:
             evt.set_many(
@@ -599,4 +610,31 @@ async def process_tts(
                     "retryable": True,
                 }
             )
+        raise
+    except Exception:
+        # All other errors (network, JS, AI model) — mark as failed then
+        # re-raise so the queue can retry.  If the queue retries, process_tts
+        # will reset audio_status to 'generating' at the top.  If retries are
+        # exhausted, the article correctly shows 'failed' instead of being
+        # stuck at 'generating' forever.
+        evt = current_event()
+        if evt:
+            evt.set_many(
+                {
+                    "outcome": "error",
+                    "error.message": traceback.format_exc()[-500:],
+                    "retryable": True,
+                }
+            )
+        try:
+            await (
+                db.prepare(
+                    "UPDATE articles SET audio_status = ?, updated_at = ?"
+                    " WHERE id = ? AND user_id = ?"
+                )
+                .bind("failed", now_iso(), article_id, user_id)
+                .run()
+            )
+        except Exception:
+            pass  # Best-effort; the re-raise below triggers queue retry
         raise

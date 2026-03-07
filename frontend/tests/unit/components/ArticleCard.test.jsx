@@ -123,9 +123,15 @@ describe('ArticleCard', () => {
     expect(screen.getByTitle('Play audio')).toBeInTheDocument();
   });
 
-  it('shows pending icon when audio is generating', () => {
+  it('shows pending icon when audio is pending', () => {
     render(<ArticleCard article={makeArticle({ audio_status: 'pending' })} />);
     expect(screen.getByTitle('Generating audio...')).toBeDisabled();
+  });
+
+  it('shows retry button when audio is stuck generating', () => {
+    render(<ArticleCard article={makeArticle({ audio_status: 'generating' })} />);
+    expect(screen.getByTitle('Retry audio')).toBeInTheDocument();
+    expect(screen.getByTitle('Retry audio')).not.toBeDisabled();
   });
 
   it('hides listen later button when audio is ready', () => {

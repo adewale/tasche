@@ -771,7 +771,7 @@ async function handleAutoPrecache(event) {
   var failed = 0;
 
   try {
-    var listUrl = '/api/articles?reading_status=unread&limit=' + limit + '&sort=created_at:desc';
+    var listUrl = '/api/articles?reading_status=unread&limit=' + limit + '&sort=newest';
     var listResp = await fetchWithTimeout(listUrl, { credentials: 'include' }, PRECACHE_FETCH_TIMEOUT);
     if (!listResp.ok) {
       throw new Error('Failed to fetch article list: ' + listResp.status);

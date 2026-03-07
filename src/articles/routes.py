@@ -341,10 +341,32 @@ async def list_articles(
 
     where = " AND ".join(where_clauses)
     order_by = _VALID_SORT_OPTIONS.get(sort, _VALID_SORT_OPTIONS["newest"])
-    sql = f"SELECT {_LIST_COLUMNS} FROM articles WHERE {where} ORDER BY {order_by} LIMIT ? OFFSET ?"
+
+    # Include tags inline via correlated subquery to avoid N+1 fetches.
+    tags_sub = (
+        "COALESCE("
+        "(SELECT json_group_array(json_object("
+        "'id', t.id, 'name', t.name"
+        ")) FROM article_tags at2 "
+        "INNER JOIN tags t ON t.id = at2.tag_id "
+        "WHERE at2.article_id = articles.id), '[]')"
+    )
+    sql = (
+        f"SELECT {_LIST_COLUMNS}, {tags_sub} AS tags_json "
+        f"FROM articles WHERE {where} ORDER BY {order_by} LIMIT ? OFFSET ?"
+    )
     params.extend([limit, offset])
 
-    return await db.prepare(sql).bind(*params).all()
+    rows = await db.prepare(sql).bind(*params).all()
+
+    # Parse the JSON-encoded tags into actual lists.
+    for row in rows:
+        raw = row.pop("tags_json", "[]")
+        parsed = json.loads(raw) if raw else []
+        # json_group_array produces [null] for zero tags — filter it out.
+        row["tags"] = [t for t in parsed if t is not None]
+
+    return rows
 
 
 @router.post("/batch-check-originals")

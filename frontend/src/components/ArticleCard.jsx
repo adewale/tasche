@@ -39,7 +39,11 @@ export function ArticleCard({ article, selectMode, selected, onToggleSelect }) {
 
   useEffect(() => {
     let cancelled = false;
-    if (tagCache.has(a.id)) {
+    if (a.tags) {
+      // Tags included inline from list endpoint — no extra fetch needed.
+      tagCache.set(a.id, a.tags);
+      setCardTags(a.tags);
+    } else if (tagCache.has(a.id)) {
       setCardTags(tagCache.get(a.id));
     } else {
       getArticleTags(a.id)
@@ -60,7 +64,7 @@ export function ArticleCard({ article, selectMode, selected, onToggleSelect }) {
     return function () {
       cancelled = true;
     };
-  }, [a.id, isProcessing]);
+  }, [a.id, a.tags, isProcessing]);
 
   function handleClick(e) {
     if (selectMode) {
@@ -123,9 +127,10 @@ export function ArticleCard({ article, selectMode, selected, onToggleSelect }) {
 
   var audioStatus = a.audio_status;
   var hasAudio = audioStatus === 'ready';
-  var audioPending = audioStatus === 'pending' || audioStatus === 'generating';
+  var audioPending = audioStatus === 'pending';
+  var audioStuck = audioStatus === 'generating';
   var audioFailed = audioStatus === 'failed';
-  var canRequestAudio = !hasAudio && !audioPending && !audioFailed;
+  var canRequestAudio = !hasAudio && !audioPending && !audioStuck && !audioFailed;
   var isArchived = a.reading_status === 'archived';
 
   var thumbnailSrc = a.thumbnail_key ? '/api/articles/' + a.id + '/thumbnail' : null;
@@ -207,7 +212,7 @@ export function ArticleCard({ article, selectMode, selected, onToggleSelect }) {
               <IconClock />
             </button>
           )}
-          {!isProcessing && audioFailed && (
+          {!isProcessing && (audioFailed || audioStuck) && (
             <button title="Retry audio" onClick={handleListenLater} disabled={audioLoading}>
               {audioLoading ? <IconClock /> : <IconRefresh />}
             </button>
