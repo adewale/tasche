@@ -507,7 +507,7 @@ class TestBm25ColumnWeights:
         match = re.search(r"bm25\(articles_fts,\s*([\d.]+),\s*([\d.]+),\s*([\d.]+)\)", sql)
         assert match, f"bm25() call not found in SQL: {sql}"
         title_w, excerpt_w, content_w = (float(match.group(i)) for i in (1, 2, 3))
-        assert title_w > excerpt_w, f"title weight {title_w} should exceed excerpt weight {excerpt_w}"
+        assert title_w > excerpt_w, f"title weight {title_w} should exceed excerpt {excerpt_w}"
 
     async def test_excerpt_weight_exceeds_content_weight(self) -> None:
         """Excerpt weight (5.0) is higher than content weight (1.0)."""
@@ -522,14 +522,14 @@ class TestBm25ColumnWeights:
         )
 
     async def test_three_weights_match_fts5_columns(self) -> None:
-        """bm25() has exactly 3 weights, matching FTS5 columns (title, excerpt, markdown_content)."""
+        """bm25() has exactly 3 weights matching FTS5 columns."""
         import re
 
         sql = await self._get_search_sql()
         match = re.search(r"bm25\(articles_fts,\s*([\d.,\s]+)\)", sql)
         assert match, f"bm25() call not found in SQL: {sql}"
         weights = [w.strip() for w in match.group(1).split(",")]
-        assert len(weights) == 3, f"Expected 3 weights for 3 FTS5 columns, got {len(weights)}: {weights}"
+        assert len(weights) == 3, f"Expected 3 weights for 3 FTS5 columns, got {len(weights)}"
 
 
 class TestSearchAuthRequired:
