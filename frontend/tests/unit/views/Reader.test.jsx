@@ -33,6 +33,7 @@ vi.mock('../../../src/api.js', () => ({
   isOfflineCached: vi.fn(() =>
     Promise.resolve({ cached: false, hasContent: false, hasAudio: false }),
   ),
+  getAudioTiming: vi.fn(() => Promise.resolve(null)),
 }));
 
 vi.mock('../../../src/nav.js', () => ({
@@ -67,6 +68,13 @@ vi.mock('../../../src/components/ReaderToolbar.jsx', () => ({
 
 vi.mock('../../../src/components/AudioPlayer.jsx', () => ({
   playAudio: vi.fn(),
+  audioState: { value: { articleId: null, visible: false } },
+  getAudio: vi.fn(() => new Audio()),
+}));
+
+vi.mock('../../../src/immersive.js', () => ({
+  initImmersive: vi.fn(),
+  destroyImmersive: vi.fn(),
 }));
 
 vi.mock('../../../src/hooks/useKeyboardShortcuts.js', () => ({
@@ -84,7 +92,7 @@ vi.mock('../../../src/state.js', () => ({
 }));
 
 vi.mock('../../../src/readerPrefs.js', () => ({
-  readerPrefs: { value: { contentMode: 'html', theme: 'auto' } },
+  readerPrefs: { value: { contentMode: 'html', theme: 'auto', immersive: 'on' } },
   getReaderStyle: vi.fn(() => ({})),
   updatePref: vi.fn(),
 }));

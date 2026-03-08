@@ -68,7 +68,7 @@ export function MarkdownView({ id }) {
         }, 2000);
       })
       .catch(function () {
-        addToast('Failed to copy to clipboard', 'error');
+        addToast('Could not copy — your browser may not support clipboard access', 'error');
       });
   }
 

@@ -1481,29 +1481,32 @@ Each milestone is a **vertical slice** — it delivers a complete, end-to-end us
 
 | Feature | Endpoint / Location | Description |
 |---------|---------------------|-------------|
-| Tag rules / auto-tagging | CRUD at `/api/tag-rules` | Users define rules (e.g., domain matches, keyword patterns) that automatically apply tags during article processing |
-| Data export | `/api/export/json`, `/api/export/bookmarks` | Export full library as JSON or Netscape HTML bookmarks file |
 | Reading statistics | `/api/stats` | Aggregated reading stats: articles saved, read, archived, total reading time, etc. |
 | Batch operations | `/api/articles/batch-update`, `/api/articles/batch-delete` | Bulk status updates and deletions for multiple articles at once |
-| Bookmarklet popup | `frontend/public/bookmarklet.html` | Save form with editable title, tag input (autocomplete + rule-based suggestions), Save and Save audio buttons |
 | Markdown view | `#/article/:id/markdown` | View article as rendered Markdown (alternative to the HTML reader view) |
-| Reader preferences | `ReaderToolbar` component | Font size adjustment and theme selection (light/dark) in reader view |
-| Keyboard shortcuts | Library and reader views | `j`/`k` navigation between articles, `?` for help overlay |
+| Reader preferences | ReaderToolbar component | Font size (S/M/L), line height, content width, font family (serif/sans), theme (auto/light/sepia/dark), content mode (HTML/markdown/source) |
+| Keyboard shortcuts | Library and reader views | 13 library shortcuts (j/k navigation, o/Enter open, a archive, s favourite, d delete, / search, n new, ? help) + 4 reader shortcuts (Esc/h back, a archive, s favourite, m cycle view) |
 | Tag rename | `PATCH /api/tags/{tag_id}` | Rename an existing tag; updates all associations |
 | Article retry | `POST /api/articles/{id}/retry` | Re-process a failed article (resets status to pending and re-enqueues) |
+| User preferences | `/api/preferences` | TTS voice selection (athena/orion), persisted per user |
+| Original URL health check | `/api/articles/{id}/check-original` | HEAD-checks original URLs, classifies as available/paywalled/gone/domain_dead/unknown |
+| Breath marks | Reader view | Visual tick marks in margin at previous reading pause positions (max 5, fading opacity) |
+| Offline reading | Service worker | Network-first caching, offline mutation queue, auto-precache, explicit save-for-offline, LRU eviction |
+
+> **Removed features:** Three features listed in earlier spec drafts were intentionally removed in commit `cabab55` (March 7, 2026): **Tag rules / auto-tagging** (migration 0007 dropped the `tag_rules` table; no endpoints exist), **Data export** (no `/api/export/*` endpoints or `export.py` module), and **Bookmarklet popup** (`bookmarklet.html` no longer exists; the bookmarklet is now a drag-to-bookmarks link in Settings).
 
 ### Phase 10: Polished Reading Experience
 
 **User journey:** *"I open Tasche on my phone. Article cards show thumbnails and tags at a glance. I tap one and read it. I tap the headphone icon — audio generates. I lock my screen and keep listening with lock-screen controls."*
 
-| Task | Layer | Details |
-|------|-------|---------|
-| Thumbnails on article cards | Frontend | Render `<img>` from `thumbnail_key` on each library card |
-| Tags on article cards | Frontend + API | Fetch article tags, render colored chips on each card |
-| Processing status indicator | Frontend | Show spinner overlay on cards where `status` is `pending` or `processing` |
-| Listen Later queue tab | Frontend | Add `🎧` filter tab showing articles where `audio_status = 'ready'` |
-| Media Session API | Frontend | Register media session handlers for lock screen play/pause/skip controls |
-| Search term highlighting | Frontend | Bold matching terms in search result titles and snippets |
+| Task | Layer | Details | Status |
+|------|-------|---------|--------|
+| Thumbnails on article cards | Frontend | Render `<img>` from `thumbnail_key` on each library card | |
+| Tags on article cards | Frontend + API | Fetch article tags, render colored chips on each card | |
+| Processing status indicator | Frontend | Show spinner overlay on cards where `status` is `pending` or `processing` | |
+| Listen Later queue tab | Frontend | Add `🎧` filter tab showing articles where `audio_status = 'ready'` | |
+| Media Session API | Frontend | Register media session handlers for lock screen play/pause/skip controls | ✅ |
+| Search term highlighting | Frontend | Bold matching terms in search result titles and snippets | ✅ |
 
 **Acceptance test:** User saves a URL, sees it appear with a processing spinner, spinner resolves to thumbnail + tags. User taps headphone icon, locks screen, and controls audio from lock screen.
 

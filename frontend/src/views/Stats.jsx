@@ -19,7 +19,7 @@ export function Stats() {
       var data = await getStats();
       setStats(data);
     } catch (e) {
-      setError(e.message || 'Failed to load statistics');
+      setError(e.message || 'Could not load reading statistics. Try again later.');
     }
     setLoading(false);
   }

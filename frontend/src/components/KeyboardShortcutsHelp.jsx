@@ -84,6 +84,18 @@ export function KeyboardShortcutsHelp({ onClose }) {
               return <ShortcutRow key={i} shortcut={s} />;
             })}
           </div>
+          <div class="shortcuts-section">
+            <h3 class="shortcuts-section-title">Reader Features</h3>
+            <div class="shortcuts-row">
+              <div class="shortcuts-keys">
+                <span class="shortcuts-feature-icon">|</span>
+              </div>
+              <div class="shortcuts-desc">
+                <strong>Breath marks</strong> — Small tick marks appear in the left margin where you
+                previously paused reading. Older marks fade. Up to 5 are shown per article.
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

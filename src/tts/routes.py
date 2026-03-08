@@ -164,3 +164,46 @@ async def get_audio(
             "Content-Length": str(len(audio_bytes)),
         },
     )
+
+
+@router.get("/{article_id}/audio-timing")
+async def get_audio_timing(
+    request: Request,
+    article_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> Response:
+    """Return the timing manifest for TTS sentence highlighting.
+
+    Returns the JSON timing data from R2, or 404 if no timing
+    data exists (legacy audio generated before immersive reading).
+    """
+    env = request.scope["env"]
+    db = env.DB
+    r2 = env.CONTENT
+    user_id = user["user_id"]
+
+    article = await _get_user_article(db, article_id, user_id, fields="id, audio_status")
+
+    if article.get("audio_status") != "ready":
+        raise HTTPException(status_code=404, detail="No audio timing available")
+
+    from articles.storage import article_key
+
+    timing_key = article_key(article_id, "audio-timing.json")
+    timing_obj = await r2.get(timing_key)
+
+    if timing_obj is None:
+        raise HTTPException(status_code=404, detail="No audio timing available")
+
+    from wrappers import consume_readable_stream
+
+    body = getattr(timing_obj, "body", timing_obj)
+    timing_bytes = await consume_readable_stream(body)
+
+    return Response(
+        content=timing_bytes,
+        media_type="application/json",
+        headers={
+            "Cache-Control": "public, max-age=86400, immutable",
+        },
+    )

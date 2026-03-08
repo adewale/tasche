@@ -18,6 +18,7 @@ var DEFAULTS = {
   fontFamily: 'serif',
   theme: 'auto',
   contentMode: 'html',
+  immersive: 'on',
 };
 
 function loadPrefs() {

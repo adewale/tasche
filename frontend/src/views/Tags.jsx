@@ -39,8 +39,8 @@ export function Tags() {
     setIsLoading(true);
     try {
       tagsSignal.value = await listTags();
-    } catch (e) {
-      addToast('Failed to load tags: ' + e.message, 'error');
+    } catch (_e) {
+      addToast('Could not load tags. Try refreshing the page.', 'error');
     } finally {
       setIsLoading(false);
     }

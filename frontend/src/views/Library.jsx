@@ -228,7 +228,7 @@ export function Library({ tag }) {
         });
       cacheArticlesForOffline(unreadIds);
     } catch (e) {
-      addToast('Failed to load articles: ' + e.message, 'error');
+      addToast('Could not load articles. Pull down to retry. (' + e.message + ')', 'error');
     } finally {
       loadingSignal.value = false;
     }
@@ -274,7 +274,7 @@ export function Library({ tag }) {
         addToast('Saved offline. Will sync when back online.', 'info');
         setSaveUrl('');
       } else {
-        addToast(e.message, 'error');
+        addToast('Could not save article: ' + e.message, 'error');
       }
     } finally {
       setSavingType(null);
@@ -347,7 +347,7 @@ export function Library({ tag }) {
       setSelectMode(false);
       setSelected(new Set());
     } catch (err) {
-      addToast('Bulk archive failed: ' + err.message, 'error');
+      addToast('Could not archive ' + ids.length + ' articles: ' + err.message, 'error');
     } finally {
       setBulkActing(false);
     }
@@ -368,7 +368,7 @@ export function Library({ tag }) {
       setSelectMode(false);
       setSelected(new Set());
     } catch (err) {
-      addToast('Bulk delete failed: ' + err.message, 'error');
+      addToast('Could not delete articles: ' + err.message, 'error');
     } finally {
       setBulkActing(false);
     }

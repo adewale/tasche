@@ -40,7 +40,10 @@ export function playAudio(articleId, title, domain, thumbnailKey) {
       return audio.play();
     })
     .catch(function (e) {
-      addToast('Could not play audio: ' + e.message, 'error');
+      addToast(
+        'Could not play audio. The file may still be generating. (' + e.message + ')',
+        'error',
+      );
     });
 }
 
@@ -82,7 +85,7 @@ export function AudioPlayer() {
       var code = audio.error ? audio.error.code : 0;
       var msg = audio.error ? audio.error.message : 'unknown';
       console.error('[Audio] playback error code=%d: %s', code, msg);
-      addToast('Audio playback error: ' + msg, 'error');
+      addToast('Audio playback interrupted: ' + msg, 'error');
     }
 
     audio.addEventListener('timeupdate', onTimeUpdate);

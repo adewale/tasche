@@ -711,3 +711,119 @@ class TestProcessingEdgeCases:
             f"User title lost during processing: expected '{user_title}', "
             f"got '{article.get('title')}'"
         )
+
+
+# =========================================================================
+# TTS Timing Manifest — audio-timing endpoint returns valid sentence data
+# =========================================================================
+
+
+class TestTTSTimingManifest:
+    """Verify the audio-timing endpoint returns a valid timing manifest.
+
+    The timing manifest is generated during TTS processing and stored in R2.
+    It contains sentence boundaries with start/end timestamps for immersive
+    reading mode.
+    """
+
+    async def test_timing_manifest_has_valid_structure(
+        self,
+        http_client: httpx.AsyncClient,
+        cleanup_articles: list[str],
+    ) -> None:
+        """Audio-timing endpoint returns a well-formed timing manifest."""
+        import asyncio
+
+        test_id = uuid.uuid4().hex[:8]
+
+        # Create and process an article
+        resp = await http_client.post(
+            "/api/articles",
+            json={
+                "url": f"https://example.com?e2e=timing-{test_id}",
+                "title": f"Timing Manifest Test {test_id}",
+            },
+        )
+        assert resp.status_code == 201
+        article_id = resp.json()["id"]
+        cleanup_articles.append(article_id)
+
+        resp = await http_client.post(
+            f"/api/articles/{article_id}/process-now",
+            timeout=60.0,
+        )
+        assert resp.status_code == 200
+
+        # Trigger TTS
+        resp = await http_client.post(
+            f"/api/articles/{article_id}/listen-later",
+            timeout=30.0,
+        )
+        assert resp.status_code in (200, 202)
+
+        # Poll until audio is ready
+        for _ in range(24):
+            await asyncio.sleep(5)
+            resp = await http_client.get(f"/api/articles/{article_id}")
+            if resp.status_code == 200:
+                article_data = resp.json()
+                if article_data.get("audio_status") == "ready":
+                    break
+                if article_data.get("audio_status") == "failed":
+                    pytest.skip("TTS failed (possibly no content)")
+        else:
+            pytest.skip("TTS did not complete within 120s")
+
+        # Fetch timing manifest
+        resp = await http_client.get(f"/api/articles/{article_id}/audio-timing")
+        assert resp.status_code == 200, f"Audio-timing endpoint failed: {resp.text}"
+
+        manifest = resp.json()
+        assert manifest["version"] == 1
+        assert manifest["total_duration_ms"] > 0
+        assert isinstance(manifest["sentences"], list)
+        assert len(manifest["sentences"]) > 0
+
+        # Validate sentence structure
+        for i, sentence in enumerate(manifest["sentences"]):
+            assert "text" in sentence, f"Sentence {i} missing 'text'"
+            assert "start_ms" in sentence, f"Sentence {i} missing 'start_ms'"
+            assert "end_ms" in sentence, f"Sentence {i} missing 'end_ms'"
+            assert len(sentence["text"]) > 0, f"Sentence {i} has empty text"
+            assert sentence["start_ms"] >= 0, f"Sentence {i} has negative start_ms"
+            assert sentence["end_ms"] > sentence["start_ms"], (
+                f"Sentence {i}: end_ms ({sentence['end_ms']}) <= start_ms ({sentence['start_ms']})"
+            )
+
+        # Verify chronological order
+        for i in range(1, len(manifest["sentences"])):
+            prev = manifest["sentences"][i - 1]
+            curr = manifest["sentences"][i]
+            assert curr["start_ms"] >= prev["start_ms"], (
+                f"Sentences not in order: {i - 1} starts at {prev['start_ms']}, "
+                f"{i} starts at {curr['start_ms']}"
+            )
+
+        # Last sentence's end should be close to total_duration
+        last_end = manifest["sentences"][-1]["end_ms"]
+        assert abs(last_end - manifest["total_duration_ms"]) <= 1, (
+            f"Last sentence end ({last_end}) != total_duration ({manifest['total_duration_ms']})"
+        )
+
+    async def test_timing_returns_404_when_no_audio(
+        self,
+        http_client: httpx.AsyncClient,
+        cleanup_articles: list[str],
+    ) -> None:
+        """Audio-timing returns 404 for articles without audio."""
+        test_id = uuid.uuid4().hex[:8]
+        resp = await http_client.post(
+            "/api/articles",
+            json={"url": f"https://example.com?e2e=no-timing-{test_id}"},
+        )
+        assert resp.status_code == 201
+        article_id = resp.json()["id"]
+        cleanup_articles.append(article_id)
+
+        resp = await http_client.get(f"/api/articles/{article_id}/audio-timing")
+        assert resp.status_code == 404

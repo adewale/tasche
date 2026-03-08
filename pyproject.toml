@@ -11,7 +11,12 @@ dependencies = [
 
 [dependency-groups]
 workers = ["workers-py"]
-test = ["pytest>=8.0", "pytest-asyncio>=0.24", "ruff>=0.8"]
+test = [
+    "hypothesis>=6.151.9",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

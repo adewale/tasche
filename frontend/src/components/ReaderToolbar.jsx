@@ -1,4 +1,5 @@
 import { readerPrefs, updatePref } from '../readerPrefs.js';
+import { audioState } from './AudioPlayer.jsx';
 
 function SegmentedControl({ label, prefKey, options }) {
   var current = readerPrefs.value[prefKey];
@@ -82,6 +83,16 @@ export function ReaderToolbar() {
           { value: 'dark', label: 'Dark', title: 'Dark theme' },
         ]}
       />
+      {audioState.value.visible && (
+        <SegmentedControl
+          label="Immersive"
+          prefKey="immersive"
+          options={[
+            { value: 'off', label: 'Off', title: 'Disable text highlighting' },
+            { value: 'on', label: 'On', title: 'Highlight text during audio playback' },
+          ]}
+        />
+      )}
     </div>
   );
 }

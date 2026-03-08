@@ -88,6 +88,59 @@ def _estimate_duration(text: str) -> int:
     return seconds
 
 
+def _ogg_duration_seconds(data: bytes) -> float:
+    """Extract duration from OGG Opus audio by reading page headers.
+
+    Scans for OGG page sync patterns ('OggS') and reads
+    granule_position from each page header. The final page's
+    granule position gives total PCM samples at 48kHz.
+    Pre-skip is read from the first page's Opus ID header.
+
+    Returns 0.0 if the data is not valid OGG Opus.
+    """
+    if len(data) < 28:
+        return 0.0
+
+    pre_skip = 0
+    last_granule = 0
+    i = 0
+
+    while i <= len(data) - 27:
+        # Look for OGG page sync pattern
+        if data[i : i + 4] != b"OggS":
+            i += 1
+            continue
+
+        # Read granule_position: bytes 6-13, little-endian int64
+        granule = int.from_bytes(data[i + 6 : i + 14], "little", signed=True)
+        if granule >= 0:
+            last_granule = granule
+
+        # Number of page segments at byte 26
+        if i + 27 > len(data):
+            break
+        num_segments = data[i + 26]
+        header_size = 27 + num_segments
+
+        # Read pre_skip from first Opus ID header
+        if pre_skip == 0 and i + header_size < len(data):
+            # Compute payload start
+            payload_start = i + header_size
+            # Check for 'OpusHead' magic in payload
+            if (
+                payload_start + 12 <= len(data)
+                and data[payload_start : payload_start + 8] == b"OpusHead"
+            ):
+                pre_skip = int.from_bytes(data[payload_start + 10 : payload_start + 12], "little")
+
+        # Advance past this page header + segment table
+        i += header_size
+
+    if last_granule <= pre_skip:
+        return 0.0
+    return (last_granule - pre_skip) / 48000.0
+
+
 # Sentence boundary regex: split on .!? followed by whitespace or end of string.
 # Handles common abbreviations by requiring a capital letter or end of string after
 # the boundary, and avoids splitting on decimal numbers.
@@ -146,6 +199,91 @@ def chunk_text(text: str, max_chars: int = _MAX_CHARS_PER_CHUNK) -> list[str]:
         chunks.append(" ".join(current))
 
     return chunks
+
+
+def chunk_text_with_sentences(text: str, max_chars: int = _MAX_CHARS_PER_CHUNK) -> list[dict]:
+    """Split text into chunks, preserving per-sentence boundaries.
+
+    Like :func:`chunk_text` but returns richer metadata. Each entry
+    has ``text`` (the full chunk) and ``sentences`` (list of individual
+    sentences within the chunk).
+    """
+    sentences = split_sentences(text)
+    if not sentences:
+        return []
+
+    chunks: list[dict] = []
+    current: list[str] = []
+    current_len = 0
+
+    for sentence in sentences:
+        added = len(sentence) + (1 if current else 0)
+        if current and current_len + added > max_chars:
+            chunks.append(
+                {
+                    "text": " ".join(current),
+                    "sentences": list(current),
+                }
+            )
+            current = [sentence]
+            current_len = len(sentence)
+        else:
+            current.append(sentence)
+            current_len += added
+
+    if current:
+        chunks.append(
+            {
+                "text": " ".join(current),
+                "sentences": list(current),
+            }
+        )
+
+    return chunks
+
+
+def _build_timing_manifest(
+    chunks_with_sentences: list[dict],
+    audio_parts: list[bytes],
+) -> dict:
+    """Build a timing manifest from chunk audio and sentence metadata.
+
+    Measures each audio chunk's duration from OGG page headers and
+    distributes it proportionally across the sentences in that chunk
+    by character count.
+    """
+    timing_sentences: list[dict] = []
+    cumulative_ms = 0.0
+
+    for chunk_info, chunk_audio in zip(chunks_with_sentences, audio_parts):
+        chunk_duration_s = _ogg_duration_seconds(chunk_audio)
+        chunk_duration_ms = chunk_duration_s * 1000
+
+        # Fall back to estimate if OGG parsing fails
+        if chunk_duration_ms <= 0:
+            word_count = len(chunk_info["text"].split())
+            chunk_duration_ms = max(100, (word_count / _WORDS_PER_MINUTE) * 60 * 1000)
+
+        sentences = chunk_info["sentences"]
+        total_chars = sum(len(s) for s in sentences)
+
+        for sentence in sentences:
+            proportion = len(sentence) / total_chars if total_chars > 0 else 1.0 / len(sentences)
+            sentence_duration_ms = chunk_duration_ms * proportion
+            timing_sentences.append(
+                {
+                    "text": sentence,
+                    "start_ms": round(cumulative_ms),
+                    "end_ms": round(cumulative_ms + sentence_duration_ms),
+                }
+            )
+            cumulative_ms += sentence_duration_ms
+
+    return {
+        "version": 1,
+        "total_duration_ms": round(cumulative_ms),
+        "sentences": timing_sentences,
+    }
 
 
 def strip_markdown(text: str) -> str:
@@ -368,9 +506,10 @@ async def process_tts(
                 evt.set("tts_original_length", len(markdown_text))
 
         # Step 4: Call Workers AI for TTS, chunking to stay within 2000-char limit
-        chunks = chunk_text(tts_text)
-        if not chunks:
+        chunks_meta = chunk_text_with_sentences(tts_text)
+        if not chunks_meta:
             raise ValueError("No text to convert to speech after stripping markdown")
+        chunks = [c["text"] for c in chunks_meta]
 
         model_id, model_key = _resolve_tts_model(env)
         is_melotts = model_key == "melotts" or "melotts" in model_id
@@ -480,6 +619,11 @@ async def process_tts(
                 )
             )
 
+        # Build and store timing manifest
+        timing_manifest = _build_timing_manifest(chunks_meta, audio_parts)
+        timing_key = article_key(article_id, "audio-timing.json")
+        await r2.put(timing_key, json.dumps(timing_manifest))
+
         # Cost tracking for Deepgram models
         if is_deepgram:
             estimated_cost = round((total_chars / 1000) * _COST_PER_1000_CHARS, 6)
@@ -489,7 +633,11 @@ async def process_tts(
                 evt.set("tts_total_chars", total_chars)
 
         # Step 6: Update D1 with audio metadata
-        duration = _estimate_duration(tts_text)
+        # Use measured duration from timing manifest when available
+        if timing_manifest["total_duration_ms"] > 0:
+            duration = round(timing_manifest["total_duration_ms"] / 1000)
+        else:
+            duration = _estimate_duration(tts_text)
 
         await (
             db.prepare(
@@ -502,6 +650,7 @@ async def process_tts(
 
         evt = current_event()
         if evt:
+            evt.set("tts_timing_sentences", len(timing_manifest["sentences"]))
             evt.set_many(
                 {
                     "outcome": "success",

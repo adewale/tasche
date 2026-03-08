@@ -4,6 +4,13 @@ import { Header } from '../components/Header.jsx';
 import { user, addToast } from '../state.js';
 import { useSWMessage } from '../hooks/useSWMessage.js';
 import {
+  useInstallPrompt,
+  canInstall,
+  showIOSHint,
+  triggerInstall,
+  dismissInstall,
+} from '../hooks/useInstallPrompt.js';
+import {
   performLogout,
   getCacheStats,
   triggerAutoPrecache,
@@ -25,6 +32,7 @@ function formatBytes(bytes) {
 
 export function Settings() {
   const u = user.value;
+  useInstallPrompt();
   const autoCacheEnabled = useSignal(localStorage.getItem('tasche-auto-cache') !== 'false');
   const cacheStats = useSignal(null);
   const precaching = useSignal(false);
@@ -77,6 +85,36 @@ export function Settings() {
       <Header />
       <main class="main-content">
         <h2 class="section-title">Settings</h2>
+
+        {canInstall.value && (
+          <div class="settings-section">
+            <h3 class="section-title">Install App</h3>
+            <p class="settings-detail">
+              Install Tasche as an app for faster access and a full-screen experience.
+            </p>
+            <div class="flex-wrap-gap">
+              <button class="btn btn-primary" onClick={triggerInstall}>
+                Install Tasche
+              </button>
+              <button class="btn btn-secondary" onClick={dismissInstall}>
+                Not now
+              </button>
+            </div>
+          </div>
+        )}
+
+        {showIOSHint.value && (
+          <div class="settings-section">
+            <h3 class="section-title">Install App</h3>
+            <p class="settings-detail">
+              To install Tasche, tap the Share button in Safari, then tap{' '}
+              <strong>Add to Home Screen</strong>.
+            </p>
+            <button class="btn btn-secondary" onClick={dismissInstall}>
+              Got it
+            </button>
+          </div>
+        )}
 
         <div class="settings-section">
           <h3 class="section-title">Offline Reading</h3>
@@ -132,7 +170,10 @@ export function Settings() {
                   })
                   .catch(function () {
                     clearing.value = false;
-                    addToast('Failed to clear caches', 'error');
+                    addToast(
+                      'Could not clear caches. Try closing other tabs and retrying.',
+                      'error',
+                    );
                   });
               }}
             >
@@ -156,7 +197,7 @@ export function Settings() {
                     ttsVoice.value = 'athena';
                   })
                   .catch(function () {
-                    addToast('Failed to update voice preference', 'error');
+                    addToast('Could not save voice preference. Check your connection.', 'error');
                   })
                   .finally(function () {
                     voiceLoading.value = false;
@@ -176,7 +217,7 @@ export function Settings() {
                     ttsVoice.value = 'orion';
                   })
                   .catch(function () {
-                    addToast('Failed to update voice preference', 'error');
+                    addToast('Could not save voice preference. Check your connection.', 'error');
                   })
                   .finally(function () {
                     voiceLoading.value = false;

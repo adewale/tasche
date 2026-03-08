@@ -113,12 +113,32 @@ export function App() {
               syncStatus.value = null;
             }, 3000);
           } else if (event.data.status === 'error') {
-            addToast('Some changes failed to sync', 'error');
+            addToast(
+              'Some offline changes could not be synced. They will retry automatically.',
+              'error',
+            );
           }
           break;
 
         case 'CACHES_CLEARED':
           addToast('Caches cleared', 'info');
+          break;
+
+        case 'AUTO_PRECACHE_COMPLETE': {
+          const { cached, failed } = event.data;
+          if (failed > 0) {
+            addToast('Cached ' + cached + ' articles, ' + failed + ' failed', 'info');
+          } else if (cached > 0) {
+            addToast(
+              cached + ' article' + (cached === 1 ? '' : 's') + ' cached for offline',
+              'success',
+            );
+          }
+          break;
+        }
+
+        case 'AUTO_PRECACHE_ERROR':
+          addToast('Auto-cache could not complete', 'error');
           break;
       }
     }
@@ -164,7 +184,7 @@ export function App() {
         const sharedTitle = urlParams.get('title') || '';
         createArticle(sharedUrl, sharedTitle)
           .then(() => addToast('Article saved!', 'success'))
-          .catch((e) => addToast('Save failed: ' + e.message, 'error'));
+          .catch((e) => addToast('Could not save shared article: ' + e.message, 'error'));
         // Clean the URL params
         window.history.replaceState({}, '', window.location.pathname + window.location.hash);
       }

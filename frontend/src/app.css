@@ -926,6 +926,15 @@ textarea {
   background: var(--text);
 }
 
+.breath-marks-label {
+  margin-top: 24px;
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  opacity: 0.4;
+  cursor: help;
+}
+
 @media (min-width: 1080px) {
   .reader-layout {
     display: grid;
@@ -970,6 +979,23 @@ textarea {
 .reader-actions-group:last-child {
   padding-right: 0;
   border-right: none;
+}
+
+.continue-reading-nudge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  margin-top: 12px;
+  background: var(--surface, var(--bg-secondary));
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.continue-reading-nudge span {
+  flex: 1;
 }
 
 /* Original status */
@@ -2207,6 +2233,89 @@ body.has-audio-player {
   padding-bottom: 100px;
 }
 
+/* =============================================
+   TTS Immersive Reading — sentence highlighting
+   ============================================= */
+
+.tts-sentence {
+  transition:
+    opacity 200ms ease,
+    color 200ms ease;
+  cursor: default;
+}
+
+.tts-playing .tts-sentence {
+  cursor: pointer;
+}
+
+.tts-sentence-active {
+  background: linear-gradient(
+    90deg,
+    var(--tts-highlight-bg, rgba(66, 133, 244, 0.1)) var(--tts-progress, 0%),
+    transparent var(--tts-progress, 0%)
+  );
+  border-radius: 2px;
+}
+
+/* Context dimming: mute non-active text */
+.tts-playing .reader-content {
+  color: var(--text-muted);
+  transition: color 300ms ease;
+}
+
+.tts-playing .tts-sentence-active {
+  color: var(--text);
+}
+
+/* Theme-specific highlight colors */
+[data-reader-theme='light'] {
+  --tts-highlight-bg: rgba(66, 133, 244, 0.1);
+}
+[data-reader-theme='sepia'] {
+  --tts-highlight-bg: rgba(139, 90, 43, 0.12);
+}
+[data-reader-theme='dark'] {
+  --tts-highlight-bg: rgba(130, 177, 255, 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-reader-theme='auto'] {
+    --tts-highlight-bg: rgba(130, 177, 255, 0.12);
+  }
+}
+
+@media (prefers-color-scheme: light) {
+  [data-reader-theme='auto'] {
+    --tts-highlight-bg: rgba(66, 133, 244, 0.1);
+  }
+}
+
+/* Return to audio floating button */
+.tts-return-btn {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 150;
+  padding: 8px 16px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 20px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 200ms ease;
+  pointer-events: none;
+}
+
+.tts-return-btn.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 /* Keyboard shortcuts help overlay */
 
 .shortcuts-overlay {
@@ -2297,6 +2406,19 @@ body.has-audio-player {
 .shortcuts-desc {
   font-size: 0.8125rem;
   color: var(--text-secondary);
+}
+
+.shortcuts-feature-icon {
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+  line-height: 24px;
+  text-align: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
 }
 
 /* Bulk action bar */

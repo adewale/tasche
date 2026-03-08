@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Full bleed background (will be visible in any mask shape) -->
+  <rect width="512" height="512" fill="#1d1d1f"/>
+  <!-- Content scaled to 80% and centered within the maskable safe zone -->
+  <g transform="translate(256,256) scale(0.75) translate(-256,-256)">
+    <path d="M 48 32 L 48 368 Q 48 464 144 464 L 368 464 Q 464 464 464 368 L 464 32"
+          fill="none" stroke="#f5f5f7" stroke-width="48" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="256" y="384" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="288" fill="#f5f5f7">T</text>
+  </g>
+</svg>

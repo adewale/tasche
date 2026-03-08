@@ -49,7 +49,7 @@ export function Search() {
       setResults(data);
       setInfo(data.length + ' result' + (data.length !== 1 ? 's' : '') + ' for "' + q + '"');
     } catch (e) {
-      addToast('Search failed: ' + e.message, 'error');
+      addToast('Search could not complete: ' + e.message, 'error');
     } finally {
       setIsLoading(false);
     }

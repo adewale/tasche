@@ -1326,3 +1326,658 @@ class TestConsumeReadableStream:
 
         result = await consume_readable_stream(MockArrayBufferOnly())
         assert result == b"from-buffer"
+
+
+# ---------------------------------------------------------------------------
+# Helpers for OGG Opus test data
+# ---------------------------------------------------------------------------
+
+
+def _make_ogg_opus_data(duration_seconds: float, pre_skip: int = 312) -> bytes:
+    """Build minimal OGG Opus byte sequence with controlled duration.
+
+    Creates two OGG pages:
+    - Page 1: OpusHead ID header with pre_skip
+    - Page 2: Final page with granule_position encoding the duration
+    """
+    import struct
+
+    total_samples = int(duration_seconds * 48000) + pre_skip
+
+    # Page 1: ID header page
+    # OpusHead: magic(8) + version(1) + channels(1) + pre_skip(2)
+    #         + sample_rate(4) + gain(2) + mapping(1) = 19 bytes
+    opus_head = b"OpusHead"
+    opus_head += struct.pack("<B", 1)  # version
+    opus_head += struct.pack("<B", 1)  # channels
+    opus_head += struct.pack("<H", pre_skip)
+    opus_head += struct.pack("<I", 48000)  # input sample rate
+    opus_head += struct.pack("<h", 0)  # output gain
+    opus_head += struct.pack("<B", 0)  # channel mapping family
+
+    page1 = b"OggS"  # capture pattern
+    page1 += struct.pack("<B", 0)  # version
+    page1 += struct.pack("<B", 2)  # header type (BOS)
+    page1 += struct.pack("<q", 0)  # granule position
+    page1 += struct.pack("<I", 1)  # serial number
+    page1 += struct.pack("<I", 0)  # page sequence
+    page1 += struct.pack("<I", 0)  # checksum (don't care)
+    page1 += struct.pack("<B", 1)  # num segments
+    page1 += struct.pack("<B", len(opus_head))  # segment table
+    page1 += opus_head
+
+    # Page 2: data page with final granule position
+    fake_audio = b"\x00" * 100  # dummy audio data
+    page2 = b"OggS"
+    page2 += struct.pack("<B", 0)  # version
+    page2 += struct.pack("<B", 4)  # header type (EOS)
+    page2 += struct.pack("<q", total_samples)  # granule position
+    page2 += struct.pack("<I", 1)  # serial number
+    page2 += struct.pack("<I", 2)  # page sequence
+    page2 += struct.pack("<I", 0)  # checksum
+    page2 += struct.pack("<B", 1)  # num segments
+    page2 += struct.pack("<B", len(fake_audio))
+    page2 += fake_audio
+
+    return page1 + page2
+
+
+# ---------------------------------------------------------------------------
+# OGG Duration Parsing Tests
+# ---------------------------------------------------------------------------
+
+
+class TestOggDuration:
+    def test_valid_ogg_opus(self):
+        from tts.processing import _ogg_duration_seconds
+
+        data = _make_ogg_opus_data(5.0)
+        duration = _ogg_duration_seconds(data)
+        assert abs(duration - 5.0) < 0.01
+
+    def test_empty_data(self):
+        from tts.processing import _ogg_duration_seconds
+
+        assert _ogg_duration_seconds(b"") == 0.0
+
+    def test_short_data(self):
+        from tts.processing import _ogg_duration_seconds
+
+        assert _ogg_duration_seconds(b"OggS" + b"\x00" * 10) == 0.0
+
+    def test_non_ogg_data(self):
+        from tts.processing import _ogg_duration_seconds
+
+        assert _ogg_duration_seconds(b"RIFF" + b"\x00" * 100) == 0.0
+
+    def test_various_durations(self):
+        from tts.processing import _ogg_duration_seconds
+
+        for seconds in [0.5, 1.0, 10.0, 60.0, 300.0]:
+            data = _make_ogg_opus_data(seconds)
+            duration = _ogg_duration_seconds(data)
+            assert abs(duration - seconds) < 0.01, f"Expected ~{seconds}s, got {duration}s"
+
+
+# ---------------------------------------------------------------------------
+# chunk_text_with_sentences Tests
+# ---------------------------------------------------------------------------
+
+
+class TestChunkTextWithSentences:
+    def test_single_sentence(self):
+        from tts.processing import chunk_text_with_sentences
+
+        result = chunk_text_with_sentences("Hello world.")
+        assert len(result) == 1
+        assert result[0]["text"] == "Hello world."
+        assert result[0]["sentences"] == ["Hello world."]
+
+    def test_multiple_sentences_single_chunk(self):
+        from tts.processing import chunk_text_with_sentences
+
+        text = "First sentence. Second sentence. Third sentence."
+        result = chunk_text_with_sentences(text)
+        assert len(result) == 1
+        assert len(result[0]["sentences"]) == 3
+
+    def test_respects_max_chars(self):
+        from tts.processing import chunk_text_with_sentences
+
+        text = "Short. " * 50  # Creates many sentences
+        result = chunk_text_with_sentences(text, max_chars=50)
+        assert len(result) > 1
+        for chunk in result:
+            assert len(chunk["text"]) <= 60  # Allow slight overrun for single sentences
+
+    def test_empty_text(self):
+        from tts.processing import chunk_text_with_sentences
+
+        assert chunk_text_with_sentences("") == []
+        assert chunk_text_with_sentences("   ") == []
+
+    def test_preserves_all_sentences(self):
+        from tts.processing import chunk_text_with_sentences, split_sentences
+
+        text = "One. Two. Three. Four. Five."
+        result = chunk_text_with_sentences(text)
+        all_sentences = []
+        for chunk in result:
+            all_sentences.extend(chunk["sentences"])
+        assert all_sentences == split_sentences(text)
+
+    def test_chunk_text_matches_text_field(self):
+        from tts.processing import chunk_text_with_sentences
+
+        text = "Hello world. How are you? I am fine. Thanks for asking."
+        result = chunk_text_with_sentences(text, max_chars=40)
+        for chunk in result:
+            assert chunk["text"] == " ".join(chunk["sentences"])
+
+
+# ---------------------------------------------------------------------------
+# _build_timing_manifest Tests
+# ---------------------------------------------------------------------------
+
+
+class TestBuildTimingManifest:
+    def test_basic_manifest(self):
+        from tts.processing import _build_timing_manifest
+
+        chunks = [
+            {"text": "Hello. World.", "sentences": ["Hello.", "World."]},
+        ]
+        # 2.4 seconds of OGG audio
+        audio_parts = [_make_ogg_opus_data(2.4)]
+        manifest = _build_timing_manifest(chunks, audio_parts)
+
+        assert manifest["version"] == 1
+        assert len(manifest["sentences"]) == 2
+        assert manifest["sentences"][0]["start_ms"] == 0
+        assert manifest["sentences"][-1]["end_ms"] == manifest["total_duration_ms"]
+
+    def test_continuity(self):
+        """Each sentence starts where the previous one ends."""
+        from tts.processing import _build_timing_manifest
+
+        chunks = [
+            {"text": "A. B. C.", "sentences": ["A.", "B.", "C."]},
+            {"text": "D. E.", "sentences": ["D.", "E."]},
+        ]
+        audio_parts = [_make_ogg_opus_data(3.0), _make_ogg_opus_data(2.0)]
+        manifest = _build_timing_manifest(chunks, audio_parts)
+
+        sentences = manifest["sentences"]
+        for i in range(1, len(sentences)):
+            assert sentences[i]["start_ms"] == sentences[i - 1]["end_ms"]
+
+    def test_proportional_distribution(self):
+        """Longer sentences get more time."""
+        from tts.processing import _build_timing_manifest
+
+        chunks = [
+            {
+                "text": "Hi. A much longer sentence here.",
+                "sentences": ["Hi.", "A much longer sentence here."],
+            },
+        ]
+        audio_parts = [_make_ogg_opus_data(4.0)]
+        manifest = _build_timing_manifest(chunks, audio_parts)
+
+        s0 = manifest["sentences"][0]
+        s1 = manifest["sentences"][1]
+        # "Hi." is 3 chars, other is 30 chars — s1 should be ~10x longer
+        assert (s1["end_ms"] - s1["start_ms"]) > (s0["end_ms"] - s0["start_ms"]) * 5
+
+    def test_fallback_on_invalid_audio(self):
+        """Uses word-count estimate when OGG parsing fails."""
+        from tts.processing import _build_timing_manifest
+
+        chunks = [
+            {"text": "Hello world sentence.", "sentences": ["Hello world sentence."]},
+        ]
+        audio_parts = [b"not-ogg-data"]
+        manifest = _build_timing_manifest(chunks, audio_parts)
+
+        # Should still produce a manifest with positive duration
+        assert manifest["total_duration_ms"] > 0
+        assert len(manifest["sentences"]) == 1
+
+    def test_many_chunks_timing_adds_up(self):
+        """Total duration equals sum of all chunk durations."""
+        from tts.processing import _build_timing_manifest
+
+        chunks = [
+            {
+                "text": "Sentence one. Sentence two.",
+                "sentences": ["Sentence one.", "Sentence two."],
+            },
+            {"text": "Sentence three.", "sentences": ["Sentence three."]},
+            {
+                "text": "Sentence four. Sentence five.",
+                "sentences": ["Sentence four.", "Sentence five."],
+            },
+        ]
+        durations = [2.5, 1.0, 3.0]
+        audio_parts = [_make_ogg_opus_data(d) for d in durations]
+        manifest = _build_timing_manifest(chunks, audio_parts)
+
+        expected_total_ms = sum(d * 1000 for d in durations)
+        assert abs(manifest["total_duration_ms"] - expected_total_ms) < 50  # Allow rounding
+
+    def test_single_sentence_per_chunk(self):
+        """When each chunk has exactly one sentence, timing is exact."""
+        from tts.processing import _build_timing_manifest
+
+        chunks = [
+            {"text": "First.", "sentences": ["First."]},
+            {"text": "Second.", "sentences": ["Second."]},
+        ]
+        audio_parts = [_make_ogg_opus_data(2.0), _make_ogg_opus_data(3.0)]
+        manifest = _build_timing_manifest(chunks, audio_parts)
+
+        s0 = manifest["sentences"][0]
+        s1 = manifest["sentences"][1]
+        # First sentence should be ~2000ms
+        assert abs((s0["end_ms"] - s0["start_ms"]) - 2000) < 50
+        # Second should be ~3000ms
+        assert abs((s1["end_ms"] - s1["start_ms"]) - 3000) < 50
+
+    def test_empty_chunks(self):
+        """Empty input produces empty manifest."""
+        from tts.processing import _build_timing_manifest
+
+        manifest = _build_timing_manifest([], [])
+        assert manifest["version"] == 1
+        assert manifest["total_duration_ms"] == 0
+        assert manifest["sentences"] == []
+
+    def test_all_sentences_have_text(self):
+        """Every sentence in the manifest has non-empty text."""
+        from tts.processing import _build_timing_manifest
+
+        chunks = [
+            {"text": "A. B. C.", "sentences": ["A.", "B.", "C."]},
+            {"text": "D.", "sentences": ["D."]},
+        ]
+        audio_parts = [_make_ogg_opus_data(3.0), _make_ogg_opus_data(1.0)]
+        manifest = _build_timing_manifest(chunks, audio_parts)
+
+        for s in manifest["sentences"]:
+            assert "text" in s
+            assert len(s["text"]) > 0
+            assert "start_ms" in s
+            assert "end_ms" in s
+            assert s["end_ms"] > s["start_ms"]
+
+    def test_mixed_valid_and_invalid_audio(self):
+        """Handles mix of OGG chunks and invalid chunks."""
+        from tts.processing import _build_timing_manifest
+
+        chunks = [
+            {"text": "Valid chunk.", "sentences": ["Valid chunk."]},
+            {"text": "Invalid chunk.", "sentences": ["Invalid chunk."]},
+        ]
+        audio_parts = [_make_ogg_opus_data(2.0), b"not-ogg"]
+        manifest = _build_timing_manifest(chunks, audio_parts)
+
+        assert len(manifest["sentences"]) == 2
+        assert manifest["sentences"][0]["start_ms"] == 0
+        # Both should have positive durations
+        for s in manifest["sentences"]:
+            assert s["end_ms"] > s["start_ms"]
+
+
+# ---------------------------------------------------------------------------
+# OGG Duration Edge Cases
+# ---------------------------------------------------------------------------
+
+
+class TestOggDurationEdgeCases:
+    def test_pre_skip_larger_than_granule(self):
+        """Returns 0.0 when pre_skip exceeds granule position."""
+        from tts.processing import _ogg_duration_seconds
+
+        # Build OGG with pre_skip=5000, duration=0.0
+        # _make_ogg_opus_data(0.0, pre_skip=5000) creates granule = 0*48000 + 5000 = 5000
+        # which equals pre_skip, so last_granule <= pre_skip => 0.0
+        data = _make_ogg_opus_data(0.0, pre_skip=5000)
+        duration = _ogg_duration_seconds(data)
+        assert duration == 0.0
+
+    def test_multiple_pages(self):
+        """Handles OGG data with many pages (simulated by concatenating)."""
+        from tts.processing import _ogg_duration_seconds
+
+        # Create two separate OGG streams and concatenate
+        data1 = _make_ogg_opus_data(3.0)
+        data2 = _make_ogg_opus_data(5.0)
+        # The parser scans ALL OggS pages and keeps the last valid granule
+        combined = data1 + data2
+        duration = _ogg_duration_seconds(combined)
+        # Should get a positive duration from the last OGG stream found
+        assert duration > 0
+
+    def test_zero_duration(self):
+        """Zero-length audio returns 0.0."""
+        from tts.processing import _ogg_duration_seconds
+
+        data = _make_ogg_opus_data(0.0)
+        duration = _ogg_duration_seconds(data)
+        assert duration == 0.0
+
+    def test_garbage_bytes_in_middle(self):
+        """OGG data with garbage bytes between valid pages."""
+        from tts.processing import _ogg_duration_seconds
+
+        data = _make_ogg_opus_data(2.0)
+        # Find second OggS page
+        second_page = data.index(b"OggS", 4)
+        modified = data[:second_page] + b"\xff\xfe\xfd" * 10 + data[second_page:]
+        duration = _ogg_duration_seconds(modified)
+        assert abs(duration - 2.0) < 0.01
+
+
+# ---------------------------------------------------------------------------
+# GET /api/articles/{article_id}/audio-timing
+# ---------------------------------------------------------------------------
+
+
+class TestGetAudioTiming:
+    """Tests for GET /api/articles/{id}/audio-timing."""
+
+    async def test_returns_timing_json(self) -> None:
+        """Returns timing JSON when audio is ready and timing exists."""
+        import json as _json
+
+        timing_data = {
+            "version": 1,
+            "total_duration_ms": 5000,
+            "sentences": [
+                {"text": "Hello.", "start_ms": 0, "end_ms": 2500},
+                {"text": "World.", "start_ms": 2500, "end_ms": 5000},
+            ],
+        }
+        article = ArticleFactory.create(
+            id="art_timing1",
+            user_id="user_001",
+            audio_status="ready",
+        )
+
+        def execute(sql: str, params: list) -> list:
+            if "id = ?" in sql and params[0] == "art_timing1":
+                return [article]
+            return []
+
+        db = MockD1(execute=execute)
+        r2 = MockR2()
+        env = MockEnv(db=db, content=r2)
+
+        # Store timing JSON in R2
+        await r2.put(
+            "articles/art_timing1/audio-timing.json",
+            _json.dumps(timing_data).encode("utf-8"),
+        )
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get("/api/articles/art_timing1/audio-timing")
+
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "application/json"
+        body = resp.json()
+        assert body["version"] == 1
+        assert body["total_duration_ms"] == 5000
+        assert len(body["sentences"]) == 2
+        assert body["sentences"][0]["text"] == "Hello."
+
+    async def test_returns_404_when_no_timing_file(self) -> None:
+        """Returns 404 when audio is ready but no timing file in R2."""
+        article = ArticleFactory.create(
+            id="art_notiming",
+            user_id="user_001",
+            audio_status="ready",
+        )
+
+        def execute(sql: str, params: list) -> list:
+            if "id = ?" in sql and params[0] == "art_notiming":
+                return [article]
+            return []
+
+        db = MockD1(execute=execute)
+        r2 = MockR2()  # Empty — no timing file stored
+        env = MockEnv(db=db, content=r2)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get("/api/articles/art_notiming/audio-timing")
+
+        assert resp.status_code == 404
+        assert "No audio timing available" in resp.json()["detail"]
+
+    async def test_returns_404_when_audio_not_ready(self) -> None:
+        """Returns 404 when audio_status is not 'ready'."""
+        article = ArticleFactory.create(
+            id="art_generating",
+            user_id="user_001",
+            audio_status="generating",
+        )
+
+        def execute(sql: str, params: list) -> list:
+            if "id = ?" in sql and params[0] == "art_generating":
+                return [article]
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get("/api/articles/art_generating/audio-timing")
+
+        assert resp.status_code == 404
+
+    async def test_returns_404_when_no_audio(self) -> None:
+        """Returns 404 when article has no audio at all."""
+        article = ArticleFactory.create(
+            id="art_noaudio_t",
+            user_id="user_001",
+            audio_status=None,
+        )
+
+        def execute(sql: str, params: list) -> list:
+            if "id = ?" in sql and params[0] == "art_noaudio_t":
+                return [article]
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get("/api/articles/art_noaudio_t/audio-timing")
+
+        assert resp.status_code == 404
+
+    def test_requires_authentication(self) -> None:
+        """Returns 401 without session cookie."""
+        env = MockEnv()
+        app = _make_app(env)
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.get("/api/articles/some_id/audio-timing")
+        assert resp.status_code == 401
+
+    async def test_cache_headers(self) -> None:
+        """Response includes immutable cache headers."""
+        import json as _json
+
+        timing_data = {
+            "version": 1,
+            "total_duration_ms": 1000,
+            "sentences": [{"text": "Test.", "start_ms": 0, "end_ms": 1000}],
+        }
+        article = ArticleFactory.create(
+            id="art_cache",
+            user_id="user_001",
+            audio_status="ready",
+        )
+
+        def execute(sql: str, params: list) -> list:
+            if "id = ?" in sql and params[0] == "art_cache":
+                return [article]
+            return []
+
+        db = MockD1(execute=execute)
+        r2 = MockR2()
+        env = MockEnv(db=db, content=r2)
+
+        await r2.put(
+            "articles/art_cache/audio-timing.json",
+            _json.dumps(timing_data).encode("utf-8"),
+        )
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get("/api/articles/art_cache/audio-timing")
+
+        assert resp.status_code == 200
+        assert "immutable" in resp.headers.get("cache-control", "")
+
+    async def test_returns_404_for_missing_article(self) -> None:
+        """Returns 404 when article does not exist."""
+        db = MockD1(execute=lambda sql, params: [])
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get("/api/articles/nonexistent/audio-timing")
+
+        assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# process_tts timing manifest integration
+# ---------------------------------------------------------------------------
+
+
+class TestProcessTTSTimingIntegration:
+    """Verify process_tts stores timing manifest and uses measured duration."""
+
+    async def test_process_tts_stores_timing_manifest(self) -> None:
+        """process_tts stores audio-timing.json alongside audio in R2."""
+        import json as _json
+
+        article = ArticleFactory.create(
+            id="art_timing_int",
+            user_id="user_001",
+            markdown_content="# Test\n\nFirst sentence. Second sentence. Third sentence.",
+        )
+
+        db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
+        r2 = MockR2()
+        fake_audio = _make_ogg_opus_data(3.0)
+        ai = MockAI(response=fake_audio)
+        env = MockEnv(db=db, content=r2, ai=ai, tts_model="aura-2-en")
+
+        from tts.processing import process_tts
+
+        await process_tts("art_timing_int", env, user_id="user_001")
+
+        # Verify audio-timing.json exists in R2
+        timing_key = "articles/art_timing_int/audio-timing.json"
+        assert timing_key in r2._store, (
+            f"Expected {timing_key} in R2, got keys: {list(r2._store.keys())}"
+        )
+
+        # Parse and validate structure
+        timing = _json.loads(r2._store[timing_key])
+        assert timing["version"] == 1
+        assert timing["total_duration_ms"] > 0
+        assert isinstance(timing["sentences"], list)
+        assert len(timing["sentences"]) > 0
+
+        # Each sentence should have the required fields
+        for s in timing["sentences"]:
+            assert "text" in s
+            assert "start_ms" in s
+            assert "end_ms" in s
+            assert s["end_ms"] > s["start_ms"]
+            assert len(s["text"]) > 0
+
+    async def test_process_tts_uses_measured_duration(self) -> None:
+        """process_tts uses OGG-measured duration instead of word-count estimate."""
+        # Use markdown with many words — word-count estimate would give a very different
+        # number from the actual OGG duration
+        long_text = "Hello world this is a test. " * 40  # ~280 words
+        article = ArticleFactory.create(
+            id="art_dur_meas",
+            user_id="user_001",
+            markdown_content=long_text,
+        )
+
+        db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
+        r2 = MockR2()
+        # Return OGG audio with a specific known duration (5.0 seconds)
+        fake_audio = _make_ogg_opus_data(5.0)
+        ai = MockAI(response=fake_audio)
+        env = MockEnv(db=db, content=r2, ai=ai, tts_model="aura-2-en")
+
+        from tts.processing import process_tts
+
+        await process_tts("art_dur_meas", env, user_id="user_001")
+
+        # Find the final UPDATE that sets audio_status='ready'
+        ready_updates = [
+            (sql, params)
+            for sql, params in db.executed
+            if "UPDATE" in sql and "ready" in str(params) and "audio_status" in sql
+        ]
+        assert len(ready_updates) >= 1
+
+        # The audio_duration_seconds should be derived from OGG measurement, not
+        # word-count estimate. The word-count estimate for ~280 words at 150 wpm
+        # would be ~112 seconds, while the measured OGG total should be ~5s * num_chunks.
+        # Get the duration from the final UPDATE params
+        from tests.conftest import parse_update_params
+
+        final_sql, final_params = ready_updates[-1]
+        parsed = parse_update_params(final_sql, final_params)
+        stored_duration = parsed.get("audio_duration_seconds")
+
+        # The word-count estimate would be ~112s for 280 words.
+        # The measured duration from OGG should be much shorter (~5s per chunk).
+        # Since each AI call returns the same 5.0s audio, total is 5.0 * num_chunks.
+        # This should be well under 60s, not the ~112s the estimate would produce.
+        assert stored_duration is not None
+        assert stored_duration < 60, (
+            f"Expected measured OGG duration (not word-count estimate), got {stored_duration}s"
+        )
+
+    async def test_process_tts_timing_sentence_count_matches_text(self) -> None:
+        """Timing manifest sentence count matches text sentence count."""
+        import json as _json
+
+        article = ArticleFactory.create(
+            id="art_scount",
+            user_id="user_001",
+            markdown_content=(
+                "First sentence. Second sentence. Third sentence. Fourth sentence. Fifth sentence."
+            ),
+        )
+
+        db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
+        r2 = MockR2()
+        fake_audio = _make_ogg_opus_data(5.0)
+        ai = MockAI(response=fake_audio)
+        env = MockEnv(db=db, content=r2, ai=ai, tts_model="aura-2-en")
+
+        from tts.processing import process_tts, split_sentences, strip_markdown
+
+        await process_tts("art_scount", env, user_id="user_001")
+
+        timing_key = "articles/art_scount/audio-timing.json"
+        assert timing_key in r2._store
+
+        timing = _json.loads(r2._store[timing_key])
+        # Count expected sentences from the stripped markdown
+        stripped = strip_markdown(article["markdown_content"])
+        expected_sentences = split_sentences(stripped)
+        assert len(timing["sentences"]) == len(expected_sentences)
+
+        # Verify sentence text matches
+        for ts, es in zip(timing["sentences"], expected_sentences):
+            assert ts["text"] == es

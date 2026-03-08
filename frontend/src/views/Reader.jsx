@@ -3,7 +3,7 @@ import { Header } from '../components/Header.jsx';
 import { EmptyState, LoadingSpinner } from '../components/EmptyState.jsx';
 import { TagPicker } from '../components/TagPicker.jsx';
 import { ReaderToolbar } from '../components/ReaderToolbar.jsx';
-import { playAudio } from '../components/AudioPlayer.jsx';
+import { audioState, playAudio, getAudio } from '../components/AudioPlayer.jsx';
 import { articles, addToast, pollAudioStatus } from '../state.js';
 import { toggleArchive, toggleFavorite, removeArticle } from '../articleActions.js';
 import { readerPrefs, getReaderStyle, updatePref } from '../readerPrefs.js';
@@ -33,7 +33,9 @@ import {
   saveAudioOffline,
   isOfflineCached,
   getArticleMarkdown,
+  getAudioTiming,
 } from '../api.js';
+import { initImmersive, destroyImmersive } from '../immersive.js';
 import DOMPurify from 'dompurify';
 import { renderMarkdown } from '../markdown.js';
 import { escapeHtml, formatDate } from '../utils.js';
@@ -92,6 +94,8 @@ export function Reader({ id }) {
   const [markdownLoading, setMarkdownLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [breathMarks, setBreathMarks] = useState([]);
+  const [showContinueReading, setShowContinueReading] = useState(false);
+  const [immersiveTiming, setImmersiveTiming] = useState(null);
   const contentRef = useRef(null);
 
   useEffect(() => {
@@ -160,10 +164,10 @@ export function Reader({ id }) {
         if (event.data.type === 'OFFLINE_SAVE_ERROR' && event.data.articleId === id) {
           if (event.data.what === 'content') {
             setSavingOffline(false);
-            addToast('Failed to save for offline', 'error');
+            addToast('Could not save article offline. Check your storage settings.', 'error');
           } else if (event.data.what === 'audio') {
             setSavingAudioOffline(false);
-            addToast('Failed to download audio', 'error');
+            addToast('Could not download audio for offline. The file may be too large.', 'error');
           }
         }
       },
@@ -193,6 +197,64 @@ export function Reader({ id }) {
       },
     },
     [article],
+  );
+
+  // Immersive reading: activate when audio plays for this article
+  useEffect(
+    function () {
+      var contentNode = contentRef.current;
+      var audioInfo = audioState.value;
+      var prefs = readerPrefs.value;
+      var isThisArticle = audioInfo.articleId === id;
+      var immersiveEnabled = prefs.immersive !== 'off' && prefs.contentMode !== 'source';
+
+      if (!isThisArticle || !audioInfo.visible || !immersiveEnabled) {
+        destroyImmersive();
+        if (contentNode) {
+          contentNode.closest('.reader-body')?.classList.remove('tts-playing');
+        }
+        return;
+      }
+
+      // Fetch timing data and init
+      var cancelled = false;
+
+      function activate() {
+        if (immersiveTiming && contentNode) {
+          initImmersive(contentNode, immersiveTiming, getAudio());
+          contentNode.closest('.reader-body')?.classList.add('tts-playing');
+        } else if (!immersiveTiming) {
+          getAudioTiming(id)
+            .then(function (timing) {
+              if (!cancelled) {
+                setImmersiveTiming(timing);
+              }
+            })
+            .catch(function () {
+              // No timing data — audio plays without highlighting
+            });
+        }
+      }
+
+      activate();
+
+      return function () {
+        cancelled = true;
+        destroyImmersive();
+        if (contentNode) {
+          contentNode.closest('.reader-body')?.classList.remove('tts-playing');
+        }
+      };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    },
+    [
+      id,
+      audioState.value.articleId,
+      audioState.value.visible,
+      readerPrefs.value.immersive,
+      readerPrefs.value.contentMode,
+      immersiveTiming,
+    ],
   );
 
   // Lazy-load markdown content when user switches to Rendered or Source mode
@@ -262,12 +324,15 @@ export function Reader({ id }) {
       }
       setContentHtml(html);
 
-      if (art.scroll_position && parseFloat(art.scroll_position) > 0) {
+      const scrollPct = art.scroll_position ? parseFloat(art.scroll_position) : 0;
+      const readingProg = art.reading_progress ? parseFloat(art.reading_progress) : 0;
+      if (scrollPct > 0.05 && readingProg < 0.95) {
+        setShowContinueReading(true);
+      } else if (scrollPct > 0) {
         setTimeout(function () {
-          const pct = parseFloat(art.scroll_position);
           const docHeight =
             document.documentElement.scrollHeight - document.documentElement.clientHeight;
-          window.scrollTo(0, pct * docHeight);
+          window.scrollTo(0, scrollPct * docHeight);
         }, 100);
       }
     } catch (e) {
@@ -383,6 +448,14 @@ export function Reader({ id }) {
     } finally {
       setCheckingOriginal(false);
     }
+  }
+
+  function handleScrollToPosition() {
+    if (!article) return;
+    const pct = parseFloat(article.scroll_position);
+    const docHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+    window.scrollTo(0, pct * docHeight);
+    setShowContinueReading(false);
   }
 
   if (loadError) {
@@ -605,6 +678,23 @@ export function Reader({ id }) {
               </button>
             </div>
           </div>
+          {showContinueReading && (
+            <div class="continue-reading-nudge">
+              <span>
+                You were {Math.round(parseFloat(article.scroll_position) * 100)}% through this
+                article.
+              </span>
+              <button class="btn btn-sm btn-primary" onClick={handleScrollToPosition}>
+                Continue reading
+              </button>
+              <button
+                class="btn btn-sm btn-secondary"
+                onClick={() => setShowContinueReading(false)}
+              >
+                Start from top
+              </button>
+            </div>
+          )}
         </div>
         <div
           style={getReaderStyle(readerPrefs.value)}
@@ -637,6 +727,14 @@ export function Reader({ id }) {
                 </div>
               )}
               {/* Breath marks — tick marks at previous reading pauses */}
+              {breathMarks.length > 0 && (
+                <div
+                  class="sidenote breath-marks-label"
+                  title="Tick marks showing where you previously paused reading"
+                >
+                  breath marks
+                </div>
+              )}
               {breathMarks.length > 0 &&
                 breathMarks.map(function (pos, i) {
                   var opacity = 0.12 + ((i + 1) / breathMarks.length) * 0.22;
@@ -674,7 +772,10 @@ export function Reader({ id }) {
                               }, 2000);
                             })
                             .catch(function () {
-                              addToast('Failed to copy to clipboard', 'error');
+                              addToast(
+                                'Could not copy — your browser may not support clipboard access',
+                                'error',
+                              );
                             });
                         }}
                       >

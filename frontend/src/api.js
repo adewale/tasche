@@ -256,6 +256,11 @@ export function getAudioUrl(articleId) {
   });
 }
 
+// Audio timing (for immersive reading)
+export function getAudioTiming(articleId) {
+  return request('GET', '/api/articles/' + articleId + '/audio-timing');
+}
+
 // Preferences
 export function getPreferences() {
   return request('GET', '/api/preferences');
