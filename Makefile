@@ -4,6 +4,13 @@ test:
 test-e2e:
 	@echo "Enabling auth bypass on staging..."
 	@echo "true" | npx wrangler secret put DISABLE_AUTH --env staging
+	@echo "Waiting for secret propagation..."
+	@for i in 1 2 3 4 5 6 7 8 9 10; do \
+		STATUS=$$(curl -s -o /dev/null -w '%{http_code}' https://tasche-staging.adewale-883.workers.dev/api/articles); \
+		if [ "$$STATUS" != "401" ]; then echo "Auth bypass active (attempt $$i)"; break; fi; \
+		echo "  Waiting... (attempt $$i, got $$STATUS)"; \
+		sleep 3; \
+	done
 	@echo "Running E2E tests..."
 	@RUN_E2E_TESTS=1 uv run pytest tests/e2e/ -x -q; \
 		EXIT_CODE=$$?; \
@@ -52,6 +59,13 @@ smoke-production:
 verify-staging: smoke-staging
 	@echo "Enabling auth bypass on staging..."
 	@echo "true" | npx wrangler secret put DISABLE_AUTH --env staging
+	@echo "Waiting for secret propagation..."
+	@for i in 1 2 3 4 5 6 7 8 9 10; do \
+		STATUS=$$(curl -s -o /dev/null -w '%{http_code}' https://tasche-staging.adewale-883.workers.dev/api/articles); \
+		if [ "$$STATUS" != "401" ]; then echo "Auth bypass active (attempt $$i)"; break; fi; \
+		echo "  Waiting... (attempt $$i, got $$STATUS)"; \
+		sleep 3; \
+	done
 	@echo "Running E2E + Playwright tests..."
 	@RUN_E2E_TESTS=1 uv run pytest tests/e2e/ -x -q; \
 		PYTEST_EXIT=$$?; \
