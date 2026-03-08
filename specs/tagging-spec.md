@@ -1,10 +1,10 @@
 # Tagging Spec: Minimal Implementation
 
-_Last updated: 2026-03-07_
+_Last updated: 2026-03-08_
 
 ## Goal
 
-Give the user a way to organize articles with tags. Ship the smallest useful version: create tags, apply them to articles, filter by them, manage them. No AI, no auto-tagging rules, no bulk operations — those come later.
+Give the user a way to organize articles with tags. Ship the smallest useful version: create tags, apply them to articles, filter by them (including multi-tag intersection), manage them. Autocomplete prevents tag sprawl. No AI, no auto-tagging rules, no bulk operations — those come later.
 
 ---
 
@@ -127,15 +127,17 @@ Response: 200 [
 
 ### Article Listing — Tag Filtering
 
-`GET /api/articles` gains an optional `tag` query parameter:
+`GET /api/articles` accepts one or more `tag` query parameters:
 
 ```
 GET /api/articles?tag=abc123&status=unread&limit=20
+GET /api/articles?tag=abc123&tag=def456&limit=20
 ```
 
-- Filters to articles that have the given tag.
-- Implemented via `INNER JOIN article_tags ON ... WHERE tag_id = ?`.
-- Single-tag filtering only in this phase. Multi-tag comes later.
+- **Single tag:** `INNER JOIN article_tags ON ... WHERE tag_id = ?`.
+- **Multiple tags (intersection):** articles must have _all_ specified tags. Implemented via `INNER JOIN article_tags ... WHERE tag_id IN (?, ?) GROUP BY articles.id HAVING COUNT(DISTINCT article_tags.tag_id) = ?` where the final `?` is the number of tags provided.
+- **Limit: up to 4 tags.** Pinboard proved this ceiling is sufficient for power users. Reject >4 with 400.
+- Combines with existing `status`, `limit`, `offset`, and `search` parameters.
 
 ### Tags Inline on Articles
 
@@ -182,7 +184,22 @@ A management screen for all tags.
 
 ### Tag Chips on Article Cards
 
-In the library grid, each article card shows its tags as small clickable chips below the title/domain line. Clicking a chip navigates to the library filtered by that tag.
+In the library grid, each article card shows its tags as small clickable chips below the title/domain line.
+
+```
+┌──────────────────────────────────┐
+│  Article Title                   │
+│  example.com · 5 min             │
+│  [python] [cloudflare]           │
+└──────────────────────────────────┘
+```
+
+**Behavior:**
+- Chips render in alphabetical order, matching the tag list sort.
+- Clicking a chip navigates to `#/?tag={tag_id}` (library filtered by that tag).
+- If an article has more than 3 tags, show the first 3 and a `+N` overflow indicator. This prevents cards from growing unbounded.
+- Chip styling: small, muted background, readable text. No tag colors (consistent with "tags are just names" decision).
+- When a tag filter is active, the matching chip is visually highlighted (e.g. bolder weight or filled background) so the user can see why this article is in the filtered view.
 
 ### Tag Picker in Reader View
 
@@ -210,6 +227,40 @@ When reading an article, a tag icon opens a picker to add/remove tags.
 - If the typed text doesn't match any existing tag, show a "Create {name}" option at the bottom that creates the tag and applies it in one step.
 - **Autocomplete prioritizes existing tags.** This is the single most important UX decision for preventing tag sprawl.
 - On mobile: disable `autocapitalize`, `autocorrect`, and `spellcheck` on the input.
+
+### Tag Autocomplete
+
+Autocomplete is the shared interaction model used wherever a user picks a tag — the Tag Picker in Reader view, the tag input in the Tags management view, and the tag filter bar in the library.
+
+**How it works:**
+1. **On focus:** Show all existing tags (minus already-applied ones), sorted alphabetically. No typing required — the full list is visible immediately.
+2. **As the user types:** Filter the list to tags whose names contain the typed substring (case-insensitive). Highlight the matching portion in each suggestion.
+3. **Keyboard navigation:** Arrow keys move through suggestions, `Enter` selects the highlighted tag, `Escape` closes the dropdown.
+4. **Create-on-the-fly:** If the typed text has no exact match, a "Create {name}" option appears at the bottom of the list, visually distinct from existing tags. Selecting it creates the tag via `POST /api/tags` and immediately applies it.
+5. **No duplicate creation:** If the typed text matches an existing tag (case-insensitive), the "Create" option does not appear — the existing tag is offered instead.
+
+**Why this matters:** Research shows autocomplete is table-stakes UX. Pinboard, Raindrop, and Readwise all do it. Without it, users create "javascript", "JavaScript", and "JS" as separate tags. Autocomplete that strongly favours existing tags is the primary defence against tag sprawl — more effective than merge or cleanup tools after the fact.
+
+### Tag Filter Bar in Library
+
+When the user filters by tag (via chip click or Tags view), the library shows an active filter bar above the article grid.
+
+```
+┌─────────────────────────────────────────────┐
+│  Filtering by: [python ×] [cloudflare ×]    │
+│  [+ Add tag filter...]           [Clear all]│
+├─────────────────────────────────────────────┤
+│  (filtered article grid)                    │
+└─────────────────────────────────────────────┘
+```
+
+**Behavior:**
+- Each active filter tag is a removable chip (click × to remove that filter).
+- "Add tag filter" opens an autocomplete dropdown (same component as Tag Picker) to add another tag to the intersection.
+- "Clear all" removes all tag filters and returns to the unfiltered view.
+- URL reflects the filter state: `#/?tag=abc123&tag=def456`. This makes filtered views shareable/bookmarkable.
+- When filtering by multiple tags, the result is an **intersection** — articles must have all selected tags. This matches Pinboard's proven model.
+- The filter bar combines with the existing status tabs (unread/archived). Selecting a status tab preserves the active tag filters.
 
 ### State Management
 
@@ -254,7 +305,6 @@ These are all good features. They are not in this spec.
 |---------|-----------|
 | Auto-tagging rules (domain/URL/title patterns) | Adds a `tag_rules` table, rule engine in the queue consumer, and a rules management UI. Spec it separately. |
 | AI-suggested tags | Requires prompt design, Workers AI integration in the queue consumer, and a suggestion UX. Spec it separately. |
-| Multi-tag filtering | Single-tag filtering covers the common case. Multi-tag adds query builder UI complexity. |
 | Tag merge | Rename covers 80% of the need. Merge requires a picker UI for selecting the target tag. |
 | Bulk tagging from library | Requires a selection mode in the library grid (checkboxes, action bar). |
 | Keyboard shortcuts (`T` to tag) | Nice but not minimal. Add after the core works. |
@@ -298,3 +348,5 @@ Unit tests in `tests/unit/test_tags.py` covering:
 4. **Ownership**: cannot access another user's tags or articles (404).
 5. **Cascade**: deleting a tag removes associations; deleting an article removes associations.
 6. **Article listing**: `?tag=` filter returns correct subset; tags appear inline on articles.
+7. **Multi-tag filtering**: `?tag=a&tag=b` returns only articles with both tags; 3–4 tags work; >4 tags returns 400.
+8. **Tag chips**: articles with >3 tags show overflow indicator; chip click produces correct filter URL.
