@@ -19,8 +19,8 @@ from fastapi.testclient import TestClient
 from src.articles.routes import _sanitize_fts5_query, router
 from tests.conftest import (
     ArticleFactory,
-    MockD1,
     MockEnv,
+    TrackingD1,
     make_test_helpers,
 )
 
@@ -38,28 +38,54 @@ def _article_with_tags(**overrides: Any) -> dict[str, Any]:
     return article
 
 
+async def _search_client(
+    result_fn: Any = None,
+) -> tuple[TestClient, TrackingD1]:
+    """Create an authenticated client with a TrackingD1 that records SQL.
+
+    Returns ``(client, db)`` so tests can inspect ``db.executed``.
+    """
+    db = TrackingD1(result_fn=result_fn)
+    env = MockEnv(db=db)
+    client, _ = await _authenticated_client(env)
+    return client, db
+
+
+def _select_sql(db: TrackingD1) -> str:
+    """Return the SQL of the first SELECT statement executed."""
+    for sql, _ in db.executed:
+        if "SELECT" in sql:
+            return sql
+    raise AssertionError("No SELECT statement was executed")
+
+
+def _select_params(db: TrackingD1) -> list[Any]:
+    """Return the params of the first SELECT statement executed."""
+    for sql, params in db.executed:
+        if "SELECT" in sql:
+            return params
+    raise AssertionError("No SELECT statement was executed")
+
+
 # ---------------------------------------------------------------------------
-# GET /api/articles?q=... — Full-text search as composable filter
+# GET /api/articles?q=... — behavioral tests (response shape, not SQL)
 # ---------------------------------------------------------------------------
 
 
-class TestSearchArticles:
+class TestSearchBehavior:
     async def test_returns_matching_articles(self) -> None:
-        """GET /api/articles?q=python returns articles matching the query."""
+        """Search returns articles and preserves their field values."""
         articles = [
             _article_with_tags(user_id="user_001", title="Learn Python"),
             _article_with_tags(user_id="user_001", title="Python Tips"),
         ]
 
-        def execute(sql: str, params: list) -> list:
-            if "articles_fts MATCH ?" in sql:
+        def result_fn(sql, params):
+            if "MATCH" in sql:
                 return articles
             return []
 
-        db = MockD1(execute=execute)
-        env = MockEnv(db=db)
-
-        client, session_id = await _authenticated_client(env)
+        client, _ = await _search_client(result_fn)
         resp = client.get("/api/articles?q=python")
 
         assert resp.status_code == 200
@@ -69,17 +95,16 @@ class TestSearchArticles:
         assert data[1]["title"] == "Python Tips"
 
     async def test_search_results_include_tags(self) -> None:
-        """Search results include tags (same shape as list without search)."""
+        """Search results include parsed tags (same shape as list without search)."""
         article = _article_with_tags(
             user_id="user_001",
             title="Tagged Article",
             tags_json=json.dumps([{"id": "t1", "name": "python"}]),
         )
 
-        db = MockD1(execute=lambda sql, params: [article] if "MATCH" in sql else [])
-        env = MockEnv(db=db)
-
-        client, session_id = await _authenticated_client(env)
+        client, _ = await _search_client(
+            result_fn=lambda sql, params: [article] if "MATCH" in sql else [],
+        )
         resp = client.get("/api/articles?q=tagged")
 
         assert resp.status_code == 200
@@ -87,99 +112,155 @@ class TestSearchArticles:
         assert len(data) == 1
         assert data[0]["tags"] == [{"id": "t1", "name": "python"}]
 
-    async def test_filters_by_user_id(self) -> None:
-        """GET /api/articles?q=test ensures user_id is in the SQL query."""
-        captured: list[dict[str, Any]] = []
+    async def test_search_results_include_multiple_tags(self) -> None:
+        """Articles with multiple tags have all tags in the response."""
+        tags = [{"id": "t1", "name": "python"}, {"id": "t2", "name": "tutorial"}]
+        article = _article_with_tags(
+            user_id="user_001",
+            tags_json=json.dumps(tags),
+        )
 
-        def execute(sql: str, params: list) -> list:
-            captured.append({"sql": sql, "params": params})
-            return []
+        client, _ = await _search_client(
+            result_fn=lambda sql, params: [article] if "MATCH" in sql else [],
+        )
+        resp = client.get("/api/articles?q=test")
 
-        db = MockD1(execute=execute)
-        env = MockEnv(db=db)
+        assert resp.status_code == 200
+        assert resp.json()[0]["tags"] == tags
 
-        client, session_id = await _authenticated_client(env)
-        client.get("/api/articles?q=test")
+    async def test_null_tags_filtered_from_response(self) -> None:
+        """json_group_array produces [null] for zero tags — nulls are stripped."""
+        article = _article_with_tags(
+            user_id="user_001",
+            tags_json=json.dumps([None]),
+        )
 
-        select_calls = [c for c in captured if "SELECT" in c["sql"]]
-        assert len(select_calls) >= 1
-        assert "user_id = ?" in select_calls[0]["sql"]
-        assert "user_001" in select_calls[0]["params"]
+        client, _ = await _search_client(
+            result_fn=lambda sql, params: [article] if "MATCH" in sql else [],
+        )
+        resp = client.get("/api/articles?q=test")
 
-    async def test_uses_fts5_match(self) -> None:
-        """GET /api/articles?q=cloudflare uses FTS5 MATCH in the SQL query."""
-        captured: list[dict[str, Any]] = []
+        assert resp.status_code == 200
+        assert resp.json()[0]["tags"] == []
 
-        def execute(sql: str, params: list) -> list:
-            captured.append({"sql": sql, "params": params})
-            return []
-
-        db = MockD1(execute=execute)
-        env = MockEnv(db=db)
-
-        client, session_id = await _authenticated_client(env)
-        client.get("/api/articles?q=cloudflare")
-
-        select_calls = [c for c in captured if "SELECT" in c["sql"]]
-        assert len(select_calls) >= 1
-        sql = select_calls[0]["sql"]
-        assert "articles_fts MATCH ?" in sql
-        assert "INNER JOIN articles_fts" in sql
-        params = select_calls[0]["params"]
-        assert any("cloudflare" in str(p) for p in params)
-
-    async def test_empty_q_returns_all_articles(self) -> None:
-        """GET /api/articles?q= (empty) returns articles without FTS5 filter."""
+    async def test_empty_search_returns_all(self) -> None:
+        """GET /api/articles?q= (empty) behaves like unfiltered list."""
         articles = [_article_with_tags(user_id="user_001")]
 
-        captured: list[dict[str, Any]] = []
-
-        def execute(sql: str, params: list) -> list:
-            captured.append({"sql": sql, "params": params})
-            return articles
-
-        db = MockD1(execute=execute)
-        env = MockEnv(db=db)
-
-        client, session_id = await _authenticated_client(env)
+        client, db = await _search_client(
+            result_fn=lambda sql, params: articles,
+        )
         resp = client.get("/api/articles?q=")
 
         assert resp.status_code == 200
-        # Empty q should not trigger FTS5 join
-        select_calls = [c for c in captured if "SELECT" in c["sql"]]
-        if select_calls:
-            assert "articles_fts MATCH" not in select_calls[0]["sql"]
+        assert len(resp.json()) == 1
+        # Empty q must not trigger FTS5
+        sql = _select_sql(db)
+        assert "MATCH" not in sql
 
-    async def test_returns_empty_list_for_no_matches(self) -> None:
-        """GET /api/articles?q=nonexistent returns an empty list."""
-        db = MockD1(execute=lambda sql, params: [])
-        env = MockEnv(db=db)
+    async def test_whitespace_only_search_returns_all(self) -> None:
+        """GET /api/articles?q=%20%20 (spaces) behaves like unfiltered list."""
+        articles = [_article_with_tags(user_id="user_001")]
 
-        client, session_id = await _authenticated_client(env)
+        client, db = await _search_client(
+            result_fn=lambda sql, params: articles,
+        )
+        resp = client.get("/api/articles?q=%20%20")
+
+        assert resp.status_code == 200
+        sql = _select_sql(db)
+        assert "MATCH" not in sql
+
+    async def test_operator_only_query_returns_all(self) -> None:
+        """GET /api/articles?q=*** (all-operator input) skips FTS5."""
+        articles = [_article_with_tags(user_id="user_001")]
+
+        client, db = await _search_client(
+            result_fn=lambda sql, params: articles,
+        )
+        resp = client.get("/api/articles?q=***")
+
+        assert resp.status_code == 200
+        sql = _select_sql(db)
+        assert "MATCH" not in sql
+
+    async def test_no_matches_returns_empty_list(self) -> None:
+        """Search with no results returns an empty JSON array, not 404."""
+        client, _ = await _search_client()
         resp = client.get("/api/articles?q=nonexistent")
 
         assert resp.status_code == 200
         assert resp.json() == []
 
-    async def test_respects_limit_and_offset(self) -> None:
-        """GET /api/articles?q=test&limit=5&offset=10 passes pagination params."""
-        captured: list[dict[str, Any]] = []
+    async def test_response_excludes_tags_json_field(self) -> None:
+        """The raw tags_json column is removed; only parsed 'tags' remains."""
+        article = _article_with_tags(user_id="user_001")
 
-        def execute(sql: str, params: list) -> list:
-            captured.append({"sql": sql, "params": params})
-            return []
+        client, _ = await _search_client(
+            result_fn=lambda sql, params: [article] if "MATCH" in sql else [],
+        )
+        resp = client.get("/api/articles?q=test")
 
-        db = MockD1(execute=execute)
-        env = MockEnv(db=db)
+        data = resp.json()
+        assert len(data) == 1
+        assert "tags_json" not in data[0]
+        assert "tags" in data[0]
 
-        client, session_id = await _authenticated_client(env)
-        client.get("/api/articles?q=test&limit=5&offset=10")
 
-        select_calls = [c for c in captured if "SELECT" in c["sql"]]
-        assert len(select_calls) >= 1
-        params = select_calls[0]["params"]
-        assert params[-2] == 5
-        assert params[-1] == 10
+# ---------------------------------------------------------------------------
+# SQL structure — verify the query is built correctly
+# ---------------------------------------------------------------------------
+
+
+class TestSearchSqlStructure:
+    async def test_search_uses_fts5_inner_join(self) -> None:
+        """When q is present, SQL has INNER JOIN articles_fts with MATCH."""
+        client, db = await _search_client()
+        client.get("/api/articles?q=cloudflare")
+
+        sql = _select_sql(db)
+        assert "INNER JOIN articles_fts ON articles.rowid = articles_fts.rowid" in sql
+        assert "articles_fts MATCH ?" in sql
+
+    async def test_search_scopes_to_user(self) -> None:
+        """Search always includes user_id in WHERE clause."""
+        client, db = await _search_client()
+        client.get("/api/articles?q=test")
+
+        sql = _select_sql(db)
+        params = _select_params(db)
+        assert "articles.user_id = ?" in sql
+        assert "user_001" in params
+
+    async def test_sanitized_query_passed_as_param(self) -> None:
+        """The FTS5 MATCH param is the sanitized (quoted) query, not raw input."""
+        client, db = await _search_client()
+        client.get("/api/articles?q=hello+world")
+
+        params = _select_params(db)
+        # user_id is first, sanitized query is second
+        assert params[1] == '"hello" "world"'
+
+    async def test_columns_prefixed_with_table_name(self) -> None:
+        """All selected columns are prefixed with 'articles.' to avoid ambiguity."""
+        client, db = await _search_client()
+        client.get("/api/articles?q=test")
+
+        sql = _select_sql(db)
+        assert "articles.id" in sql
+        assert "articles.title" in sql
+        assert "articles.user_id" in sql
+
+    async def test_no_fts_join_without_query(self) -> None:
+        """Without q, no FTS5 join is present and default sort is newest."""
+        client, db = await _search_client(
+            result_fn=lambda sql, params: [],
+        )
+        client.get("/api/articles")
+
+        sql = _select_sql(db)
+        assert "articles_fts" not in sql
+        assert "ORDER BY created_at DESC" in sql
 
 
 # ---------------------------------------------------------------------------
@@ -189,455 +270,122 @@ class TestSearchArticles:
 
 class TestSearchComposesWithFilters:
     async def test_search_with_reading_status(self) -> None:
-        """GET /api/articles?q=test&reading_status=unread combines both filters."""
-        captured: list[dict[str, Any]] = []
-
-        def execute(sql: str, params: list) -> list:
-            captured.append({"sql": sql, "params": params})
-            return []
-
-        db = MockD1(execute=execute)
-        env = MockEnv(db=db)
-
-        client, session_id = await _authenticated_client(env)
+        """q + reading_status both appear in WHERE clause."""
+        client, db = await _search_client()
         client.get("/api/articles?q=test&reading_status=unread")
 
-        select_calls = [c for c in captured if "SELECT" in c["sql"]]
-        sql = select_calls[0]["sql"]
+        sql = _select_sql(db)
         assert "articles_fts MATCH ?" in sql
-        assert "reading_status = ?" in sql
+        assert "articles.reading_status = ?" in sql
+        params = _select_params(db)
+        assert "unread" in params
 
     async def test_search_with_tag(self) -> None:
-        """GET /api/articles?q=test&tag=t1 combines search and tag filters."""
-        captured: list[dict[str, Any]] = []
-
-        def execute(sql: str, params: list) -> list:
-            captured.append({"sql": sql, "params": params})
-            return []
-
-        db = MockD1(execute=execute)
-        env = MockEnv(db=db)
-
-        client, session_id = await _authenticated_client(env)
+        """q + tag produces both FTS5 MATCH and tag subquery."""
+        client, db = await _search_client()
         client.get("/api/articles?q=test&tag=t1")
 
-        select_calls = [c for c in captured if "SELECT" in c["sql"]]
-        sql = select_calls[0]["sql"]
+        sql = _select_sql(db)
         assert "articles_fts MATCH ?" in sql
         assert "article_tags WHERE tag_id = ?" in sql
+        params = _select_params(db)
+        assert "t1" in params
+
+    async def test_search_with_is_favorite(self) -> None:
+        """q + is_favorite both appear in WHERE clause."""
+        client, db = await _search_client()
+        client.get("/api/articles?q=test&is_favorite=true")
+
+        sql = _select_sql(db)
+        assert "articles_fts MATCH ?" in sql
+        assert "articles.is_favorite = ?" in sql
+        params = _select_params(db)
+        assert 1 in params  # True -> 1
+
+    async def test_search_with_audio_status(self) -> None:
+        """q + audio_status both appear in WHERE clause."""
+        client, db = await _search_client()
+        client.get("/api/articles?q=test&audio_status=ready")
+
+        sql = _select_sql(db)
+        assert "articles_fts MATCH ?" in sql
+        assert "articles.audio_status = ?" in sql
+
+    async def test_search_with_status(self) -> None:
+        """q + status both appear in WHERE clause."""
+        client, db = await _search_client()
+        client.get("/api/articles?q=test&status=ready")
+
+        sql = _select_sql(db)
+        assert "articles_fts MATCH ?" in sql
+        assert "articles.status = ?" in sql
+
+    async def test_all_filters_compose(self) -> None:
+        """q + reading_status + tag + is_favorite all compose in one query."""
+        client, db = await _search_client()
+        client.get("/api/articles?q=test&reading_status=unread&tag=t1&is_favorite=true")
+
+        sql = _select_sql(db)
+        assert "articles_fts MATCH ?" in sql
+        assert "articles.reading_status = ?" in sql
+        assert "article_tags WHERE tag_id = ?" in sql
+        assert "articles.is_favorite = ?" in sql
 
     async def test_search_defaults_to_relevance_ordering(self) -> None:
-        """When q is provided without sort, results are ordered by FTS5 rank."""
-        captured: list[dict[str, Any]] = []
-
-        def execute(sql: str, params: list) -> list:
-            captured.append({"sql": sql, "params": params})
-            return []
-
-        db = MockD1(execute=execute)
-        env = MockEnv(db=db)
-
-        client, session_id = await _authenticated_client(env)
+        """When q is provided without sort, ORDER BY is FTS5 rank."""
+        client, db = await _search_client()
         client.get("/api/articles?q=test")
 
-        select_calls = [c for c in captured if "SELECT" in c["sql"]]
-        sql = select_calls[0]["sql"]
+        sql = _select_sql(db)
         assert "ORDER BY articles_fts.rank" in sql
 
-    async def test_search_with_explicit_sort(self) -> None:
-        """When q and sort are both provided, sort overrides FTS5 rank ordering."""
-        captured: list[dict[str, Any]] = []
-
-        def execute(sql: str, params: list) -> list:
-            captured.append({"sql": sql, "params": params})
-            return []
-
-        db = MockD1(execute=execute)
-        env = MockEnv(db=db)
-
-        client, session_id = await _authenticated_client(env)
+    async def test_explicit_sort_overrides_relevance(self) -> None:
+        """When q and sort are both provided, sort wins over FTS5 rank."""
+        client, db = await _search_client()
         client.get("/api/articles?q=test&sort=oldest")
 
-        select_calls = [c for c in captured if "SELECT" in c["sql"]]
-        sql = select_calls[0]["sql"]
+        sql = _select_sql(db)
         assert "ORDER BY created_at ASC" in sql
-
-
-# ---------------------------------------------------------------------------
-# FTS5 query sanitization
-# ---------------------------------------------------------------------------
-
-
-class TestFts5Sanitization:
-    async def test_wraps_words_in_quotes(self) -> None:
-        """Multi-word query becomes quoted tokens: "hello" "world"."""
-        captured: list[dict[str, Any]] = []
-
-        def execute(sql: str, params: list) -> list:
-            captured.append({"sql": sql, "params": params})
-            return []
-
-        db = MockD1(execute=execute)
-        env = MockEnv(db=db)
-
-        client, session_id = await _authenticated_client(env)
-        client.get("/api/articles?q=hello+world")
-
-        select_calls = [c for c in captured if "MATCH" in c["sql"]]
-        assert len(select_calls) >= 1
-        query_param = select_calls[0]["params"][1]  # [user_id, query, ...]
-        assert query_param == '"hello" "world"'
-
-    async def test_strips_fts5_operators(self) -> None:
-        """FTS5 operator characters are stripped from search queries."""
-        captured: list[dict[str, Any]] = []
-
-        def execute(sql: str, params: list) -> list:
-            captured.append({"sql": sql, "params": params})
-            return []
-
-        db = MockD1(execute=execute)
-        env = MockEnv(db=db)
-
-        client, session_id = await _authenticated_client(env)
-        client.get("/api/articles?q=test*+OR+evil")
-
-        select_calls = [c for c in captured if "MATCH" in c["sql"]]
-        query_param = select_calls[0]["params"][1]
-        assert '"test"' in query_param
-        assert '"OR"' in query_param
-        assert '"evil"' in query_param
-        assert "*" not in query_param
-
-
-class TestSearchSqlStructure:
-    async def test_uses_inner_join_with_fts5(self) -> None:
-        """Search query uses INNER JOIN with articles_fts, not subquery."""
-        captured: list[dict[str, Any]] = []
-
-        def execute(sql: str, params: list) -> list:
-            captured.append({"sql": sql, "params": params})
-            return []
-
-        db = MockD1(execute=execute)
-        env = MockEnv(db=db)
-
-        client, session_id = await _authenticated_client(env)
-        client.get("/api/articles?q=test")
-
-        select_calls = [c for c in captured if "SELECT" in c["sql"]]
-        sql = select_calls[0]["sql"]
-        assert "INNER JOIN articles_fts ON articles.rowid = articles_fts.rowid" in sql
-        assert "ORDER BY bm25(articles_fts, 10.0, 5.0, 1.0)" in sql
-
-    async def test_prefixes_columns_with_articles_table(self) -> None:
-        """Search query prefixes columns with 'articles.' to avoid ambiguity."""
-        captured: list[dict[str, Any]] = []
-
-        def execute(sql: str, params: list) -> list:
-            captured.append({"sql": sql, "params": params})
-            return []
-
-        db = MockD1(execute=execute)
-        env = MockEnv(db=db)
-
-        client, session_id = await _authenticated_client(env)
-        client.get("/api/articles?q=test")
-
-        select_calls = [c for c in captured if "SELECT" in c["sql"]]
-        sql = select_calls[0]["sql"]
-        assert "articles.id" in sql
-        assert "articles.title" in sql
-
-
-class TestBm25ColumnWeights:
-    """Verify bm25() column weights boost title > excerpt > content."""
-
-    async def _get_search_sql(self) -> str:
-        captured: list[dict[str, Any]] = []
-
-        def execute(sql: str, params: list) -> list:
-            captured.append({"sql": sql, "params": params})
-            return []
-
-        db = MockD1(execute=execute)
-        env = MockEnv(db=db)
-
-        client, session_id = await _authenticated_client(env)
-        client.get("/api/search?q=test")
-
-        select_calls = [c for c in captured if "SELECT" in c["sql"]]
-        return select_calls[0]["sql"]
-
-    async def test_uses_bm25_not_default_rank(self) -> None:
-        """Search uses bm25() function, not the default articles_fts.rank."""
-        sql = await self._get_search_sql()
-        assert "bm25(" in sql
         assert "articles_fts.rank" not in sql
 
-    async def test_title_weight_exceeds_excerpt_weight(self) -> None:
-        """Title weight (10.0) is higher than excerpt weight (5.0)."""
-        import re
+    async def test_pagination_params_passed_through(self) -> None:
+        """limit and offset are the last two params in the query."""
+        client, db = await _search_client()
+        client.get("/api/articles?q=test&limit=5&offset=10")
 
-        sql = await self._get_search_sql()
-        match = re.search(r"bm25\(articles_fts,\s*([\d.]+),\s*([\d.]+),\s*([\d.]+)\)", sql)
-        assert match, f"bm25() call not found in SQL: {sql}"
-        title_w, excerpt_w, content_w = (float(match.group(i)) for i in (1, 2, 3))
-        assert title_w > excerpt_w, f"title weight {title_w} should exceed excerpt {excerpt_w}"
-
-    async def test_excerpt_weight_exceeds_content_weight(self) -> None:
-        """Excerpt weight (5.0) is higher than content weight (1.0)."""
-        import re
-
-        sql = await self._get_search_sql()
-        match = re.search(r"bm25\(articles_fts,\s*([\d.]+),\s*([\d.]+),\s*([\d.]+)\)", sql)
-        assert match, f"bm25() call not found in SQL: {sql}"
-        title_w, excerpt_w, content_w = (float(match.group(i)) for i in (1, 2, 3))
-        assert excerpt_w > content_w, (
-            f"excerpt weight {excerpt_w} should exceed content weight {content_w}"
-        )
-
-    async def test_three_weights_match_fts5_columns(self) -> None:
-        """bm25() has exactly 3 weights matching FTS5 columns."""
-        import re
-
-        sql = await self._get_search_sql()
-        match = re.search(r"bm25\(articles_fts,\s*([\d.,\s]+)\)", sql)
-        assert match, f"bm25() call not found in SQL: {sql}"
-        weights = [w.strip() for w in match.group(1).split(",")]
-        assert len(weights) == 3, f"Expected 3 weights for 3 FTS5 columns, got {len(weights)}"
+        params = _select_params(db)
+        assert params[-2] == 5
+        assert params[-1] == 10
 
 
 # ---------------------------------------------------------------------------
-# SQLite-backed integration tests — run the actual search SQL against a real
-# FTS5 index to verify bm25() validity and ranking behavior.
+# Validation
 # ---------------------------------------------------------------------------
 
 
-def _create_test_db() -> sqlite3.Connection:
-    """Create an in-memory SQLite DB with articles + FTS5 tables and triggers."""
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    conn.execute("""
-        CREATE TABLE articles (
-            id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL,
-            original_url TEXT NOT NULL,
-            final_url TEXT,
-            canonical_url TEXT,
-            domain TEXT,
-            title TEXT,
-            excerpt TEXT,
-            author TEXT,
-            word_count INTEGER,
-            reading_time_minutes INTEGER,
-            image_count INTEGER DEFAULT 0,
-            status TEXT DEFAULT 'ready',
-            reading_status TEXT DEFAULT 'unread',
-            is_favorite INTEGER DEFAULT 0,
-            audio_key TEXT,
-            audio_duration_seconds INTEGER,
-            audio_status TEXT DEFAULT NULL,
-            html_key TEXT,
-            thumbnail_key TEXT,
-            original_key TEXT,
-            markdown_content TEXT,
-            original_status TEXT DEFAULT 'unknown',
-            last_checked_at TEXT DEFAULT NULL,
-            scroll_position REAL DEFAULT 0,
-            reading_progress REAL DEFAULT 0,
-            created_at TEXT DEFAULT '2026-01-01T00:00:00.000+00:00',
-            updated_at TEXT DEFAULT '2026-01-01T00:00:00.000+00:00'
-        )
-    """)
-    conn.execute("""
-        CREATE VIRTUAL TABLE articles_fts USING fts5(
-            title, excerpt, markdown_content,
-            content=articles, content_rowid=rowid
-        )
-    """)
-    # Content-sync triggers (same as 0001_initial.sql)
-    conn.execute("""
-        CREATE TRIGGER articles_fts_ai AFTER INSERT ON articles BEGIN
-            INSERT INTO articles_fts(rowid, title, excerpt, markdown_content)
-            VALUES (new.rowid, new.title, new.excerpt, new.markdown_content);
-        END
-    """)
-    conn.execute("""
-        CREATE TRIGGER articles_fts_au AFTER UPDATE ON articles BEGIN
-            INSERT INTO articles_fts(articles_fts, rowid, title, excerpt, markdown_content)
-            VALUES ('delete', old.rowid, old.title, old.excerpt, old.markdown_content);
-            INSERT INTO articles_fts(rowid, title, excerpt, markdown_content)
-            VALUES (new.rowid, new.title, new.excerpt, new.markdown_content);
-        END
-    """)
-    return conn
+class TestSearchValidation:
+    async def test_invalid_sort_returns_422(self) -> None:
+        """Invalid sort value is rejected even when searching."""
+        client, _ = await _search_client()
+        resp = client.get("/api/articles?q=test&sort=invalid")
+        assert resp.status_code == 422
+
+    async def test_invalid_reading_status_returns_422(self) -> None:
+        """Invalid reading_status is rejected even when searching."""
+        client, _ = await _search_client()
+        resp = client.get("/api/articles?q=test&reading_status=bogus")
+        assert resp.status_code == 422
+
+    async def test_invalid_audio_status_returns_422(self) -> None:
+        """Invalid audio_status is rejected even when searching."""
+        client, _ = await _search_client()
+        resp = client.get("/api/articles?q=test&audio_status=bogus")
+        assert resp.status_code == 422
 
 
-def _insert_article(
-    conn: sqlite3.Connection,
-    *,
-    id: str,
-    title: str = "",
-    excerpt: str = "",
-    markdown_content: str = "",
-    user_id: str = "user_001",
-) -> None:
-    conn.execute(
-        """INSERT INTO articles (id, user_id, original_url, title, excerpt, markdown_content)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (id, user_id, f"https://example.com/{id}", title, excerpt, markdown_content),
-    )
-
-
-def _search(conn: sqlite3.Connection, query: str, user_id: str = "user_001") -> list[dict]:
-    """Run the same SQL the search endpoint generates against real SQLite."""
-    prefixed = ", ".join(f"articles.{c.strip()}" for c in _LIST_COLUMNS.split(","))
-    sql = (
-        f"SELECT {prefixed} FROM articles "
-        "INNER JOIN articles_fts ON articles.rowid = articles_fts.rowid "
-        "WHERE articles_fts MATCH ? AND articles.user_id = ? "
-        "ORDER BY bm25(articles_fts, 10.0, 5.0, 1.0) "
-        "LIMIT ? OFFSET ?"
-    )
-    rows = conn.execute(sql, (f'"{query}"', user_id, 20, 0)).fetchall()
-    return [dict(r) for r in rows]
-
-
-class TestBm25SqliteIntegration:
-    """Run the search SQL against a real SQLite FTS5 index."""
-
-    def test_bm25_query_is_valid_sql(self) -> None:
-        """The bm25() ORDER BY clause is valid SQLite syntax."""
-        conn = _create_test_db()
-        _insert_article(conn, id="a1", title="Test article")
-        # Should not raise — proves the SQL is valid
-        results = _search(conn, "test")
-        assert len(results) == 1
-        assert results[0]["id"] == "a1"
-
-    def test_title_match_ranks_above_content_match(self) -> None:
-        """An article with the query in its title ranks above one with it only in content."""
-        conn = _create_test_db()
-        _insert_article(
-            conn,
-            id="content_only",
-            title="Unrelated Topic",
-            excerpt="Nothing here",
-            markdown_content="This article discusses python programming at length",
-        )
-        _insert_article(
-            conn,
-            id="title_match",
-            title="Python Programming Guide",
-            excerpt="Not relevant",
-            markdown_content="Some other content entirely",
-        )
-        results = _search(conn, "python")
-        assert len(results) == 2
-        assert results[0]["id"] == "title_match", (
-            f"Title match should rank first, got: {[r['id'] for r in results]}"
-        )
-
-    def test_excerpt_match_ranks_above_content_match(self) -> None:
-        """An article with the query in its excerpt ranks above one with it only in content."""
-        conn = _create_test_db()
-        _insert_article(
-            conn,
-            id="content_only",
-            title="Unrelated",
-            excerpt="Nothing relevant",
-            markdown_content="This covers rust language features in detail",
-        )
-        _insert_article(
-            conn,
-            id="excerpt_match",
-            title="Unrelated",
-            excerpt="A comprehensive guide to rust programming",
-            markdown_content="Other content",
-        )
-        results = _search(conn, "rust")
-        assert len(results) == 2
-        assert results[0]["id"] == "excerpt_match", (
-            f"Excerpt match should rank first, got: {[r['id'] for r in results]}"
-        )
-
-    def test_title_match_ranks_above_excerpt_match(self) -> None:
-        """Title match (10x weight) outranks excerpt match (5x weight)."""
-        conn = _create_test_db()
-        _insert_article(
-            conn,
-            id="excerpt_only",
-            title="Unrelated Topic",
-            excerpt="Learn everything about kubernetes orchestration",
-            markdown_content="Other content",
-        )
-        _insert_article(
-            conn,
-            id="title_match",
-            title="Kubernetes Deep Dive",
-            excerpt="Not relevant at all",
-            markdown_content="Other content",
-        )
-        results = _search(conn, "kubernetes")
-        assert len(results) == 2
-        assert results[0]["id"] == "title_match", (
-            f"Title match should rank above excerpt match, got: {[r['id'] for r in results]}"
-        )
-
-    def test_filters_by_user_id(self) -> None:
-        """Search results only include articles for the queried user."""
-        conn = _create_test_db()
-        _insert_article(conn, id="mine", title="My Python Article", user_id="user_001")
-        _insert_article(conn, id="theirs", title="Their Python Article", user_id="user_002")
-        results = _search(conn, "python", user_id="user_001")
-        assert len(results) == 1
-        assert results[0]["id"] == "mine"
-
-    def test_no_matches_returns_empty(self) -> None:
-        """Search for a term that doesn't exist returns an empty list."""
-        conn = _create_test_db()
-        _insert_article(conn, id="a1", title="Something else")
-        results = _search(conn, "nonexistent")
-        assert results == []
-
-    def test_result_contains_expected_columns(self) -> None:
-        """Search results include all columns from _LIST_COLUMNS."""
-        conn = _create_test_db()
-        _insert_article(conn, id="a1", title="Column Check")
-        conn.execute("UPDATE articles SET domain = 'example.com' WHERE id = 'a1'")
-        results = _search(conn, "column")
-        assert len(results) == 1
-        row = results[0]
-        for col in _LIST_COLUMNS.split(","):
-            col = col.strip()
-            assert col in row, f"Missing column {col} in search result"
-
-    @pytest.mark.parametrize(
-        "query",
-        ["python", "hello world", "café", "test123"],
-        ids=["simple", "multi_word", "unicode", "alphanumeric"],
-    )
-    def test_various_queries_execute_without_error(self, query: str) -> None:
-        """Various query patterns don't cause SQLite errors."""
-        conn = _create_test_db()
-        _insert_article(conn, id="a1", title="Python hello world café test123")
-        safe_q = _sanitize_fts5_query(query)
-        if safe_q:
-            _search_raw(conn, safe_q)
-
-
-def _search_raw(conn: sqlite3.Connection, fts_query: str, user_id: str = "user_001") -> list:
-    """Run search with a pre-sanitized FTS5 query string."""
-    prefixed = ", ".join(f"articles.{c.strip()}" for c in _LIST_COLUMNS.split(","))
-    sql = (
-        f"SELECT {prefixed} FROM articles "
-        "INNER JOIN articles_fts ON articles.rowid = articles_fts.rowid "
-        "WHERE articles_fts MATCH ? AND articles.user_id = ? "
-        "ORDER BY bm25(articles_fts, 10.0, 5.0, 1.0) "
-        "LIMIT ? OFFSET ?"
-    )
-    return conn.execute(sql, (fts_query, user_id, 20, 0)).fetchall()
+# ---------------------------------------------------------------------------
+# Auth
+# ---------------------------------------------------------------------------
 
 
 class TestSearchAuthRequired:
@@ -700,19 +448,17 @@ class TestSanitizeFts5Query:
         assert _sanitize_fts5_query("***") == ""
 
     def test_mixed_clean_and_dirty(self) -> None:
-        result = _sanitize_fts5_query("hello *** world")
-        assert result == '"hello" "world"'
+        assert _sanitize_fts5_query("hello *** world") == '"hello" "world"'
 
     def test_preserves_numbers(self) -> None:
         assert _sanitize_fts5_query("python3") == '"python3"'
 
     def test_preserves_unicode(self) -> None:
-        result = _sanitize_fts5_query("cafe\u0301")
-        assert "cafe" in result
+        result = _sanitize_fts5_query("café")
+        assert "caf" in result
 
     def test_fts5_operators_quoted_as_literals(self) -> None:
-        result = _sanitize_fts5_query("OR AND NOT")
-        assert result == '"OR" "AND" "NOT"'
+        assert _sanitize_fts5_query("OR AND NOT") == '"OR" "AND" "NOT"'
 
     def test_empty_string(self) -> None:
         assert _sanitize_fts5_query("") == ""
@@ -724,3 +470,13 @@ class TestSanitizeFts5Query:
         result = _sanitize_fts5_query("NEAR test")
         assert '"NEAR"' in result
         assert '"test"' in result
+
+    def test_preserves_hyphens_in_words(self) -> None:
+        # Hyphen is in the special chars set, so it's stripped
+        assert _sanitize_fts5_query("real-time") == '"realtime"'
+
+    def test_single_character_tokens(self) -> None:
+        assert _sanitize_fts5_query("a b c") == '"a" "b" "c"'
+
+    def test_mixed_case_preserved(self) -> None:
+        assert _sanitize_fts5_query("CloudFlare") == '"CloudFlare"'
