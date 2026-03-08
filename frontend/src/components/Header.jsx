@@ -86,7 +86,7 @@ export function Header({ readerMode }) {
           </a>
           <div class="header-actions">
             {syncing === 'syncing' && <span class="sync-status">Syncing...</span>}
-            <a href="#/search" class="btn btn-icon" title="Search">
+            <a href="#/?q=" class="btn btn-icon" title="Search">
               <IconSearch />
             </a>
             <div class="hamburger-menu" ref={menuRef}>

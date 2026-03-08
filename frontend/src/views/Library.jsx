@@ -10,6 +10,7 @@ import {
   IconArchive,
   IconTrash,
   IconX,
+  IconSearch,
 } from '../components/Icons.jsx';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts.js';
 import { toggleArchive, toggleFavorite, removeArticle } from '../articleActions.js';
@@ -26,6 +27,7 @@ import {
   pollArticleStatus,
   limit as limitSignal,
   showShortcuts,
+  searchQuery,
 } from '../state.js';
 import {
   listArticles,
@@ -70,7 +72,7 @@ function getSavedSort() {
   return 'newest';
 }
 
-export function Library({ tag }) {
+export function Library({ tag, q }) {
   const [saveUrl, setSaveUrl] = useState('');
   const [savingType, setSavingType] = useState(null); // null | 'save' | 'audio'
   const [bulkActing, setBulkActing] = useState(false);
@@ -79,6 +81,9 @@ export function Library({ tag }) {
   const [currentSort, setCurrentSort] = useState(getSavedSort);
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState(new Set());
+  const [searchInput, setSearchInput] = useState(q || '');
+  const searchInputRef = useRef(null);
+  const searchDebounceRef = useRef(null);
   const currentFilter = filterSignal.value;
   const articleList = articles.value;
   const isLoading = loadingSignal.value;
@@ -86,6 +91,13 @@ export function Library({ tag }) {
   const urlInputRef = useRef(null);
   const lastLoadTimeRef = useRef(0);
   const hasLoadedOnce = useRef(false);
+
+  // Sync search input when q prop changes (e.g. navigating to #/?q=...)
+  useEffect(() => {
+    setSearchInput(q || '');
+    searchQuery.value = q || '';
+  }, [q]);
+
   useEffect(() => {
     loadingSignal.value = true;
     articles.value = [];
@@ -94,7 +106,7 @@ export function Library({ tag }) {
     setSelectedIndex(-1);
     loadArticles(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentFilter, tag, currentSort]);
+  }, [currentFilter, tag, currentSort, q]);
 
   // Reset selectedIndex when article list changes
   useEffect(() => {
@@ -154,7 +166,7 @@ export function Library({ tag }) {
             }
           },
           '/': function () {
-            nav.search();
+            if (searchInputRef.current) searchInputRef.current.focus();
           },
           n: function () {
             if (urlInputRef.current) urlInputRef.current.focus();
@@ -173,7 +185,7 @@ export function Library({ tag }) {
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentFilter, tag, currentSort]);
+  }, [currentFilter, tag, currentSort, q]);
 
   // Scroll selected card into view
   useEffect(() => {
@@ -192,6 +204,9 @@ export function Library({ tag }) {
 
     try {
       const params = { limit: limitSignal.value, offset: currentOffset };
+      if (q) {
+        params.q = q;
+      }
       if (currentSort && currentSort !== 'newest') {
         params.sort = currentSort;
       }
@@ -374,6 +389,42 @@ export function Library({ tag }) {
     }
   }
 
+  function handleSearchInput(e) {
+    var val = e.target.value;
+    setSearchInput(val);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    var trimmed = val.trim();
+    if (trimmed) {
+      searchDebounceRef.current = setTimeout(function () {
+        nav.search(trimmed);
+      }, 300);
+    } else if (!val) {
+      // Cleared the input — go back to unfiltered library
+      if (q) nav.library();
+    }
+  }
+
+  function handleSearchKeyDown(e) {
+    if (e.key === 'Enter') {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+      var trimmed = searchInput.trim();
+      if (trimmed) {
+        nav.search(trimmed);
+      }
+    }
+    if (e.key === 'Escape') {
+      setSearchInput('');
+      if (q) nav.library();
+      if (searchInputRef.current) searchInputRef.current.blur();
+    }
+  }
+
+  function clearSearch() {
+    setSearchInput('');
+    searchQuery.value = '';
+    nav.library();
+  }
+
   function renderSkeletons() {
     return Array.from({ length: 3 }, function (_, i) {
       return (
@@ -438,7 +489,31 @@ export function Library({ tag }) {
                 </button>
               </div>
             </div>
-            <hr class="save-filter-divider" />
+            <div class="search-bar">
+              <div class="input-group">
+                <IconSearch size={16} />
+                <input
+                  ref={searchInputRef}
+                  class="input"
+                  type="search"
+                  placeholder="Search articles..."
+                  value={searchInput}
+                  onInput={handleSearchInput}
+                  onKeyDown={handleSearchKeyDown}
+                />
+                {q && (
+                  <button class="btn btn-sm btn-secondary" onClick={clearSearch} title="Clear search">
+                    <IconX size={14} />
+                  </button>
+                )}
+              </div>
+              {q && (
+                <div class="search-results-info">
+                  Searching for "{q}"
+                  {!isLoading && ' — ' + articleList.length + ' result' + (articleList.length !== 1 ? 's' : '')}
+                </div>
+              )}
+            </div>
             <div class="filter-bar">
               <div class="filter-tabs">
                 {FILTERS.map(function (f) {
@@ -524,9 +599,15 @@ export function Library({ tag }) {
 
         <div class="article-list">
           {articleList.length === 0 && !isLoading && (
-            <EmptyState icon={IconBookOpen} title="No articles yet">
-              Save a URL above to get started.
-            </EmptyState>
+            q ? (
+              <EmptyState title="No results found">
+                Try a different search query.
+              </EmptyState>
+            ) : (
+              <EmptyState icon={IconBookOpen} title="No articles yet">
+                Save a URL above to get started.
+              </EmptyState>
+            )
           )}
           {articleList.map(function (a, index) {
             return (

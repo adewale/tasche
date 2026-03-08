@@ -1122,7 +1122,7 @@ class TestListArticles:
         # Verify the query includes reading_status filter
         select_calls = [c for c in captured if "SELECT" in c["sql"]]
         assert len(select_calls) >= 1
-        assert "reading_status = ?" in select_calls[0]["sql"]
+        assert "articles.reading_status = ?" in select_calls[0]["sql"]
 
     async def test_default_sort_is_newest(self) -> None:
         """GET /api/articles without sort param orders by created_at DESC."""
@@ -1262,7 +1262,7 @@ class TestListArticles:
         select_calls = [c for c in captured if "SELECT" in c["sql"]]
         assert len(select_calls) >= 1
         sql = select_calls[0]["sql"]
-        assert "reading_status = ?" in sql
+        assert "articles.reading_status = ?" in sql
         assert "ORDER BY reading_time_minutes ASC NULLS LAST" in sql
 
 
@@ -1273,11 +1273,12 @@ class TestListArticles:
 
 class TestGetArticle:
     async def test_returns_single_article(self) -> None:
-        """GET /api/articles/{id} returns the article metadata."""
+        """GET /api/articles/{id} returns the article metadata with tags."""
         article = ArticleFactory.create(id="art_123", user_id="user_001")
+        article["tags_json"] = "[]"
 
         def execute(sql: str, params: list) -> list:
-            if "id = ?" in sql and params[0] == "art_123":
+            if "id = ?" in sql and "art_123" in params:
                 return [article]
             return []
 
@@ -1292,6 +1293,8 @@ class TestGetArticle:
         assert resp.status_code == 200
         data = resp.json()
         assert data["id"] == "art_123"
+        assert "tags" in data
+        assert isinstance(data["tags"], list)
 
     async def test_returns_404_for_missing_article(self) -> None:
         """GET /api/articles/{id} returns 404 when article doesn't exist."""
@@ -1767,7 +1770,7 @@ class TestFilterByAudioStatus:
 
         select_calls = [c for c in captured if "SELECT" in c["sql"]]
         assert len(select_calls) >= 1
-        assert "audio_status = ?" in select_calls[0]["sql"]
+        assert "articles.audio_status = ?" in select_calls[0]["sql"]
         assert "ready" in select_calls[0]["params"]
 
 
@@ -2121,7 +2124,7 @@ class TestFilterByStatus:
 
         select_calls = [c for c in captured if "SELECT" in c["sql"]]
         assert len(select_calls) >= 1
-        assert "status = ?" in select_calls[0]["sql"]
+        assert "articles.status = ?" in select_calls[0]["sql"]
         assert "ready" in select_calls[0]["params"]
 
     async def test_rejects_invalid_status(self) -> None:

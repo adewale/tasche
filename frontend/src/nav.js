@@ -8,8 +8,12 @@ export var nav = {
   articleMarkdown: function (id) {
     window.location.hash = '#/article/' + id + '/markdown';
   },
-  search: function () {
-    window.location.hash = '#/search';
+  search: function (q) {
+    if (q) {
+      window.location.hash = '#/?q=' + encodeURIComponent(q);
+    } else {
+      window.location.hash = '#/?q=';
+    }
   },
   tags: function () {
     window.location.hash = '#/tags';

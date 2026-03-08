@@ -13,8 +13,7 @@ export const articles = signal([]);
 // Tags
 export const tags = signal([]);
 
-// Search
-export const searchResults = signal([]);
+// Search (composed into the library list endpoint)
 export const searchQuery = signal('');
 
 // Filters & pagination

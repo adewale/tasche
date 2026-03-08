@@ -105,6 +105,7 @@ export async function performLogout() {
 // Articles
 export function listArticles(params) {
   const qs = new URLSearchParams();
+  if (params.q) qs.set('q', params.q);
   if (params.reading_status) qs.set('reading_status', params.reading_status);
   if (params.is_favorite !== undefined) qs.set('is_favorite', params.is_favorite);
   if (params.audio_status) qs.set('audio_status', params.audio_status);
@@ -180,14 +181,6 @@ export function getArticleContent(articleId) {
 // Article markdown from D1
 export function getArticleMarkdown(articleId) {
   return fetchText('/api/articles/' + articleId + '/markdown');
-}
-
-// Search
-export function searchArticles(q, limit, offset) {
-  const qs = new URLSearchParams({ q });
-  if (limit != null) qs.set('limit', limit);
-  if (offset != null) qs.set('offset', offset);
-  return request('GET', '/api/search?' + qs.toString());
 }
 
 // Tags

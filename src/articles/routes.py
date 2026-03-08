@@ -96,6 +96,26 @@ _VALID_SORT_OPTIONS: dict[str, str] = {
     "title_asc": "title ASC",
 }
 
+# Characters that have special meaning in FTS5 query syntax.
+_FTS5_SPECIAL_CHARS = set('"*+-^():{}[]|\\')
+
+
+def _sanitize_fts5_query(query: str) -> str:
+    """Sanitize a search query for safe use with FTS5 MATCH.
+
+    Wraps each word in double quotes so FTS5 treats them as literals,
+    stripping any FTS5 operator characters. Example:
+    ``hello world`` -> ``"hello" "world"``.
+    ``OR AND NOT`` -> ``"OR" "AND" "NOT"``
+    """
+    tokens = query.split()
+    safe_tokens = []
+    for token in tokens:
+        cleaned = "".join(ch for ch in token if ch not in _FTS5_SPECIAL_CHARS)
+        if cleaned:
+            safe_tokens.append(f'"{cleaned}"')
+    return " ".join(safe_tokens)
+
 
 def _validate_reading_status(value: str) -> None:
     """Raise 422 if *value* is not a valid reading_status."""
@@ -310,6 +330,7 @@ async def create_article(
 @router.get("")
 async def list_articles(
     request: Request,
+    q: str | None = Query(default=None),
     status: str | None = Query(default=None),
     reading_status: str | None = Query(default=None),
     is_favorite: bool | None = Query(default=None),
@@ -322,10 +343,14 @@ async def list_articles(
 ) -> list[dict[str, Any]]:
     """List the authenticated user's articles.
 
-    Supports optional filtering by ``status``, ``reading_status``,
-    ``is_favorite``, ``audio_status``, and ``tag``.  Results are ordered
-    according to ``sort`` (default ``newest`` / ``created_at DESC``) and
-    paginated via ``limit`` and ``offset``.
+    Supports optional filtering by ``q`` (full-text search), ``status``,
+    ``reading_status``, ``is_favorite``, ``audio_status``, and ``tag``.
+    All filters compose naturally — e.g. ``?q=python&tag=abc&reading_status=unread``
+    searches for "python" within unread articles tagged "abc".
+
+    When ``q`` is provided, results are ordered by FTS5 relevance unless
+    ``sort`` is explicitly set.  Results are paginated via ``limit`` and
+    ``offset``.
 
     Valid ``sort`` values: ``newest``, ``oldest``, ``shortest``,
     ``longest``, ``title_asc``.
@@ -333,6 +358,15 @@ async def list_articles(
     env = request.scope["env"]
     db = env.DB
     user_id = user["user_id"]
+
+    # Sanitize and validate search query if provided
+    safe_q: str | None = None
+    if q is not None:
+        q = q.strip()
+        if q:
+            safe_q = _sanitize_fts5_query(q)
+            if not safe_q:
+                safe_q = None
 
     # Validate enum query parameters
     if status is not None and status not in _VALID_STATUSES:
@@ -353,31 +387,50 @@ async def list_articles(
             detail=f"sort must be one of: {', '.join(sorted(_VALID_SORT_OPTIONS))}",
         )
 
-    where_clauses = ["user_id = ?"]
+    where_clauses = ["articles.user_id = ?"]
     params: list[Any] = [user_id]
 
+    # FTS5 search — join articles_fts when a search query is present
+    fts_join = ""
+    if safe_q:
+        fts_join = "INNER JOIN articles_fts ON articles.rowid = articles_fts.rowid"
+        where_clauses.append("articles_fts MATCH ?")
+        params.append(safe_q)
+
     if status is not None:
-        where_clauses.append("status = ?")
+        where_clauses.append("articles.status = ?")
         params.append(status)
 
     if reading_status is not None:
-        where_clauses.append("reading_status = ?")
+        where_clauses.append("articles.reading_status = ?")
         params.append(reading_status)
 
     if is_favorite is not None:
-        where_clauses.append("is_favorite = ?")
+        where_clauses.append("articles.is_favorite = ?")
         params.append(1 if is_favorite else 0)
 
     if audio_status is not None:
-        where_clauses.append("audio_status = ?")
+        where_clauses.append("articles.audio_status = ?")
         params.append(audio_status)
 
     if tag is not None:
-        where_clauses.append("id IN (SELECT article_id FROM article_tags WHERE tag_id = ?)")
+        where_clauses.append(
+            "articles.id IN (SELECT article_id FROM article_tags WHERE tag_id = ?)"
+        )
         params.append(tag)
 
     where = " AND ".join(where_clauses)
-    order_by = _VALID_SORT_OPTIONS.get(sort, _VALID_SORT_OPTIONS["newest"])
+
+    # When searching, default to FTS5 relevance ordering; otherwise newest first.
+    if sort is not None:
+        order_by = _VALID_SORT_OPTIONS[sort]
+    elif safe_q:
+        order_by = "articles_fts.rank"
+    else:
+        order_by = _VALID_SORT_OPTIONS["newest"]
+
+    # Prefix columns with "articles." to avoid ambiguity with FTS5 table columns.
+    prefixed = ", ".join(f"articles.{c.strip()}" for c in _LIST_COLUMNS.split(","))
 
     # Include tags inline via correlated subquery to avoid N+1 fetches.
     tags_sub = (
@@ -389,8 +442,8 @@ async def list_articles(
         "WHERE at2.article_id = articles.id), '[]')"
     )
     sql = (
-        f"SELECT {_LIST_COLUMNS}, {tags_sub} AS tags_json "
-        f"FROM articles WHERE {where} ORDER BY {order_by} LIMIT ? OFFSET ?"
+        f"SELECT {prefixed}, {tags_sub} AS tags_json "
+        f"FROM articles {fts_join} WHERE {where} ORDER BY {order_by} LIMIT ? OFFSET ?"
     )
     params.extend([limit, offset])
 
@@ -590,20 +643,36 @@ async def get_article(
 ) -> dict[str, Any]:
     """Retrieve a single article by ID.
 
-    Returns the article metadata from D1.  Only articles belonging to the
-    authenticated user are returned.
+    Returns the article metadata from D1 with tags inline (consistent with
+    ``list_articles``).  Only articles belonging to the authenticated user
+    are returned.
     """
     env = request.scope["env"]
     db = env.DB
     user_id = user["user_id"]
 
-    article = await _get_user_article(
-        db,
-        article_id,
-        user_id,
-        fields=_LIST_COLUMNS + ", markdown_content",
+    # Include tags inline via correlated subquery (same as list_articles).
+    tags_sub = (
+        "COALESCE("
+        "(SELECT json_group_array(json_object("
+        "'id', t.id, 'name', t.name"
+        ")) FROM article_tags at2 "
+        "INNER JOIN tags t ON t.id = at2.tag_id "
+        "WHERE at2.article_id = articles.id), '[]')"
     )
-    return article
+    sql = (
+        f"SELECT {_LIST_COLUMNS}, markdown_content, {tags_sub} AS tags_json "
+        f"FROM articles WHERE id = ? AND user_id = ?"
+    )
+    row = await db.prepare(sql).bind(article_id, user_id).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    raw = row.pop("tags_json", "[]")
+    parsed = json.loads(raw) if raw else []
+    row["tags"] = [t for t in parsed if t is not None]
+
+    return row
 
 
 @router.get("/{article_id}/content")

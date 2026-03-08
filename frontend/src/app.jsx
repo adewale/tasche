@@ -8,7 +8,6 @@ import { showShortcuts } from './state.js';
 import { Library } from './views/Library.jsx';
 import { Reader } from './views/Reader.jsx';
 import { MarkdownView } from './views/MarkdownView.jsx';
-import { Search } from './views/Search.jsx';
 import { Tags } from './views/Tags.jsx';
 import { Settings } from './views/Settings.jsx';
 import { Stats } from './views/Stats.jsx';
@@ -19,14 +18,16 @@ import { getSession, createArticle, triggerSync, triggerAutoPrecache } from './a
 import './app.css';
 
 /**
- * TagFilteredLibrary handles the `#/?tag=xxx` route pattern.
- * Extracts the tag param from window.location.hash.
+ * FilteredLibrary handles the `#/?tag=xxx` and `#/?q=xxx` route patterns.
+ * Extracts tag and q params from window.location.hash.
  */
-function TagFilteredLibrary() {
+function FilteredLibrary() {
   const hash = window.location.hash;
-  const match = hash.match(/[?&]tag=([^&]+)/);
-  const tag = match ? decodeURIComponent(match[1]) : null;
-  return <Library tag={tag} />;
+  const tagMatch = hash.match(/[?&]tag=([^&]+)/);
+  const tag = tagMatch ? decodeURIComponent(tagMatch[1]) : null;
+  const qMatch = hash.match(/[?&]q=([^&]*)/);
+  const q = qMatch ? decodeURIComponent(qMatch[1]) : null;
+  return <Library tag={tag} q={q} />;
 }
 
 class ErrorBoundary extends Component {
@@ -235,10 +236,10 @@ function AppRouter() {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
-  // Check if the current hash has a tag filter: #/?tag=xxx
-  if (currentPath.startsWith('/?tag=') || currentPath.match(/^\/\?.*tag=/)) {
+  // Check if the current hash has query params: #/?tag=xxx or #/?q=xxx
+  if (currentPath.match(/^\/\?/)) {
     if (!user.value) return <Login />;
-    return <TagFilteredLibrary />;
+    return <FilteredLibrary />;
   }
 
   // Manual hash routing
@@ -262,10 +263,6 @@ function AppRouter() {
   const articleMatch = currentPath.match(/^\/article\/(.+)$/);
   if (articleMatch) {
     return <Reader id={articleMatch[1]} />;
-  }
-
-  if (currentPath === '/search') {
-    return <Search />;
   }
 
   if (currentPath === '/tags') {
