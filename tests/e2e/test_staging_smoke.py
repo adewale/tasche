@@ -194,9 +194,9 @@ class TestSearchAndTags:
         articles = resp.json()
         assert any(a["id"] == article_id for a in articles)
 
-        # Search by title — FTS5 on real D1
+        # Search by title — FTS5 via unified articles endpoint
         resp = await http_client.get(
-            "/api/search",
+            "/api/articles",
             params={"q": f"Tasche {test_id}"},
         )
         assert resp.status_code == 200
@@ -605,21 +605,21 @@ class TestInputValidation:
         resp = await http_client.post("/api/tags", json={"name": tag_name})
         assert resp.status_code == 409, f"Expected 409 for duplicate tag, got {resp.status_code}"
 
-    async def test_search_requires_query_param(
+    async def test_search_without_query_returns_articles(
         self,
         http_client: httpx.AsyncClient,
     ) -> None:
-        """GET /api/search without q returns 422."""
-        resp = await http_client.get("/api/search")
-        assert resp.status_code == 422, f"Expected 422, got {resp.status_code}"
+        """GET /api/articles without q returns 200 (lists all articles)."""
+        resp = await http_client.get("/api/articles")
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}"
 
     async def test_fts5_operators_dont_crash(
         self,
         http_client: httpx.AsyncClient,
     ) -> None:
-        """GET /api/search with FTS5 special characters doesn't error."""
+        """GET /api/articles?q= with FTS5 special characters doesn't error."""
         for query in ["OR AND NOT", "test*", "title:secret", 'hello "world"']:
-            resp = await http_client.get("/api/search", params={"q": query})
+            resp = await http_client.get("/api/articles", params={"q": query})
             assert resp.status_code in (200, 422), (
                 f"Unexpected {resp.status_code} for FTS5 query '{query}': {resp.text}"
             )

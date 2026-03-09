@@ -230,7 +230,7 @@ When reading an article, a tag icon opens a picker to add/remove tags.
 
 ### Tag Autocomplete
 
-Autocomplete is the shared interaction model used wherever a user picks a tag — the Tag Picker in Reader view, the tag input in the Tags management view, and the tag filter bar in the library.
+Autocomplete is the shared interaction model used wherever a user picks a tag — the Tag Picker in Reader view and the tag input in the Tags management view.
 
 **How it works:**
 1. **On focus:** Show all existing tags (minus already-applied ones), sorted alphabetically. No typing required — the full list is visible immediately.

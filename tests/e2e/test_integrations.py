@@ -491,10 +491,10 @@ class TestD1FTS5Search:
         )
         assert resp.status_code == 200
 
-        # Search for the unique word
+        # Search for the unique word via unified articles endpoint
         print(f"  Searching for '{unique_word}'...")
         resp = await http_client.get(
-            "/api/search",
+            "/api/articles",
             params={"q": unique_word},
         )
         assert resp.status_code == 200
@@ -538,10 +538,10 @@ class TestD1FTS5Search:
             )
             assert resp.status_code == 200
 
-        # Search
+        # Search via unified articles endpoint
         print(f"  Searching for '{unique_word}'...")
         resp = await http_client.get(
-            "/api/search",
+            "/api/articles",
             params={"q": unique_word},
         )
         assert resp.status_code == 200
@@ -569,7 +569,7 @@ class TestD1FTS5Search:
         ]
 
         for query in dangerous_queries:
-            resp = await http_client.get("/api/search", params={"q": query})
+            resp = await http_client.get("/api/articles", params={"q": query})
             assert resp.status_code in (200, 422), (
                 f"Query '{query}' returned {resp.status_code}: {resp.text}"
             )
@@ -579,12 +579,12 @@ class TestD1FTS5Search:
         self,
         http_client: httpx.AsyncClient,
     ) -> None:
-        """Empty search query returns 422, not a server error."""
+        """Empty search query returns all articles (q is optional on unified endpoint)."""
         print("\n--- D1 FTS5: empty query handling ---")
-        resp = await http_client.get("/api/search", params={"q": ""})
-        assert resp.status_code == 422
-        print("  Empty query → 422 (correct)")
+        resp = await http_client.get("/api/articles", params={"q": ""})
+        assert resp.status_code == 200
+        print("  Empty query → 200 (returns all articles)")
 
-        resp = await http_client.get("/api/search", params={"q": "   "})
-        assert resp.status_code == 422
-        print("  Whitespace query → 422 (correct)")
+        resp = await http_client.get("/api/articles", params={"q": "   "})
+        assert resp.status_code == 200
+        print("  Whitespace query → 200 (returns all articles)")

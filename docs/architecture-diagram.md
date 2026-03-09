@@ -29,8 +29,7 @@ flowchart TB
                 subgraph Routes["API Routes"]
                     direction TB
                     R_Auth["/api/auth · OAuth"]
-                    R_Articles["/api/articles · CRUD"]
-                    R_Search["/api/search · FTS5"]
+                    R_Articles["/api/articles · CRUD + FTS5"]
                     R_Tags["/api/tags · Tags & Rules"]
                     R_TTS["/api/articles/*/audio · TTS"]
                     R_Stats["/api/stats · Analytics"]
@@ -88,7 +87,7 @@ flowchart TB
     class Entry,QueueHandler,FFI worker
     class D1,R2,KV,Queue,AI,Readability,ASSETS binding
     class GitHub,OriginalSites external
-    class R_Auth,R_Articles,R_Search,R_Tags,R_TTS,R_Stats,R_Export route
+    class R_Auth,R_Articles,R_Tags,R_TTS,R_Stats,R_Export route
     class MW,Auth middleware
 ```
 

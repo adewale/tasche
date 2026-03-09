@@ -62,7 +62,7 @@ export function App() {
   const [ready, setReady] = useState(false);
 
   // Global "?" keyboard shortcut to toggle the shortcuts help panel.
-  // Registered here so it works on ALL screens (Library, Reader, Search,
+  // Registered here so it works on ALL screens (Library, Reader,
   // Tags, Stats, Settings), not just Library.
   useEffect(function () {
     function handleGlobalKeyDown(e) {
