@@ -574,6 +574,10 @@ self.addEventListener('message', function (event) {
       event.waitUntil(handleCheckOfflineStatus(event));
       break;
 
+    case 'REMOVE_FROM_OFFLINE':
+      event.waitUntil(handleRemoveFromOffline(event));
+      break;
+
     case 'AUTO_PRECACHE':
       event.waitUntil(handleAutoPrecache(event));
       break;
@@ -787,6 +791,38 @@ async function handleCheckOfflineStatus(event) {
       hasContent: !!(entry && entry.hasContent),
       hasAudio: !!(entry && entry.hasAudio),
     });
+  }
+}
+
+async function handleRemoveFromOffline(event) {
+  var articleId = event.data.articleId;
+  if (!articleId) return;
+
+  try {
+    var offlineCache = await caches.open(OFFLINE_CACHE);
+    await offlineCache.delete('/api/articles/' + articleId);
+    await offlineCache.delete('/api/articles/' + articleId + '/content');
+    await offlineCache.delete('/api/articles/' + articleId + '/audio');
+    await offlineCache.delete('/api/articles/' + articleId + '/audio-timing');
+
+    var meta = await getOfflineMeta();
+    delete meta[articleId];
+    await saveOfflineMeta(meta);
+
+    if (event.source) {
+      event.source.postMessage({
+        type: 'OFFLINE_REMOVED',
+        articleId: articleId,
+      });
+    }
+  } catch (err) {
+    if (event.source) {
+      event.source.postMessage({
+        type: 'OFFLINE_REMOVE_ERROR',
+        articleId: articleId,
+        error: err.message,
+      });
+    }
   }
 }
 

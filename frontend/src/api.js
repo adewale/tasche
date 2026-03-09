@@ -319,6 +319,11 @@ export function saveAudioOffline(articleId) {
   sendToSW({ type: 'SAVE_AUDIO_OFFLINE', articleId: articleId });
 }
 
+// Remove a single article from offline cache (explicit user action)
+export function removeFromOffline(articleId) {
+  sendToSW({ type: 'REMOVE_FROM_OFFLINE', articleId: articleId });
+}
+
 // Query the service worker and wait for a response message.
 // sendMsg: message to post, responseType: expected event.data.type,
 // fallback: value if SW unavailable, extract: event.data → result,

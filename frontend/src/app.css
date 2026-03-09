@@ -2128,39 +2128,6 @@ mark {
   }
 }
 
-/* Offline features */
-
-.offline-btn {
-  background: var(--bg-secondary);
-  color: var(--text);
-  border: 1px solid var(--border);
-}
-
-.offline-btn:hover {
-  background: var(--border);
-  text-decoration: none;
-}
-
-.offline-btn--saved {
-  background: var(--success);
-  color: var(--text-on-color);
-  border-color: var(--success);
-}
-
-.offline-btn--saved:hover {
-  background: var(--success);
-  opacity: 0.9;
-}
-
-.offline-btn:disabled {
-  opacity: 0.6;
-  cursor: wait;
-}
-
-.offline-btn {
-  opacity: 0.4;
-}
-
 .offline-badge {
   display: inline-block;
   width: 8px;

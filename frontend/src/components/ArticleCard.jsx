@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'preact/hooks';
+import { useState, useEffect, useCallback } from 'preact/hooks';
 import { formatDate } from '../utils.js';
 import { addToast, articles, pollAudioStatus, pollArticleStatus } from '../state.js';
 import {
@@ -6,6 +6,8 @@ import {
   getArticle,
   listenLater as apiListenLater,
   isOfflineCached,
+  saveForOffline,
+  removeFromOffline,
 } from '../api.js';
 import { toggleArchive, toggleFavorite, removeArticle } from '../articleActions.js';
 import { nav } from '../nav.js';
@@ -13,7 +15,7 @@ import { playAudio, audioState } from './AudioPlayer.jsx';
 import {
   IconStar,
   IconTrash,
-  IconCircle,
+  IconOffline,
   IconCheckSquare,
   IconHeadphones,
   IconPlay,
@@ -24,6 +26,7 @@ import {
 } from './Icons.jsx';
 import { InkFavicon } from './InkFavicon.jsx';
 import { InkWashThumbnail } from './InkWashThumbnail.jsx';
+import { useSWMessage } from '../hooks/useSWMessage.js';
 
 const tagCache = new Map();
 
@@ -36,6 +39,7 @@ export function ArticleCard({ article, selectMode, selected, onToggleSelect }) {
 
   const [cardTags, setCardTags] = useState([]);
   const [offlineSaved, setOfflineSaved] = useState(false);
+  const [offlineLoading, setOfflineLoading] = useState(false);
   const [audioLoading, setAudioLoading] = useState(false);
 
   useEffect(() => {
@@ -66,6 +70,44 @@ export function ArticleCard({ article, selectMode, selected, onToggleSelect }) {
       cancelled = true;
     };
   }, [a.id, a.tags, isProcessing]);
+
+  useSWMessage(
+    useCallback(
+      function (event) {
+        if (!event.data || event.data.articleId !== a.id) return;
+        if (event.data.type === 'OFFLINE_SAVED' && event.data.what === 'content') {
+          setOfflineSaved(true);
+          setOfflineLoading(false);
+          addToast('Saved for offline reading', 'success');
+        }
+        if (event.data.type === 'OFFLINE_SAVE_ERROR' && event.data.what === 'content') {
+          setOfflineLoading(false);
+          addToast('Could not save offline', 'error');
+        }
+        if (event.data.type === 'OFFLINE_REMOVED') {
+          setOfflineSaved(false);
+          setOfflineLoading(false);
+          addToast('Removed from offline', 'success');
+        }
+        if (event.data.type === 'OFFLINE_REMOVE_ERROR') {
+          setOfflineLoading(false);
+          addToast('Could not remove offline cache', 'error');
+        }
+      },
+      [a.id],
+    ),
+  );
+
+  function handleOfflineToggle(e) {
+    e.stopPropagation();
+    if (offlineLoading) return;
+    setOfflineLoading(true);
+    if (offlineSaved) {
+      removeFromOffline(a.id);
+    } else {
+      saveForOffline(a.id);
+    }
+  }
 
   function handleClick(e) {
     if (selectMode) {
@@ -245,9 +287,11 @@ export function ArticleCard({ article, selectMode, selected, onToggleSelect }) {
           {!isProcessing && (
             <button
               class="offline-btn"
-              title={offlineSaved ? 'Available offline' : 'Not cached offline'}
+              title={offlineSaved ? 'Remove offline copy' : 'Save for offline'}
+              onClick={handleOfflineToggle}
+              disabled={offlineLoading}
             >
-              <IconCircle filled={offlineSaved} />
+              {offlineLoading ? <IconClock /> : <IconOffline filled={offlineSaved} />}
             </button>
           )}
           {!isProcessing && (

@@ -29,6 +29,7 @@ vi.mock('../../../src/api.js', () => ({
   retryArticle: vi.fn(() => Promise.resolve()),
   checkOriginal: vi.fn(() => Promise.resolve({ original_status: 'available' })),
   saveForOffline: vi.fn(),
+  removeFromOffline: vi.fn(),
   saveAudioOffline: vi.fn(),
   isOfflineCached: vi.fn(() =>
     Promise.resolve({ cached: false, hasContent: false, hasAudio: false }),
@@ -103,7 +104,15 @@ vi.mock('../../../src/markdown.js', () => ({
   renderMarkdown: vi.fn((md) => '<p>' + md + '</p>'),
 }));
 
-import { listenLater, deleteArticle, retryArticle, checkOriginal } from '../../../src/api.js';
+import {
+  listenLater,
+  deleteArticle,
+  retryArticle,
+  checkOriginal,
+  isOfflineCached,
+  saveForOffline,
+  removeFromOffline,
+} from '../../../src/api.js';
 import { addToast } from '../../../src/state.js';
 import { nav } from '../../../src/nav.js';
 
@@ -269,5 +278,42 @@ describe('Reader', () => {
     await waitFor(() => {
       expect(screen.getByText('Favourite')).toBeInTheDocument();
     });
+  });
+
+  // ── Offline toggle ──
+
+  it('shows Save for offline button by default', async () => {
+    render(<Reader id="art-1" />);
+    await waitFor(() => {
+      expect(screen.getByText('Save for offline')).toBeInTheDocument();
+    });
+  });
+
+  it('calls saveForOffline when clicking save button', async () => {
+    const user = userEvent.setup();
+    render(<Reader id="art-1" />);
+    await waitFor(() => screen.getByText('Save for offline'));
+
+    await user.click(screen.getByText('Save for offline'));
+    expect(saveForOffline).toHaveBeenCalledWith('art-1');
+  });
+
+  it('shows Remove offline when content is cached', async () => {
+    isOfflineCached.mockResolvedValueOnce({ cached: true, hasContent: true, hasAudio: false });
+    render(<Reader id="art-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Remove offline')).toBeInTheDocument();
+    });
+  });
+
+  it('calls removeFromOffline when clicking remove button', async () => {
+    const user = userEvent.setup();
+    isOfflineCached.mockResolvedValueOnce({ cached: true, hasContent: true, hasAudio: false });
+    render(<Reader id="art-1" />);
+    await waitFor(() => screen.getByText('Remove offline'));
+
+    await user.click(screen.getByText('Remove offline'));
+    expect(removeFromOffline).toHaveBeenCalledWith('art-1');
   });
 });

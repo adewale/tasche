@@ -30,6 +30,7 @@ import {
   retryArticle as apiRetryArticle,
   checkOriginal as apiCheckOriginal,
   saveForOffline,
+  removeFromOffline,
   saveAudioOffline,
   isOfflineCached,
   getArticleMarkdown,
@@ -249,6 +250,17 @@ export function Reader({ id }) {
             setSavingAudioOffline(false);
             addToast('Could not download audio for offline. The file may be too large.', 'error');
           }
+        }
+        if (event.data.type === 'OFFLINE_REMOVED' && event.data.articleId === id) {
+          setOfflineStatus(function (prev) {
+            return { ...prev, cached: false, hasContent: false };
+          });
+          setSavingOffline(false);
+          addToast('Removed from offline', 'success');
+        }
+        if (event.data.type === 'OFFLINE_REMOVE_ERROR' && event.data.articleId === id) {
+          setSavingOffline(false);
+          addToast('Could not remove offline cache', 'error');
         }
       },
       [id],
@@ -504,7 +516,8 @@ export function Reader({ id }) {
 
   function handleSaveOffline() {
     if (offlineStatus.hasContent) {
-      addToast('Already saved for offline', 'info');
+      setSavingOffline(true);
+      removeFromOffline(id);
       return;
     }
     setSavingOffline(true);
@@ -677,18 +690,12 @@ export function Reader({ id }) {
                 <option value="unread">Unread</option>
                 <option value="archived">Archived</option>
               </select>
-              <button
-                class={
-                  'btn btn-sm offline-btn' + (offlineStatus.hasContent ? ' offline-btn--saved' : '')
-                }
-                onClick={handleSaveOffline}
-                disabled={savingOffline}
-              >
+              <button class={'btn btn-sm'} onClick={handleSaveOffline} disabled={savingOffline}>
                 {savingOffline ? (
                   'Saving...'
                 ) : offlineStatus.hasContent ? (
                   <>
-                    <IconCheck size={14} /> Saved offline
+                    <IconCheck size={14} /> Remove offline
                   </>
                 ) : (
                   <>

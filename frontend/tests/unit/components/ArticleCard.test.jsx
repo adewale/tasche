@@ -10,6 +10,12 @@ vi.mock('../../../src/api.js', () => ({
   isOfflineCached: vi.fn(() =>
     Promise.resolve({ cached: false, hasContent: false, hasAudio: false }),
   ),
+  saveForOffline: vi.fn(),
+  removeFromOffline: vi.fn(),
+}));
+
+vi.mock('../../../src/hooks/useSWMessage.js', () => ({
+  useSWMessage: vi.fn(),
 }));
 
 vi.mock('../../../src/articleActions.js', () => ({
@@ -47,7 +53,12 @@ vi.mock('../../../src/state.js', async (importOriginal) => {
 
 // Real utils — formatDate, escapeHtml are pure functions that work in jsdom
 
-import { listenLater } from '../../../src/api.js';
+import {
+  listenLater,
+  isOfflineCached,
+  saveForOffline,
+  removeFromOffline,
+} from '../../../src/api.js';
 import { addToast } from '../../../src/state.js';
 import { audioState } from '../../../src/components/AudioPlayer.jsx';
 
@@ -290,5 +301,50 @@ describe('ArticleCard', () => {
     expect(screen.getByTitle('Now playing')).toBeDisabled();
 
     audioState.value = { articleId: null, articleTitle: '', isPlaying: false, visible: false };
+  });
+
+  // ── Offline toggle ──
+
+  it('shows "Save for offline" button by default', () => {
+    render(<ArticleCard article={makeArticle()} />);
+    expect(screen.getByTitle('Save for offline')).toBeInTheDocument();
+  });
+
+  it('calls saveForOffline when clicking offline button', async () => {
+    const user = userEvent.setup();
+    render(<ArticleCard article={makeArticle()} />);
+
+    await user.click(screen.getByTitle('Save for offline'));
+    expect(saveForOffline).toHaveBeenCalledWith('art-1');
+  });
+
+  it('shows "Remove offline copy" when article is cached', async () => {
+    isOfflineCached.mockResolvedValueOnce({ cached: true, hasContent: true, hasAudio: false });
+    render(<ArticleCard article={makeArticle()} />);
+
+    await waitFor(() => {
+      expect(screen.getByTitle('Remove offline copy')).toBeInTheDocument();
+    });
+  });
+
+  it('calls removeFromOffline when clicking on cached article', async () => {
+    const user = userEvent.setup();
+    isOfflineCached.mockResolvedValueOnce({ cached: true, hasContent: true, hasAudio: false });
+    render(<ArticleCard article={makeArticle()} />);
+
+    await waitFor(() => {
+      expect(screen.getByTitle('Remove offline copy')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTitle('Remove offline copy'));
+    expect(removeFromOffline).toHaveBeenCalledWith('art-1');
+  });
+
+  it('disables offline button while loading', async () => {
+    const user = userEvent.setup();
+    render(<ArticleCard article={makeArticle()} />);
+
+    await user.click(screen.getByTitle('Save for offline'));
+    expect(screen.getByTitle('Save for offline')).toBeDisabled();
   });
 });

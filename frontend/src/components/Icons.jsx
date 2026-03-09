@@ -410,13 +410,31 @@ export function IconRefresh({ size = 16, ...props }) {
   );
 }
 
-export function IconCircle({ size = 16, filled = false, ...props }) {
+export function IconOffline({ size = 16, filled = false, ...props }) {
+  if (filled) {
+    return (
+      <svg
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        {...props}
+      >
+        <circle cx="12" cy="12" r="10" fill="currentColor" />
+        <path d="M12 8v8" stroke="var(--bg-card)" fill="none" />
+        <path d="m8 12 4 4 4-4" stroke="var(--bg-card)" fill="none" />
+      </svg>
+    );
+  }
   return (
     <svg
       width={size}
       height={size}
       viewBox="0 0 24 24"
-      fill={filled ? 'currentColor' : 'none'}
+      fill="none"
       stroke="currentColor"
       stroke-width="2"
       stroke-linecap="round"
@@ -424,6 +442,8 @@ export function IconCircle({ size = 16, filled = false, ...props }) {
       {...props}
     >
       <circle cx="12" cy="12" r="10" />
+      <path d="M12 8v8" />
+      <path d="m8 12 4 4 4-4" />
     </svg>
   );
 }
