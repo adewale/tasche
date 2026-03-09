@@ -4,7 +4,7 @@ import { EmptyState, LoadingSpinner } from '../components/EmptyState.jsx';
 import { TagPicker } from '../components/TagPicker.jsx';
 import { ReaderToolbar } from '../components/ReaderToolbar.jsx';
 import { audioState, playAudio, getAudio } from '../components/AudioPlayer.jsx';
-import { articles, addToast, pollAudioStatus } from '../state.js';
+import { articles, addToast, pollAudioStatus, searchQuery } from '../state.js';
 import { toggleArchive, toggleFavorite, removeArticle } from '../articleActions.js';
 import { readerPrefs, getReaderStyle, updatePref } from '../readerPrefs.js';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts.js';
@@ -70,6 +70,86 @@ function saveBreathMark(articleId, position) {
     localStorage.setItem(BREATH_MARKS_KEY, JSON.stringify(all));
   } catch (_e) {
     // localStorage full or unavailable
+  }
+}
+
+/**
+ * Clear all search-highlight marks from a container, restoring original text nodes.
+ */
+function clearSearchHighlights(container) {
+  if (!container) return;
+  var marks = container.querySelectorAll('mark.search-highlight');
+  for (var i = 0; i < marks.length; i++) {
+    var mark = marks[i];
+    var parent = mark.parentNode;
+    if (parent) {
+      parent.replaceChild(document.createTextNode(mark.textContent), mark);
+      parent.normalize();
+    }
+  }
+}
+
+/**
+ * Highlight search terms in a DOM container by wrapping matches in <mark> elements.
+ * Uses a TreeWalker to find text nodes and splits them around matches.
+ */
+function highlightSearchTerms(container, query) {
+  if (!container || !query) return;
+
+  var terms = query
+    .trim()
+    .split(/\s+/)
+    .filter(function (t) {
+      return t.length > 1;
+    });
+  if (terms.length === 0) return;
+
+  // Build a regex that matches any of the terms, case-insensitive
+  var escaped = terms.map(function (t) {
+    return t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  });
+  var regex = new RegExp('(' + escaped.join('|') + ')', 'gi');
+
+  // Collect text nodes first (mutating the DOM while walking is unsafe)
+  var walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
+  var textNodes = [];
+  var node;
+  while ((node = walker.nextNode())) {
+    // Skip nodes inside <script>, <style>, or already-highlighted marks
+    var parentTag = node.parentElement ? node.parentElement.tagName : '';
+    if (parentTag === 'SCRIPT' || parentTag === 'STYLE' || parentTag === 'MARK') continue;
+    if (regex.test(node.nodeValue)) {
+      textNodes.push(node);
+    }
+    regex.lastIndex = 0;
+  }
+
+  for (var i = 0; i < textNodes.length; i++) {
+    var textNode = textNodes[i];
+    var text = textNode.nodeValue;
+    var frag = document.createDocumentFragment();
+    var lastIndex = 0;
+    var match;
+
+    regex.lastIndex = 0;
+    while ((match = regex.exec(text)) !== null) {
+      // Text before the match
+      if (match.index > lastIndex) {
+        frag.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+      }
+      // The matched term wrapped in <mark>
+      var mark = document.createElement('mark');
+      mark.className = 'search-highlight';
+      mark.textContent = match[0];
+      frag.appendChild(mark);
+      lastIndex = regex.lastIndex;
+    }
+    // Remaining text after last match
+    if (lastIndex < text.length) {
+      frag.appendChild(document.createTextNode(text.slice(lastIndex)));
+    }
+
+    textNode.parentNode.replaceChild(frag, textNode);
   }
 }
 
@@ -288,6 +368,29 @@ export function Reader({ id }) {
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [readerPrefs.value.contentMode, article, id, markdownRaw, markdownLoading],
+  );
+
+  // Search term highlighting — when arriving from search results
+  useEffect(
+    function () {
+      var query = searchQuery.value;
+      var container = contentRef.current;
+      if (!article || !container || !query) return;
+
+      highlightSearchTerms(container, query);
+
+      // Scroll to the first highlight
+      var firstMark = container.querySelector('mark.search-highlight');
+      if (firstMark) {
+        firstMark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+
+      return function () {
+        clearSearchHighlights(container);
+        searchQuery.value = '';
+      };
+    },
+    [article, contentHtml],
   );
 
   async function handleArchiveToggle() {

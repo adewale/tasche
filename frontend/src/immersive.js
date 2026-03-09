@@ -114,12 +114,14 @@ function matchSentencesToDOM(contentEl, sentences) {
       var span = document.createElement('span');
       span.className = 'tts-sentence';
       span.dataset.idx = String(i);
-      range.surroundContents(span);
 
-      // surroundContents invalidates our text node list, but since we
-      // search forward only and the span replaces the text nodes, the
-      // subsequent sentences will still be found in later nodes.
-      // Rebuild the text node list for remaining matches.
+      // extractContents + insertNode handles cross-element ranges
+      // where surroundContents would throw
+      var fragment = range.extractContents();
+      span.appendChild(fragment);
+      range.insertNode(span);
+
+      // Rebuild text node list for remaining matches
       if (i < sentences.length - 1) {
         _textNodes = [];
         fullText = '';
@@ -141,7 +143,7 @@ function matchSentencesToDOM(contentEl, sentences) {
 
       spans.push(span);
     } catch (_e) {
-      // surroundContents can fail if the range spans multiple elements
+      // extractContents can still fail in edge cases
       spans.push(null);
     }
   }

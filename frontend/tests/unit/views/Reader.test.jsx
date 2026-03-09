@@ -89,6 +89,7 @@ vi.mock('../../../src/state.js', () => ({
   articles: { value: [] },
   addToast: vi.fn(),
   pollAudioStatus: vi.fn(),
+  searchQuery: { value: '' },
 }));
 
 vi.mock('../../../src/readerPrefs.js', () => ({

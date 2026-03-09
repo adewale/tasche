@@ -2863,6 +2863,19 @@ body.has-audio-player {
   font-size: 0.8125rem;
 }
 
+/* Search term highlighting in Reader */
+.search-highlight {
+  background: var(--color-warning, #fbbf24);
+  color: var(--color-text);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+[data-theme='dark'] .search-highlight {
+  background: #78350f;
+  color: #fef3c7;
+}
+
 /* Full-screen loading */
 .loading--fullscreen {
   min-height: 100vh;

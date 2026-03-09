@@ -49,16 +49,22 @@ self.addEventListener('install', function (event) {
 self.addEventListener('activate', function (event) {
   var KEEP = [STATIC_CACHE, API_CACHE, CACHE_NAME, OFFLINE_CACHE];
   event.waitUntil(
-    caches.keys().then(function (keys) {
-      return Promise.all(
-        keys
-          .filter(function (key) { return !KEEP.includes(key); })
-          .map(function (key) { return caches.delete(key); })
-      );
-    })
-    .then(function () {
-      return self.clients.claim();
-    })
+    caches
+      .keys()
+      .then(function (keys) {
+        return Promise.all(
+          keys
+            .filter(function (key) {
+              return !KEEP.includes(key);
+            })
+            .map(function (key) {
+              return caches.delete(key);
+            }),
+        );
+      })
+      .then(function () {
+        return self.clients.claim();
+      }),
   );
 });
 
@@ -78,18 +84,22 @@ self.addEventListener('fetch', function (event) {
     event.respondWith(
       cacheFirstHashedAsset(event.request).catch(function () {
         return fetch(event.request);
-      })
+      }),
     );
     return;
   }
 
   // Navigation and app shell (/, /manifest.json, /static/*) — network first
   // with timeout so slow connections fall back to cached shell quickly.
-  if (url.pathname === '/' || url.pathname === '/manifest.json' || url.pathname.startsWith('/static/')) {
+  if (
+    url.pathname === '/' ||
+    url.pathname === '/manifest.json' ||
+    url.pathname.startsWith('/static/')
+  ) {
     event.respondWith(
       networkFirstNavigation(event.request).catch(function () {
         return fetch(event.request);
-      })
+      }),
     );
     return;
   }
@@ -99,7 +109,7 @@ self.addEventListener('fetch', function (event) {
     event.respondWith(
       networkFirstWithOffline(event.request).catch(function () {
         return fetch(event.request);
-      })
+      }),
     );
     return;
   }
@@ -110,7 +120,7 @@ self.addEventListener('fetch', function (event) {
     event.respondWith(
       networkWithCacheInvalidation(event.request).catch(function () {
         return fetch(event.request);
-      })
+      }),
     );
     return;
   }
@@ -239,10 +249,10 @@ async function serveCachedOrOffline(request) {
   var apiCached = await apiCache.match(request);
   if (apiCached) return markAsCached(apiCached);
 
-  return new Response(
-    JSON.stringify({ error: 'Offline' }),
-    { status: 503, headers: { 'Content-Type': 'application/json' } }
-  );
+  return new Response(JSON.stringify({ error: 'Offline' }), {
+    status: 503,
+    headers: { 'Content-Type': 'application/json' },
+  });
 }
 
 /**
@@ -337,7 +347,9 @@ async function pruneApiCache() {
     }
 
     // Sort oldest first
-    entries.sort(function (a, b) { return a.time - b.time; });
+    entries.sort(function (a, b) {
+      return a.time - b.time;
+    });
 
     // Delete oldest entries to get back under the limit
     var toDelete = entries.slice(0, entries.length - MAX_API_CACHE_ENTRIES);
@@ -359,13 +371,15 @@ function raceTimeout(fetchPromise, timeoutMs) {
       reject(new Error('Network timeout'));
     }, timeoutMs);
 
-    fetchPromise.then(function (resp) {
-      clearTimeout(timer);
-      resolve(resp);
-    }).catch(function (err) {
-      clearTimeout(timer);
-      reject(err);
-    });
+    fetchPromise
+      .then(function (resp) {
+        clearTimeout(timer);
+        resolve(resp);
+      })
+      .catch(function (err) {
+        clearTimeout(timer);
+        reject(err);
+      });
   });
 }
 
@@ -398,7 +412,7 @@ async function replayQueue() {
     var item = queue[i];
     try {
       // Drop mutations older than 1 hour — they're likely stale (#7)
-      if (item.queuedAt && (Date.now() - item.queuedAt) > 3600000) {
+      if (item.queuedAt && Date.now() - item.queuedAt > 3600000) {
         continue;
       }
 
@@ -449,7 +463,7 @@ async function saveQueue(queue) {
     SYNC_QUEUE_KEY,
     new Response(JSON.stringify(queue), {
       headers: { 'Content-Type': 'application/json' },
-    })
+    }),
   );
 }
 
@@ -475,7 +489,7 @@ async function saveOfflineMeta(meta) {
       OFFLINE_META_KEY,
       new Response(JSON.stringify(meta), {
         headers: { 'Content-Type': 'application/json' },
-      })
+      }),
     );
   } catch (err) {
     // Quota exceeded or other storage error — log but don't crash
@@ -502,7 +516,9 @@ async function evictIfNeeded(meta) {
   var ids = Object.keys(meta);
   if (ids.length <= MAX_OFFLINE_ARTICLES) return meta;
 
-  ids.sort(function (a, b) { return (meta[a].accessedAt || 0) - (meta[b].accessedAt || 0); });
+  ids.sort(function (a, b) {
+    return (meta[a].accessedAt || 0) - (meta[b].accessedAt || 0);
+  });
 
   var cache = await caches.open(OFFLINE_CACHE);
   var toEvict = ids.slice(0, ids.length - MAX_OFFLINE_ARTICLES);
@@ -512,6 +528,7 @@ async function evictIfNeeded(meta) {
     await cache.delete('/api/articles/' + id);
     await cache.delete('/api/articles/' + id + '/content');
     await cache.delete('/api/articles/' + id + '/audio');
+    await cache.delete('/api/articles/' + id + '/audio-timing');
     delete meta[id];
   }
 
@@ -584,9 +601,9 @@ async function handleQueueRequest(event) {
   var newReq = event.data.request;
   // Add timestamp for conflict detection (#7)
   newReq.queuedAt = Date.now();
-  var existingIndex = queue.findIndex(
-    function (item) { return item.url === newReq.url && item.method === newReq.method; }
-  );
+  var existingIndex = queue.findIndex(function (item) {
+    return item.url === newReq.url && item.method === newReq.method;
+  });
   if (existingIndex !== -1) {
     queue[existingIndex] = newReq;
   } else {
@@ -664,7 +681,9 @@ async function handleSaveForOffline(event) {
     }
 
     if (!detailResp.ok || !contentResp.ok) {
-      throw new Error('Failed to cache: detail=' + detailResp.status + ' content=' + contentResp.status);
+      throw new Error(
+        'Failed to cache: detail=' + detailResp.status + ' content=' + contentResp.status,
+      );
     }
 
     var existing = meta[articleId] || {};
@@ -711,6 +730,17 @@ async function handleSaveAudioOffline(event) {
       await cache.put(audioUrl, audioResp.clone());
     } else {
       throw new Error('Failed to fetch audio: ' + audioResp.status);
+    }
+
+    // Also cache audio-timing for immersive reading
+    var timingUrl = '/api/articles/' + articleId + '/audio-timing';
+    try {
+      var timingResp = await fetch(timingUrl, { credentials: 'include' });
+      if (timingResp.ok) {
+        await cache.put(timingUrl, timingResp.clone());
+      }
+    } catch (_e) {
+      // Timing data is optional — audio works without it
     }
 
     var existing = meta[articleId] || {};
@@ -772,7 +802,11 @@ async function handleAutoPrecache(event) {
 
   try {
     var listUrl = '/api/articles?reading_status=unread&limit=' + limit + '&sort=newest';
-    var listResp = await fetchWithTimeout(listUrl, { credentials: 'include' }, PRECACHE_FETCH_TIMEOUT);
+    var listResp = await fetchWithTimeout(
+      listUrl,
+      { credentials: 'include' },
+      PRECACHE_FETCH_TIMEOUT,
+    );
     if (!listResp.ok) {
       throw new Error('Failed to fetch article list: ' + listResp.status);
     }
@@ -781,7 +815,10 @@ async function handleAutoPrecache(event) {
     if (!Array.isArray(articles) || articles.length === 0) {
       notifyClients({
         type: 'AUTO_PRECACHE_COMPLETE',
-        cached: 0, skipped: 0, failed: 0, total: 0,
+        cached: 0,
+        skipped: 0,
+        failed: 0,
+        total: 0,
       });
       return;
     }
@@ -808,11 +845,25 @@ async function handleAutoPrecache(event) {
         var detailUrl = '/api/articles/' + article.id;
         var contentUrl = '/api/articles/' + article.id + '/content';
 
-        var detailResp = await fetchWithTimeout(detailUrl, { credentials: 'include' }, PRECACHE_FETCH_TIMEOUT);
-        if (!detailResp.ok) { failed++; continue; }
+        var detailResp = await fetchWithTimeout(
+          detailUrl,
+          { credentials: 'include' },
+          PRECACHE_FETCH_TIMEOUT,
+        );
+        if (!detailResp.ok) {
+          failed++;
+          continue;
+        }
 
-        var contentResp = await fetchWithTimeout(contentUrl, { credentials: 'include' }, PRECACHE_FETCH_TIMEOUT);
-        if (!contentResp.ok) { failed++; continue; }
+        var contentResp = await fetchWithTimeout(
+          contentUrl,
+          { credentials: 'include' },
+          PRECACHE_FETCH_TIMEOUT,
+        );
+        if (!contentResp.ok) {
+          failed++;
+          continue;
+        }
 
         // Stamp and store in both caches (#12)
         var now = new Date().toISOString();
@@ -820,16 +871,41 @@ async function handleAutoPrecache(event) {
         var dBody = await detailResp.clone().blob();
         var dHeaders = new Headers(detailResp.headers);
         dHeaders.set('X-Tasche-Cached-At', now);
-        var dStamped = new Response(dBody, { status: detailResp.status, statusText: detailResp.statusText, headers: dHeaders });
+        var dStamped = new Response(dBody, {
+          status: detailResp.status,
+          statusText: detailResp.statusText,
+          headers: dHeaders,
+        });
         await offlineCache.put(detailUrl, dStamped.clone());
         await apiCache.put(detailUrl, dStamped);
 
         var cBody = await contentResp.clone().blob();
         var cHeaders = new Headers(contentResp.headers);
         cHeaders.set('X-Tasche-Cached-At', now);
-        var cStamped = new Response(cBody, { status: contentResp.status, statusText: contentResp.statusText, headers: cHeaders });
+        var cStamped = new Response(cBody, {
+          status: contentResp.status,
+          statusText: contentResp.statusText,
+          headers: cHeaders,
+        });
         await offlineCache.put(contentUrl, cStamped.clone());
         await apiCache.put(contentUrl, cStamped);
+
+        // Also cache audio-timing for articles with audio
+        if (article.audio_status === 'ready') {
+          try {
+            var timingUrl = '/api/articles/' + article.id + '/audio-timing';
+            var timingResp = await fetchWithTimeout(
+              timingUrl,
+              { credentials: 'include' },
+              PRECACHE_FETCH_TIMEOUT,
+            );
+            if (timingResp.ok) {
+              await offlineCache.put(timingUrl, timingResp.clone());
+            }
+          } catch (_e) {
+            // Timing is optional
+          }
+        }
 
         var existing = meta[article.id] || {};
         meta[article.id] = {
@@ -850,7 +926,10 @@ async function handleAutoPrecache(event) {
 
     notifyClients({
       type: 'AUTO_PRECACHE_COMPLETE',
-      cached: cached, skipped: skipped, failed: failed, total: articles.length,
+      cached: cached,
+      skipped: skipped,
+      failed: failed,
+      total: articles.length,
     });
   } catch (err) {
     notifyClients({

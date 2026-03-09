@@ -242,6 +242,84 @@ def chunk_text_with_sentences(text: str, max_chars: int = _MAX_CHARS_PER_CHUNK) 
     return chunks
 
 
+# Approximate pause durations in character-equivalents.
+# A comma inserts a ~150ms breath; at ~15 chars/sec of speech that's ~2-3 chars.
+_PAUSE_WEIGHTS = {
+    ",": 3,  # ~150ms pause ≈ 3 chars of speech
+    ";": 4,  # ~200ms
+    ":": 4,
+    "\u2014": 5,  # em-dash, ~250ms
+    "\u2013": 4,  # en-dash
+    "...": 6,  # ellipsis, ~300ms
+    "\u2026": 6,  # unicode ellipsis
+    "!": 2,  # sentence-final emphasis pause
+    "?": 2,
+    ".": 2,  # sentence-final pause
+}
+
+# Vowel clusters for syllable estimation.  English syllables are roughly
+# "one vowel sound per syllable".  Consecutive vowels (diphthongs) count
+# as one syllable.
+_VOWELS = set("aeiouyAEIOUY")
+
+
+def _estimate_syllables(word: str) -> int:
+    """Estimate syllable count for an English word.
+
+    Uses a simple vowel-cluster heuristic:
+    1. Count groups of consecutive vowels as one syllable.
+    2. If the word ends with a silent 'e' (and has >1 syllable), subtract one.
+    3. Always return at least 1.
+
+    This isn't perfect (e.g. "area" → 2 instead of 3) but it's good enough
+    for proportional weighting — we only need relative accuracy, not absolute.
+    """
+    if not word:
+        return 1
+
+    # Strip non-alpha for counting
+    w = "".join(ch for ch in word if ch.isalpha())
+    if not w:
+        return 1
+
+    count = 0
+    prev_vowel = False
+    for ch in w:
+        is_vowel = ch in _VOWELS
+        if is_vowel and not prev_vowel:
+            count += 1
+        prev_vowel = is_vowel
+
+    # Silent 'e' at end
+    if w.lower().endswith("e") and count > 1:
+        count -= 1
+
+    return max(1, count)
+
+
+def _speech_weight(sentence: str) -> float:
+    """Estimate relative speech duration for a sentence.
+
+    Combines three signals:
+    1. **Syllable count** — "extraordinary" (5 syl) takes longer than "cat" (1).
+       Syllables are weighted at 3.0 each (roughly 200ms per syllable at
+       normal speech rate = ~3 characters worth of duration).
+    2. **Punctuation pauses** — commas, semicolons, dashes insert breath pauses.
+    3. **Base length** — character count as a floor to handle non-alphabetic text.
+
+    Returns at least 1.0.
+    """
+    words = sentence.split()
+    syllable_weight = sum(_estimate_syllables(w) for w in words) * 3.0
+    pause_weight = 0.0
+    for punct, bonus in _PAUSE_WEIGHTS.items():
+        pause_weight += sentence.count(punct) * bonus
+    # Use the larger of syllable-based or character-based weight, plus pauses.
+    # This handles edge cases like all-punctuation or numeric text.
+    base = max(syllable_weight, float(len(sentence)) * 0.5)
+    return max(1.0, base + pause_weight)
+
+
 def _build_timing_manifest(
     chunks_with_sentences: list[dict],
     audio_parts: list[bytes],
@@ -265,10 +343,14 @@ def _build_timing_manifest(
             chunk_duration_ms = max(100, (word_count / _WORDS_PER_MINUTE) * 60 * 1000)
 
         sentences = chunk_info["sentences"]
-        total_chars = sum(len(s) for s in sentences)
+        total_weight = sum(_speech_weight(s) for s in sentences)
 
         for sentence in sentences:
-            proportion = len(sentence) / total_chars if total_chars > 0 else 1.0 / len(sentences)
+            proportion = (
+                _speech_weight(sentence) / total_weight
+                if total_weight > 0
+                else 1.0 / len(sentences)
+            )
             sentence_duration_ms = chunk_duration_ms * proportion
             timing_sentences.append(
                 {

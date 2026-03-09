@@ -1526,8 +1526,8 @@ class TestBuildTimingManifest:
 
         s0 = manifest["sentences"][0]
         s1 = manifest["sentences"][1]
-        # "Hi." is 3 chars, other is 30 chars — s1 should be ~10x longer
-        assert (s1["end_ms"] - s1["start_ms"]) > (s0["end_ms"] - s0["start_ms"]) * 5
+        # "Hi." is 1 syllable, other is 7 syllables — s1 should get significantly more time
+        assert (s1["end_ms"] - s1["start_ms"]) > (s0["end_ms"] - s0["start_ms"]) * 2
 
     def test_fallback_on_invalid_audio(self):
         """Uses word-count estimate when OGG parsing fails."""
