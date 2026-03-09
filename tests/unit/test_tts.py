@@ -1984,6 +1984,215 @@ class TestProcessTTSTimingIntegration:
 
 
 # ---------------------------------------------------------------------------
+# OGG stream validity: multi-chunk audio must be a single logical stream
+# ---------------------------------------------------------------------------
+
+
+def _count_ogg_bos_eos_pages(data: bytes) -> tuple[int, int, list[int]]:
+    """Parse OGG pages and count BOS/EOS pages, plus all serial numbers.
+
+    OGG page header (RFC 3533):
+      bytes 0-3:   'OggS' capture pattern
+      byte  5:     header_type flags (0x02 = BOS, 0x04 = EOS)
+      bytes 6-13:  granule_position (int64 LE)
+      bytes 14-17: serial_number (uint32 LE)
+      bytes 18-21: page_sequence_number (uint32 LE)
+      bytes 22-25: checksum (uint32 LE)
+      byte  26:    number_page_segments
+      bytes 27...: segment table (one byte per segment)
+
+    Returns (bos_count, eos_count, unique_serial_numbers).
+    """
+    import struct
+
+    bos_count = 0
+    eos_count = 0
+    serials: set[int] = set()
+    i = 0
+
+    while i <= len(data) - 27:
+        if data[i : i + 4] != b"OggS":
+            i += 1
+            continue
+
+        header_type = data[i + 5]
+        serial = struct.unpack_from("<I", data, i + 14)[0]
+        serials.add(serial)
+
+        if header_type & 0x02:  # BOS flag
+            bos_count += 1
+        if header_type & 0x04:  # EOS flag
+            eos_count += 1
+
+        num_segments = data[i + 26]
+        # Sum segment sizes to find payload length
+        seg_table = data[i + 27 : i + 27 + num_segments]
+        payload_size = sum(seg_table)
+        i += 27 + num_segments + payload_size
+
+    return bos_count, eos_count, sorted(serials)
+
+
+class TestOggSingleStreamValidity:
+    """Multi-chunk TTS audio must produce a single OGG logical stream.
+
+    The OGG specification (RFC 3533) defines a logical bitstream as pages
+    between a BOS (Beginning of Stream) page and its EOS (End of Stream)
+    page.  Browser <audio> elements only play the first logical stream
+    and stop at the first EOS page.
+
+    If multi-chunk audio contains multiple BOS/EOS pairs (one per chunk),
+    the browser plays only the first chunk's audio (~1900 chars of speech)
+    and silently ignores the rest.  This is the root cause of audio
+    truncation for any article longer than 1900 characters.
+    """
+
+    async def test_multi_chunk_audio_has_single_bos_and_eos(self) -> None:
+        """Concatenated multi-chunk OGG must have exactly 1 BOS and 1 EOS page.
+
+        This test catches the naive b"".join() bug where each chunk is a
+        complete OGG file with its own BOS/EOS, producing a chained stream
+        that browsers cannot play past the first chunk.
+        """
+        from tts.processing import process_tts
+
+        # Text long enough to produce multiple TTS chunks (>1900 chars)
+        text = "This is a test sentence for audio validation purposes. " * 80
+        article = ArticleFactory.create(
+            id="art_ogg_stream",
+            user_id="user_001",
+            markdown_content=text,
+        )
+
+        db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
+        r2 = MockR2()
+        # Return realistic OGG Opus data for each chunk
+        fake_audio = _make_ogg_opus_data(3.0)
+        ai = MockAI(response=fake_audio)
+        env = MockEnv(db=db, content=r2, ai=ai, tts_model="aura-2-en")
+
+        result = await process_tts("art_ogg_stream", env, user_id="user_001")
+        assert result is not None
+        assert result["chunks"] > 1, "Need multiple chunks to test stream validity"
+
+        stored = r2._store.get("articles/art_ogg_stream/audio.ogg")
+        assert stored is not None
+
+        bos_count, eos_count, serials = _count_ogg_bos_eos_pages(stored)
+
+        assert bos_count == 1, (
+            f"OGG audio has {bos_count} BOS pages (one per chunk) — browsers will "
+            f"only play the first stream. Must re-mux into a single logical stream."
+        )
+        assert eos_count == 1, (
+            f"OGG audio has {eos_count} EOS pages — browsers stop at the first one. "
+            f"Must re-mux into a single logical stream."
+        )
+        assert len(serials) == 1, (
+            f"OGG audio has {len(serials)} different serial numbers {serials} — "
+            f"a valid single stream must use exactly one serial number."
+        )
+
+    async def test_multi_chunk_ogg_has_continuous_granule_positions(self) -> None:
+        """Granule positions must increase monotonically across the single stream.
+
+        If granule positions reset to 0 mid-stream (as happens with naive
+        concatenation), decoders may seek incorrectly or report wrong duration.
+        """
+        import struct
+
+        from tts.processing import process_tts
+
+        text = "Another test sentence for granule position validation. " * 80
+        article = ArticleFactory.create(
+            id="art_ogg_granule",
+            user_id="user_001",
+            markdown_content=text,
+        )
+
+        db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
+        r2 = MockR2()
+        fake_audio = _make_ogg_opus_data(3.0)
+        ai = MockAI(response=fake_audio)
+        env = MockEnv(db=db, content=r2, ai=ai, tts_model="aura-2-en")
+
+        result = await process_tts("art_ogg_granule", env, user_id="user_001")
+        assert result is not None
+        assert result["chunks"] > 1
+
+        stored = r2._store.get("articles/art_ogg_granule/audio.ogg")
+        assert stored is not None
+
+        # Collect all granule positions from data pages (skip header pages)
+        granules: list[int] = []
+        i = 0
+        page_idx = 0
+        while i <= len(stored) - 27:
+            if stored[i : i + 4] != b"OggS":
+                i += 1
+                continue
+
+            granule = struct.unpack_from("<q", stored, i + 6)[0]
+            header_type = stored[i + 5]
+            num_segments = stored[i + 26]
+            seg_table = stored[i + 27 : i + 27 + num_segments]
+            payload_size = sum(seg_table)
+
+            # Skip header pages (granule = 0 on BOS page is normal)
+            is_bos = bool(header_type & 0x02)
+            if not is_bos and granule >= 0:
+                granules.append(granule)
+
+            i += 27 + num_segments + payload_size
+            page_idx += 1
+
+        # Granule positions must be monotonically non-decreasing
+        for j in range(1, len(granules)):
+            assert granules[j] >= granules[j - 1], (
+                f"Granule position decreased at page {j}: {granules[j]} < {granules[j-1]} — "
+                f"indicates stream boundary from naive concatenation"
+            )
+
+        # Final granule must reflect total duration (all chunks combined)
+        if granules:
+            total_duration_s = (granules[-1] - 312) / 48000.0  # subtract pre_skip
+            expected_min_duration = 3.0 * result["chunks"] * 0.8  # 80% of expected
+            assert total_duration_s >= expected_min_duration, (
+                f"Final granule gives {total_duration_s:.1f}s but expected at least "
+                f"{expected_min_duration:.1f}s for {result['chunks']} × 3.0s chunks"
+            )
+
+    async def test_single_chunk_ogg_unchanged(self) -> None:
+        """A single-chunk article should produce valid OGG without re-muxing."""
+        from tts.processing import process_tts
+
+        text = "Short article. Just one chunk."
+        article = ArticleFactory.create(
+            id="art_ogg_single",
+            user_id="user_001",
+            markdown_content=text,
+        )
+
+        db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
+        r2 = MockR2()
+        fake_audio = _make_ogg_opus_data(2.0)
+        ai = MockAI(response=fake_audio)
+        env = MockEnv(db=db, content=r2, ai=ai, tts_model="aura-2-en")
+
+        result = await process_tts("art_ogg_single", env, user_id="user_001")
+        assert result is not None
+        assert result["chunks"] == 1
+
+        stored = r2._store.get("articles/art_ogg_single/audio.ogg")
+        assert stored is not None
+
+        bos_count, eos_count, serials = _count_ogg_bos_eos_pages(stored)
+        assert bos_count == 1
+        assert eos_count == 1
+        assert len(serials) == 1
+
+
+# ---------------------------------------------------------------------------
 # Audio completeness: content-proportional duration check
 # ---------------------------------------------------------------------------
 
@@ -2120,7 +2329,6 @@ class TestKnownTextGolden:
 
     async def test_golden_text_produces_complete_audio(self) -> None:
         """All chunks of golden text are processed and concatenated."""
-        import json as _json
 
         from tts.processing import chunk_text, process_tts, strip_markdown
 
@@ -2146,10 +2354,11 @@ class TestKnownTextGolden:
             f"Expected {expected_chunks} chunks, got {result['chunks']}"
         )
 
-        # Verify total bytes = sum of chunk sizes (no data lost)
-        assert result["total_bytes"] == sum(result["chunk_sizes"]), (
-            f"Total bytes ({result['total_bytes']}) != sum of chunk_sizes "
-            f"({sum(result['chunk_sizes'])})"
+        # Re-muxed total_bytes may be smaller than sum(chunk_sizes) because
+        # duplicate OGG headers are stripped.  Verify it's at least as large
+        # as the audio data from a single chunk (i.e., not truncated to nothing).
+        assert result["total_bytes"] > min(result["chunk_sizes"]), (
+            f"Total bytes ({result['total_bytes']}) is suspiciously small"
         )
 
         # Verify AI was called exactly once per chunk
@@ -2395,7 +2604,7 @@ class TestAudioDecodeValidation:
         stored = r2._store.get("articles/art_multi_ogg/audio.ogg")
         assert stored is not None
 
-        # Count OggS page markers — concatenated OGG has pages from ALL chunks
+        # Count OggS page markers in the re-muxed single-stream file
         ogg_pages = 0
         idx = 0
         while idx <= len(stored) - 4:
@@ -2405,8 +2614,9 @@ class TestAudioDecodeValidation:
             else:
                 idx += 1
 
-        # Each chunk has at least 2 pages (ID header + data page)
-        expected_min_pages = result["chunks"] * 2
+        # Re-muxed stream: 1 ID header + 1 data page per chunk (headers from
+        # chunks 2+ are stripped).  Must have at least 1 + num_chunks pages.
+        expected_min_pages = 1 + result["chunks"]
         assert ogg_pages >= expected_min_pages, (
             f"Expected at least {expected_min_pages} OGG pages for {result['chunks']} chunks, "
             f"found {ogg_pages}"
@@ -2438,18 +2648,21 @@ class TestAudioDecodeValidation:
         timing = _json.loads(r2._store["articles/art_dur_match/audio-timing.json"])
         manifest_duration_ms = timing["total_duration_ms"]
 
-        # Get OGG-parsed duration from each individual chunk's audio
-        # (Since chunks are concatenated, we measure per-chunk and sum)
-        chunk_size = len(fake_audio)
+        # Parse duration from the re-muxed single-stream OGG file
         stored = r2._store["articles/art_dur_match/audio.ogg"]
-        total_ogg_duration_ms = 0
-        for i in range(result["chunks"]):
-            chunk_data = stored[i * chunk_size : (i + 1) * chunk_size]
-            total_ogg_duration_ms += _ogg_duration_seconds(chunk_data) * 1000
+        ogg_duration_ms = _ogg_duration_seconds(stored) * 1000
 
-        assert abs(manifest_duration_ms - total_ogg_duration_ms) < 50, (
+        # The timing manifest is built from per-chunk OGG parsing (before re-mux),
+        # so it should reflect the total duration across all chunks.
+        # The re-muxed file's duration should match.
+        expected_total_ms = result["chunks"] * 4.0 * 1000  # chunks × 4s each
+        assert abs(manifest_duration_ms - expected_total_ms) < 50, (
             f"Timing manifest ({manifest_duration_ms}ms) differs from "
-            f"OGG-parsed duration ({total_ogg_duration_ms}ms)"
+            f"expected ({expected_total_ms}ms)"
+        )
+        assert abs(ogg_duration_ms - expected_total_ms) < 50, (
+            f"Re-muxed OGG duration ({ogg_duration_ms}ms) differs from "
+            f"expected ({expected_total_ms}ms)"
         )
 
     async def test_r2_stored_size_matches_concatenated_chunks(self) -> None:
@@ -2480,11 +2693,11 @@ class TestAudioDecodeValidation:
             f"R2 stored {len(stored)} bytes but pipeline reported {result['total_bytes']}"
         )
 
-        # Should equal chunk_count × single_chunk_size (since all chunks are identical)
-        expected_size = result["chunks"] * len(fake_audio)
-        assert len(stored) == expected_size, (
-            f"R2 has {len(stored)} bytes but expected {result['chunks']} × "
-            f"{len(fake_audio)} = {expected_size}"
+        # Re-muxed OGG is smaller than raw concatenation (duplicate headers removed),
+        # but must contain all audio data pages.  Verify it's larger than a single chunk.
+        assert len(stored) > len(fake_audio), (
+            f"R2 has {len(stored)} bytes which is <= a single chunk ({len(fake_audio)}) "
+            f"— audio from {result['chunks']} chunks was lost"
         )
 
     async def test_audio_endpoint_serves_complete_stored_audio(self) -> None:
