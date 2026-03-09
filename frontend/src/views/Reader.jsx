@@ -4,7 +4,7 @@ import { EmptyState, LoadingSpinner } from '../components/EmptyState.jsx';
 import { TagPicker } from '../components/TagPicker.jsx';
 import { ReaderToolbar } from '../components/ReaderToolbar.jsx';
 import { audioState, playAudio, getAudio } from '../components/AudioPlayer.jsx';
-import { articles, addToast, pollAudioStatus, searchQuery } from '../state.js';
+import { addToast, pollAudioStatus, searchQuery } from '../state.js';
 import { toggleArchive, toggleFavorite, removeArticle } from '../articleActions.js';
 import { readerPrefs, getReaderStyle, updatePref } from '../readerPrefs.js';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts.js';
@@ -21,6 +21,7 @@ import {
   IconRefresh,
   IconInkDrop,
   IconTrash,
+  IconArchive,
 } from '../components/Icons.jsx';
 import {
   getArticle,
@@ -457,20 +458,6 @@ export function Reader({ id }) {
     setArticle({ ...article, is_favorite: newFav });
   }
 
-  async function handleStatusChange(e) {
-    try {
-      const newStatus = e.target.value;
-      await updateArticle(id, { reading_status: newStatus });
-      setArticle({ ...article, reading_status: newStatus });
-      articles.value = articles.value.map((a) =>
-        a.id === id ? { ...a, reading_status: newStatus } : a,
-      );
-      addToast('Status updated', 'success');
-    } catch (err) {
-      addToast(err.message, 'error');
-    }
-  }
-
   async function handleListenLater() {
     if (listeningLoading) return;
     setListeningLoading(true);
@@ -606,7 +593,7 @@ export function Reader({ id }) {
   const readingTime = article.reading_time_minutes
     ? article.reading_time_minutes + ' min read'
     : '';
-  const statusClass = article.reading_status || 'unread';
+  const isArchived = article.reading_status === 'archived';
   const isFav = article.is_favorite;
   const ostatus = article.original_status || 'unknown';
   const hasAudio = article.audio_status === 'ready';
@@ -681,15 +668,12 @@ export function Reader({ id }) {
               >
                 <IconStar filled={!!isFav} size={14} /> {isFav ? 'Favourited' : 'Favourite'}
               </button>
-              <select
-                class="input input-inline-select"
-                value={statusClass}
-                onChange={handleStatusChange}
-                aria-label="Reading status"
+              <button
+                class={'btn btn-sm ' + (isArchived ? 'btn-primary' : 'btn-secondary')}
+                onClick={handleArchiveToggle}
               >
-                <option value="unread">Unread</option>
-                <option value="archived">Archived</option>
-              </select>
+                <IconArchive filled={isArchived} size={14} /> {isArchived ? 'Archived' : 'Archive'}
+              </button>
               <button class={'btn btn-sm'} onClick={handleSaveOffline} disabled={savingOffline}>
                 {savingOffline ? (
                   'Saving...'
