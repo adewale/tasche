@@ -326,14 +326,10 @@ export function Reader({ id }) {
         }
       };
     },
-    [
-      id,
-      audioState.value.articleId,
-      audioState.value.visible,
-      readerPrefs.value.immersive,
-      readerPrefs.value.contentMode,
-      immersiveTiming,
-    ],
+    // audioState and readerPrefs are @preact/signals — reading .value during
+    // render subscribes the component automatically, so they don't belong in
+    // the dependency array.
+    [id, immersiveTiming],
   );
 
   // Lazy-load markdown content when user switches to Rendered or Source mode
