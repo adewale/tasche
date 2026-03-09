@@ -218,11 +218,7 @@ class TestStripMarkdownProperties:
         result = strip_markdown(text)
         assert isinstance(result, str)
 
-    @given(
-        text=st.from_regex(r"[A-Za-z .,;:?']+", fullmatch=True).filter(
-            lambda t: t.strip()
-        )
-    )
+    @given(text=st.from_regex(r"[A-Za-z .,;:?']+", fullmatch=True).filter(lambda t: t.strip()))
     @settings(max_examples=200)
     def test_plain_text_preserved(self, text: str) -> None:
         """Text with no markdown syntax must survive stripping unchanged.
@@ -614,9 +610,7 @@ class TestSanitizeFts5QueryProperties:
         input_content = "".join(
             ch for ch in query if ch not in _FTS5_SPECIAL_CHARS and not ch.isspace()
         )
-        output_content = "".join(
-            ch for ch in result if ch != '"' and not ch.isspace()
-        )
+        output_content = "".join(ch for ch in result if ch != '"' and not ch.isspace())
         assert output_content == input_content
 
 

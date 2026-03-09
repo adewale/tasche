@@ -2162,7 +2162,7 @@ class TestOggSingleStreamValidity:
         # Granule positions must be monotonically non-decreasing
         for j in range(1, len(granules)):
             assert granules[j] >= granules[j - 1], (
-                f"Granule position decreased at page {j}: {granules[j]} < {granules[j-1]} — "
+                f"Granule position decreased at page {j}: {granules[j]} < {granules[j - 1]} — "
                 f"indicates stream boundary from naive concatenation"
             )
 
@@ -2367,9 +2367,7 @@ class TestKnownTextGolden:
         assert result is not None
 
         # Hardcoded expected chunk count: ~4000 chars / 1900 max = 3 chunks
-        assert result["chunks"] == 3, (
-            f"Expected 3 chunks, got {result['chunks']}"
-        )
+        assert result["chunks"] == 3, f"Expected 3 chunks, got {result['chunks']}"
 
         # Re-muxed total_bytes may be smaller than sum(chunk_sizes) because
         # duplicate OGG headers are stripped.  Verify it's at least as large
@@ -2501,9 +2499,7 @@ class TestChunkCountVerification:
         assert result is not None
 
         # Hardcoded expected: 5700 chars / 1900 max = 4 chunks
-        assert len(ai.calls) == 4, (
-            f"AI was called {len(ai.calls)} times but expected 4 chunks"
-        )
+        assert len(ai.calls) == 4, f"AI was called {len(ai.calls)} times but expected 4 chunks"
         assert result["chunks"] == 4
 
     async def test_single_chunk_text(self) -> None:
@@ -2998,11 +2994,31 @@ class TestFormatIndependentAudioCompleteness:
         # Hardcoded expected words — the input has no markdown, so these
         # are the exact words that should reach the AI
         expected_words = [
-            "Alpha", "beta", "gamma", "delta", "epsilon.",
-            "Zeta", "eta", "theta", "iota", "kappa.",
-            "Lambda", "mu", "nu", "xi", "omicron.",
-            "Pi", "rho", "sigma", "tau", "upsilon.",
-            "Phi", "chi", "psi", "omega", "terminus.",
+            "Alpha",
+            "beta",
+            "gamma",
+            "delta",
+            "epsilon.",
+            "Zeta",
+            "eta",
+            "theta",
+            "iota",
+            "kappa.",
+            "Lambda",
+            "mu",
+            "nu",
+            "xi",
+            "omicron.",
+            "Pi",
+            "rho",
+            "sigma",
+            "tau",
+            "upsilon.",
+            "Phi",
+            "chi",
+            "psi",
+            "omega",
+            "terminus.",
         ]
         for word in expected_words:
             assert word in all_sent, (
