@@ -1258,3 +1258,49 @@ When the audio-timing endpoint was added, three Service Worker code paths needed
 This mirrors lesson 67 (apply known fixes comprehensively) but for the Service Worker specifically.
 
 **Lesson:** When adding a new cacheable resource, audit every SW code path: save-for-offline, auto-precache, eviction, cache invalidation, and offline fallback. The SW has no type system or import graph to tell you which paths need updating — you must grep for sibling resources (e.g., `audio.ogg`) and ensure the new resource (`audio-timing.json`) appears in every place the sibling does.
+
+---
+
+## Audio Regeneration and Pipeline Cleanup Symmetry (2026-03-09)
+
+### 87. Cleanup Operations Must Be Symmetric Across Coupled Pipelines
+
+The article system had two pipelines producing artifacts under the same R2 prefix (`articles/{id}/`): text processing (HTML, images, metadata, thumbnail) and TTS (audio files, timing JSON). The `delete_non_audio_content` function cleaned up text artifacts while preserving audio — designed for the case where text is re-processed but audio should survive.
+
+This created three problems: (1) re-saving a duplicate URL deleted text and audio R2 files but didn't re-queue TTS, silently losing the user's audio; (2) the retry endpoint deleted everything but enqueued TTS as a separate parallel message, racing against text processing; (3) the listen-later endpoint cleaned audio using a hardcoded suffix list that would miss future formats.
+
+The fix was to remove `delete_non_audio_content` entirely. All cleanup paths now delete everything (`delete_article_content`) and re-queue both pipelines. The "preserve audio during text re-processing" optimization was a false economy — it saved one TTS job but introduced three categories of bugs.
+
+**Lesson:** When two pipelines produce artifacts under the same storage prefix, cleanup should be all-or-nothing. Selective cleanup (delete A's artifacts, preserve B's) couples the cleanup logic to knowledge of which files belong to which pipeline. This coupling breaks silently when files are added, formats change, or new cleanup paths are introduced. Deleting everything and re-running both pipelines is simpler and correct by construction.
+
+### 88. Queue Message Chaining Beats Parallel Enqueue for Dependent Pipelines
+
+The retry endpoint needed to re-process text *then* regenerate audio. The initial approach enqueued two independent messages: `article_processing` and `tts_generation`. This relied on TTS raising `_RetryableError` when markdown wasn't available yet, hoping the queue would retry until text processing completed.
+
+This is fragile: if retry attempts are exhausted before text finishes, audio generation fails permanently. The queue's retry policy becomes a hidden coupling between two pipelines.
+
+**Fix:** Pass `requeue_tts: true` (plus voice preference) in the `article_processing` message. The queue handler chains the TTS enqueue *after* `process_article()` returns successfully. Text completion is guaranteed by control flow, not by retry timing.
+
+**Lesson:** When pipeline B depends on pipeline A's output, don't enqueue both and hope B retries until A finishes. Have A's handler enqueue B upon successful completion. This replaces a timing-dependent retry loop with a causal dependency — B starts because A finished, not because B's Nth retry happened to land after A completed.
+
+### 89. Hardcoded File Lists Drift; Pattern-Based Cleanup Is Self-Maintaining
+
+The `listen_later` endpoint deleted old audio files by iterating a hardcoded tuple: `("audio.ogg", "audio.mp3", "audio.wav", "audio-timing.json")`. If a new format were added (e.g., `audio.aac`), this list wouldn't cover it — orphaning old files on regeneration.
+
+**Fix:** Replace with `delete_audio_content()` that does `r2.list(prefix=...)` and deletes objects whose filename contains `"audio"`. This is self-maintaining: any new audio-related file is automatically covered.
+
+The contrast with `delete_article_content` (which already used list-based deletion) made the inconsistency obvious. Two functions doing the same conceptual operation (delete a subset of R2 objects) should use the same strategy.
+
+**Lesson:** When cleaning up storage objects, prefer list-and-filter over enumerate-known-suffixes. The list approach is O(actual files) and adapts to format changes; the suffix approach is O(known formats) and silently misses additions. This is the storage equivalent of "don't repeat yourself" — the R2 bucket is the source of truth for what exists.
+
+### 90. Behavioral Tables Surface Gaps That Code Review Misses
+
+After implementing audio regeneration across save-duplicate, retry, and listen-later, a behavior matrix (action × side-effect) was drawn with columns for text R2, audio R2, `audio_status`, TTS re-queued, and sequencing. Three gaps were immediately visible in the table that weren't visible from reading any single code path:
+
+1. Save duplicate with prior audio didn't re-queue TTS (gap in one row)
+2. Retry enqueued TTS in parallel with text processing (gap in sequencing column)
+3. Listen-later used hardcoded suffixes while retry used list-based cleanup (inconsistency across rows)
+
+Each gap involved *interactions between* code paths — the kind of bug that code review misses because each path looks correct in isolation. The table forces you to compare the same column across all rows, making asymmetries jump out.
+
+**Lesson:** When multiple user actions can trigger the same underlying operations (cleanup, re-queue, status reset), draw a matrix of actions × effects. Fill every cell. Empty cells are missing behavior; inconsistent cells across rows are bugs. This is faster than reading N code paths and mentally diffing them.
