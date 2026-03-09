@@ -606,6 +606,23 @@ export function IconMenu({ size = 18, ...props }) {
   );
 }
 
+export function IconSoundBars({ size = 16, ...props }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      stroke="none"
+      {...props}
+    >
+      <rect class="sound-bar sound-bar-1" x="4" y="8" width="4" height="12" rx="1" />
+      <rect class="sound-bar sound-bar-2" x="10" y="4" width="4" height="16" rx="1" />
+      <rect class="sound-bar sound-bar-3" x="16" y="6" width="4" height="14" rx="1" />
+    </svg>
+  );
+}
+
 export function IconSun({ size = 16, ...props }) {
   return (
     <svg

@@ -778,6 +778,41 @@ textarea {
   color: var(--text);
 }
 
+.article-card-actions button.audio-playing {
+  color: var(--text);
+  cursor: default;
+  pointer-events: none;
+  opacity: 0.8;
+}
+
+.sound-bar {
+  transform-origin: bottom center;
+  animation: sound-bar-pulse 1s ease-in-out infinite;
+}
+
+.sound-bar-1 {
+  animation-duration: 0.8s;
+}
+
+.sound-bar-2 {
+  animation-duration: 1.1s;
+  animation-delay: 0.15s;
+}
+
+.sound-bar-3 {
+  animation-duration: 0.9s;
+  animation-delay: 0.3s;
+}
+
+@keyframes sound-bar-pulse {
+  0%, 100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(0.4);
+  }
+}
+
 .article-card-actions button.audio-pending {
   color: var(--text-muted);
   opacity: 0.6;

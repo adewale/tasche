@@ -9,7 +9,7 @@ import {
 } from '../api.js';
 import { toggleArchive, toggleFavorite, removeArticle } from '../articleActions.js';
 import { nav } from '../nav.js';
-import { playAudio } from './AudioPlayer.jsx';
+import { playAudio, audioState } from './AudioPlayer.jsx';
 import {
   IconStar,
   IconTrash,
@@ -17,6 +17,7 @@ import {
   IconCheckSquare,
   IconHeadphones,
   IconPlay,
+  IconSoundBars,
   IconClock,
   IconArchive,
   IconRefresh,
@@ -132,6 +133,7 @@ export function ArticleCard({ article, selectMode, selected, onToggleSelect }) {
   var audioFailed = audioStatus === 'failed';
   var canRequestAudio = !hasAudio && !audioPending && !audioStuck && !audioFailed;
   var isArchived = a.reading_status === 'archived';
+  var isThisPlaying = audioState.value.articleId === a.id && audioState.value.isPlaying;
 
   var thumbnailSrc = a.thumbnail_key ? '/api/articles/' + a.id + '/thumbnail' : null;
   var hasThumbnail = !!thumbnailSrc;
@@ -202,7 +204,12 @@ export function ArticleCard({ article, selectMode, selected, onToggleSelect }) {
           </div>
         )}
         <div class="article-card-actions">
-          {!isProcessing && hasAudio && (
+          {!isProcessing && hasAudio && isThisPlaying && (
+            <button class="audio-playing" title="Now playing" disabled>
+              <IconSoundBars />
+            </button>
+          )}
+          {!isProcessing && hasAudio && !isThisPlaying && (
             <button class="audio-ready" title="Play audio" onClick={handlePlayAudio}>
               <IconPlay />
             </button>
