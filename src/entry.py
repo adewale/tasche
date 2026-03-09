@@ -235,12 +235,14 @@ async def _handle_article_processing(message_body: dict, env: object) -> None:
         tts_voice = message_body.get("tts_voice", "athena")
         user_id = message_body.get("user_id")
         if user_id:
-            await env.ARTICLE_QUEUE.send({
-                "type": "tts_generation",
-                "article_id": article_id,
-                "user_id": user_id,
-                "tts_voice": tts_voice,
-            })
+            await env.ARTICLE_QUEUE.send(
+                {
+                    "type": "tts_generation",
+                    "article_id": article_id,
+                    "user_id": user_id,
+                    "tts_voice": tts_voice,
+                }
+            )
 
 
 async def _handle_tts_generation(message_body: dict, env: object) -> None:

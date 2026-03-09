@@ -41,7 +41,10 @@ async def listen_later(
 
     # Verify article exists and belongs to user
     await _get_user_article(
-        db, article_id, user_id, fields="id",
+        db,
+        article_id,
+        user_id,
+        fields="id",
     )
 
     # Delete any existing audio files (list-based, format-independent)
@@ -53,11 +56,7 @@ async def listen_later(
 
     # Read user's voice preference
     pref = await (
-        db.prepare(
-            "SELECT tts_voice FROM user_preferences WHERE user_id = ?"
-        )
-        .bind(user_id)
-        .first()
+        db.prepare("SELECT tts_voice FROM user_preferences WHERE user_id = ?").bind(user_id).first()
     )
     tts_voice = pref.get("tts_voice") if pref else "athena"
 

@@ -259,4 +259,3 @@ class TestMissingKeyReturnsNone:
         await r2.put("articles/art_x/content.html", b"<p>hi</p>")
         await delete_article_content(r2, "art_x")
         assert await get_content(r2, "articles/art_x/content.html") is None
-

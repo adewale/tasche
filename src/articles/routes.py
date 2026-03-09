@@ -291,9 +291,7 @@ async def create_article(
     # Chain TTS after text processing when article had/wants audio
     if is_update and requeue_tts:
         pref = await (
-            db.prepare(
-                "SELECT tts_voice FROM user_preferences WHERE user_id = ?"
-            )
+            db.prepare("SELECT tts_voice FROM user_preferences WHERE user_id = ?")
             .bind(user_id)
             .first()
         )
@@ -926,7 +924,9 @@ async def retry_article(
     user_id = user["user_id"]
 
     article = await _get_user_article(
-        db, article_id, user_id,
+        db,
+        article_id,
+        user_id,
         fields="id, original_url, status, audio_status",
     )
 
@@ -949,9 +949,7 @@ async def retry_article(
         )
     else:
         await (
-            db.prepare(
-                "UPDATE articles SET status = 'pending', updated_at = ? WHERE id = ?"
-            )
+            db.prepare("UPDATE articles SET status = 'pending', updated_at = ? WHERE id = ?")
             .bind(now, article_id)
             .run()
         )
@@ -966,9 +964,7 @@ async def retry_article(
     # Chain TTS after text processing so markdown is available first
     if had_audio:
         pref = await (
-            db.prepare(
-                "SELECT tts_voice FROM user_preferences WHERE user_id = ?"
-            )
+            db.prepare("SELECT tts_voice FROM user_preferences WHERE user_id = ?")
             .bind(user_id)
             .first()
         )
