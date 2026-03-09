@@ -99,7 +99,14 @@ class TestChunkTextProperties:
     @given(text=st.text())
     @settings(max_examples=200)
     def test_no_sentences_lost(self, text: str) -> None:
-        """All sentences from split_sentences must appear across all chunks."""
+        """All sentences from split_sentences must appear across all chunks.
+
+        NOTE: This test uses split_sentences on both sides (to compute expected
+        and to recover from chunks). A bug in split_sentences would affect both
+        sides equally. This is acceptable for a property test verifying the
+        composition invariant (chunk_text preserves split_sentences output), but
+        it cannot catch shared bugs in the sentence splitter.
+        """
         sentences = split_sentences(text)
         chunks = chunk_text(text)
         # Reconstruct sentences from chunks by re-splitting
@@ -144,7 +151,11 @@ class TestChunkTextWithSentencesProperties:
     @given(text=st.text())
     @settings(max_examples=200)
     def test_all_sentences_covered(self, text: str) -> None:
-        """Concatenating all chunk sentences must equal split_sentences(text)."""
+        """Concatenating all chunk sentences must equal split_sentences(text).
+
+        NOTE: Uses split_sentences on both sides. See TestChunkTextProperties
+        .test_no_sentences_lost for the same caveat about shared bugs.
+        """
         sentences = split_sentences(text)
         chunks = chunk_text_with_sentences(text)
         recovered = []

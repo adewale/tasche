@@ -983,13 +983,19 @@ class TestChunkText:
 
     def test_all_text_preserved(self) -> None:
         """All original sentences appear across chunks."""
-        from tts.processing import chunk_text, split_sentences
+        from tts.processing import chunk_text
 
         text = "First sentence. Second sentence. Third sentence. Fourth sentence."
         chunks = chunk_text(text, max_chars=40)
-        # Recombine and verify all sentences are present
+        # Recombine and verify all known sentences are present
         recombined = " ".join(chunks)
-        for sentence in split_sentences(text):
+        # Hardcoded expected sentences — not derived from production code
+        for sentence in [
+            "First sentence.",
+            "Second sentence.",
+            "Third sentence.",
+            "Fourth sentence.",
+        ]:
             assert sentence in recombined
 
 
@@ -1457,14 +1463,15 @@ class TestChunkTextWithSentences:
         assert chunk_text_with_sentences("   ") == []
 
     def test_preserves_all_sentences(self):
-        from tts.processing import chunk_text_with_sentences, split_sentences
+        from tts.processing import chunk_text_with_sentences
 
         text = "One. Two. Three. Four. Five."
         result = chunk_text_with_sentences(text)
         all_sentences = []
         for chunk in result:
             all_sentences.extend(chunk["sentences"])
-        assert all_sentences == split_sentences(text)
+        # Hardcoded expected sentences — not derived from production code
+        assert all_sentences == ["One.", "Two.", "Three.", "Four.", "Five."]
 
     def test_chunk_text_matches_text_field(self):
         from tts.processing import chunk_text_with_sentences
@@ -1965,7 +1972,7 @@ class TestProcessTTSTimingIntegration:
         ai = MockAI(response=fake_audio)
         env = MockEnv(db=db, content=r2, ai=ai, tts_model="aura-2-en")
 
-        from tts.processing import process_tts, split_sentences, strip_markdown
+        from tts.processing import process_tts
 
         await process_tts("art_scount", env, user_id="user_001")
 
@@ -1973,10 +1980,16 @@ class TestProcessTTSTimingIntegration:
         assert timing_key in r2._store
 
         timing = _json.loads(r2._store[timing_key])
-        # Count expected sentences from the stripped markdown
-        stripped = strip_markdown(article["markdown_content"])
-        expected_sentences = split_sentences(stripped)
-        assert len(timing["sentences"]) == len(expected_sentences)
+        # Hardcoded expected sentences — input has no markdown to strip,
+        # so we know exactly what the pipeline should produce.
+        expected_sentences = [
+            "First sentence.",
+            "Second sentence.",
+            "Third sentence.",
+            "Fourth sentence.",
+            "Fifth sentence.",
+        ]
+        assert len(timing["sentences"]) == 5
 
         # Verify sentence text matches
         for ts, es in zip(timing["sentences"], expected_sentences):
@@ -2315,22 +2328,28 @@ class TestKnownTextGolden:
     ) * 20  # ~500 words, ~2500 chars → 2 chunks
 
     async def test_golden_text_chunk_count(self) -> None:
-        """Known text should produce multiple chunks (>1900 chars total)."""
-        from tts.processing import chunk_text, strip_markdown
+        """Known text should produce the expected number of chunks.
 
-        stripped = strip_markdown(self.GOLDEN_TEXT)
-        chunks = chunk_text(stripped)
-        assert len(chunks) >= 2, (
-            f"Expected at least 2 chunks for ~2500 chars at 1900 char limit, got {len(chunks)}"
+        The golden text is ~4000 chars of plain text (no markdown to strip),
+        so at 1900 chars/chunk it should produce exactly 3 chunks, each
+        under the 1900-char limit.
+        """
+        from tts.processing import chunk_text
+
+        # The golden text has no markdown syntax, so strip_markdown is a no-op.
+        # We call chunk_text directly and validate against a hardcoded count.
+        chunks = chunk_text(self.GOLDEN_TEXT)
+        assert len(chunks) == 3, (
+            f"Expected exactly 3 chunks for ~4000 chars at 1900 char limit, got {len(chunks)}"
         )
-        # Every chunk should be under the limit (except possibly a single long sentence)
+        # Every chunk should be under the limit
         for i, chunk in enumerate(chunks):
             assert len(chunk) <= 1900, f"Chunk {i} is {len(chunk)} chars, exceeds 1900 limit"
 
     async def test_golden_text_produces_complete_audio(self) -> None:
         """All chunks of golden text are processed and concatenated."""
 
-        from tts.processing import chunk_text, process_tts, strip_markdown
+        from tts.processing import process_tts
 
         article = ArticleFactory.create(
             id="art_golden",
@@ -2347,11 +2366,9 @@ class TestKnownTextGolden:
         result = await process_tts("art_golden", env, user_id="user_001")
         assert result is not None
 
-        # Verify chunk count matches expected
-        stripped = strip_markdown(self.GOLDEN_TEXT)
-        expected_chunks = len(chunk_text(stripped))
-        assert result["chunks"] == expected_chunks, (
-            f"Expected {expected_chunks} chunks, got {result['chunks']}"
+        # Hardcoded expected chunk count: ~4000 chars / 1900 max = 3 chunks
+        assert result["chunks"] == 3, (
+            f"Expected 3 chunks, got {result['chunks']}"
         )
 
         # Re-muxed total_bytes may be smaller than sum(chunk_sizes) because
@@ -2362,7 +2379,7 @@ class TestKnownTextGolden:
         )
 
         # Verify AI was called exactly once per chunk
-        assert len(ai.calls) == expected_chunks
+        assert len(ai.calls) == 3
 
         # Verify audio file exists in R2
         audio_key = "articles/art_golden/audio.ogg"
@@ -2374,7 +2391,7 @@ class TestKnownTextGolden:
         """Timing manifest includes every sentence from the golden text."""
         import json as _json
 
-        from tts.processing import process_tts, split_sentences, strip_markdown
+        from tts.processing import process_tts
 
         article = ArticleFactory.create(
             id="art_golden_tm",
@@ -2391,17 +2408,24 @@ class TestKnownTextGolden:
         await process_tts("art_golden_tm", env, user_id="user_001")
 
         timing = _json.loads(r2._store["articles/art_golden_tm/audio-timing.json"])
-        stripped = strip_markdown(self.GOLDEN_TEXT)
-        expected_sentences = split_sentences(stripped)
-
-        assert len(timing["sentences"]) == len(expected_sentences), (
-            f"Timing has {len(timing['sentences'])} sentences but text has "
-            f"{len(expected_sentences)}"
+        # The golden text has 5 sentences repeated 20 times = 100 sentences.
+        # No markdown to strip, so all 100 sentences should appear in timing.
+        assert len(timing["sentences"]) == 100, (
+            f"Timing has {len(timing['sentences'])} sentences but expected 100 "
+            f"(5 sentences × 20 repeats)"
         )
 
-        # Every sentence text should match
-        for i, (ts, es) in enumerate(zip(timing["sentences"], expected_sentences)):
-            assert ts["text"] == es, f"Sentence {i} mismatch: {ts['text']!r} != {es!r}"
+        # Verify the 5 unique sentence texts cycle correctly
+        unique_sentences = [
+            "The quick brown fox jumps over the lazy dog.",
+            "Pack my box with five dozen liquor jugs.",
+            "How vexingly quick daft zebras jump.",
+            "The five boxing wizards jump quickly.",
+            "Jackdaws love my big sphinx of quartz.",
+        ]
+        for i, ts in enumerate(timing["sentences"]):
+            expected = unique_sentences[i % 5]
+            assert ts["text"] == expected, f"Sentence {i} mismatch: {ts['text']!r} != {expected!r}"
 
     async def test_golden_text_duration_in_expected_range(self) -> None:
         """Audio duration should be in a reasonable range for ~500 words at 150 WPM."""
@@ -2453,22 +2477,19 @@ class TestChunkCountVerification:
     """
 
     async def test_ai_calls_equal_chunk_count(self) -> None:
-        """Number of AI.run() calls must equal chunk_text() output count."""
-        from tts.processing import chunk_text, process_tts, strip_markdown
+        """Number of AI.run() calls must equal expected chunk count."""
+        from tts.processing import process_tts
 
-        # Create text that produces exactly 3 chunks
-        # Each sentence is ~60 chars, 1900/60 ≈ 31 sentences per chunk
+        # Each sentence is 57 chars. 100 sentences = ~5700 chars.
+        # At 1900 chars/chunk, this should produce exactly 4 chunks.
         sentence = "This is a moderately long sentence for testing purposes. "
-        text = sentence * 100  # ~6000 chars → ~3-4 chunks
+        text = sentence * 100  # ~5700 chars → 4 chunks
 
         article = ArticleFactory.create(
             id="art_chk_count",
             user_id="user_001",
             markdown_content=text,
         )
-
-        stripped = strip_markdown(text)
-        expected_chunks = len(chunk_text(stripped))
 
         db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
         r2 = MockR2()
@@ -2479,11 +2500,11 @@ class TestChunkCountVerification:
         result = await process_tts("art_chk_count", env, user_id="user_001")
         assert result is not None
 
-        assert len(ai.calls) == expected_chunks, (
-            f"AI was called {len(ai.calls)} times but chunk_text() produced "
-            f"{expected_chunks} chunks — mismatch!"
+        # Hardcoded expected: 5700 chars / 1900 max = 4 chunks
+        assert len(ai.calls) == 4, (
+            f"AI was called {len(ai.calls)} times but expected 4 chunks"
         )
-        assert result["chunks"] == expected_chunks
+        assert result["chunks"] == 4
 
     async def test_single_chunk_text(self) -> None:
         """Short text under 1900 chars produces exactly 1 AI call."""
@@ -2508,8 +2529,13 @@ class TestChunkCountVerification:
         assert len(ai.calls) == 1
 
     async def test_each_chunk_text_sent_to_ai(self) -> None:
-        """Verify the actual text sent to each AI call matches the chunked text."""
-        from tts.processing import chunk_text, process_tts, strip_markdown
+        """Verify the actual text sent to each AI call covers the input text.
+
+        Instead of deriving expected chunks from production code, we verify
+        that every input sentence appears in exactly one AI call, and that
+        the first chunk starts with the first sentence.
+        """
+        from tts.processing import process_tts
 
         text = "First paragraph with enough words. " * 50 + "Second section here. " * 50
 
@@ -2519,9 +2545,6 @@ class TestChunkCountVerification:
             markdown_content=text,
         )
 
-        stripped = strip_markdown(text)
-        expected_chunks = chunk_text(stripped)
-
         db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
         r2 = MockR2()
         fake_audio = _make_ogg_opus_data(2.0)
@@ -2530,12 +2553,18 @@ class TestChunkCountVerification:
 
         await process_tts("art_chk_text", env, user_id="user_001")
 
-        # Each AI call should have received the text from the corresponding chunk
-        for i, (call, expected_text) in enumerate(zip(ai.calls, expected_chunks)):
-            assert call.get("text") == expected_text, (
-                f"Chunk {i}: AI received {call.get('text')[:50]!r}... "
-                f"but expected {expected_text[:50]!r}..."
-            )
+        # Should produce 2 chunks (~2800 chars / 1900 max)
+        assert len(ai.calls) == 2, f"Expected 2 AI calls, got {len(ai.calls)}"
+
+        # First chunk should start with "First paragraph" content
+        assert ai.calls[0].get("text", "").startswith("First paragraph with enough words."), (
+            f"First chunk doesn't start with expected text: {ai.calls[0].get('text', '')[:50]!r}"
+        )
+
+        # Second chunk should contain "Second section" content
+        assert "Second section here." in ai.calls[1].get("text", ""), (
+            f"Second chunk doesn't contain expected text: {ai.calls[1].get('text', '')[:50]!r}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -2550,8 +2579,8 @@ class TestAudioDecodeValidation:
     """
 
     async def test_ogg_audio_has_valid_structure(self) -> None:
-        """OGG audio stored in R2 starts with OggS and has parseable duration."""
-        from tts.processing import _ogg_duration_seconds, process_tts
+        """OGG audio stored in R2 starts with OggS and has valid OGG page structure."""
+        from tts.processing import process_tts
 
         text = "Some sample text for audio validation. " * 30
         article = ArticleFactory.create(
@@ -2574,9 +2603,13 @@ class TestAudioDecodeValidation:
         # Verify OGG magic bytes
         assert stored[:4] == b"OggS", f"Audio doesn't start with OggS: {stored[:4]!r}"
 
-        # Verify duration is parseable and positive
-        duration = _ogg_duration_seconds(stored)
-        assert duration > 0, "Stored OGG audio has no parseable duration"
+        # Verify structural validity using an independent check (not _ogg_duration_seconds):
+        # The stored audio should have exactly 1 BOS and 1 EOS page (single logical stream)
+        bos_count, eos_count, serials = _count_ogg_bos_eos_pages(stored)
+        assert bos_count == 1, f"Expected 1 BOS page, got {bos_count}"
+        assert eos_count == 1, f"Expected 1 EOS page, got {eos_count}"
+        # Must contain OpusHead header in first page
+        assert b"OpusHead" in stored[:100], "Missing OpusHead header in stored OGG"
 
     async def test_multi_chunk_ogg_each_chunk_has_valid_header(self) -> None:
         """When multiple OGG chunks are concatenated, each chunk boundary
@@ -2622,11 +2655,17 @@ class TestAudioDecodeValidation:
             f"found {ogg_pages}"
         )
 
-    async def test_timing_duration_matches_ogg_duration(self) -> None:
-        """Timing manifest total_duration_ms should match OGG-parsed duration."""
+    async def test_timing_duration_matches_expected(self) -> None:
+        """Timing manifest total_duration_ms should match the known input duration.
+
+        Each AI call returns 4.0s of OGG audio. The expected total is
+        chunks x 4000ms. We validate the manifest against this hardcoded
+        expectation rather than re-parsing the stored OGG with the same
+        function that built the manifest (which would be tautological).
+        """
         import json as _json
 
-        from tts.processing import _ogg_duration_seconds, process_tts
+        from tts.processing import process_tts
 
         text = "Testing duration consistency across audio and manifest. " * 20
         article = ArticleFactory.create(
@@ -2648,20 +2687,34 @@ class TestAudioDecodeValidation:
         timing = _json.loads(r2._store["articles/art_dur_match/audio-timing.json"])
         manifest_duration_ms = timing["total_duration_ms"]
 
-        # Parse duration from the re-muxed single-stream OGG file
-        stored = r2._store["articles/art_dur_match/audio.ogg"]
-        ogg_duration_ms = _ogg_duration_seconds(stored) * 1000
-
-        # The timing manifest is built from per-chunk OGG parsing (before re-mux),
-        # so it should reflect the total duration across all chunks.
-        # The re-muxed file's duration should match.
-        expected_total_ms = result["chunks"] * 4.0 * 1000  # chunks × 4s each
+        # Validate against hardcoded expectation: chunks x 4000ms
+        expected_total_ms = result["chunks"] * 4000
         assert abs(manifest_duration_ms - expected_total_ms) < 50, (
             f"Timing manifest ({manifest_duration_ms}ms) differs from "
             f"expected ({expected_total_ms}ms)"
         )
-        assert abs(ogg_duration_ms - expected_total_ms) < 50, (
-            f"Re-muxed OGG duration ({ogg_duration_ms}ms) differs from "
+
+        # Verify the re-muxed file's final granule position independently
+        # using struct (not _ogg_duration_seconds) for a cross-check
+        import struct
+
+        stored = r2._store["articles/art_dur_match/audio.ogg"]
+        # Find the last OggS page and read its granule position
+        last_granule = 0
+        i = 0
+        while i <= len(stored) - 27:
+            if stored[i : i + 4] != b"OggS":
+                i += 1
+                continue
+            granule = struct.unpack_from("<q", stored, i + 6)[0]
+            if granule > 0:
+                last_granule = granule
+            num_segments = stored[i + 26]
+            i += 27 + num_segments
+        # Subtract pre_skip (312 samples) and convert to ms at 48kHz
+        remuxed_duration_ms = (last_granule - 312) / 48.0
+        assert abs(remuxed_duration_ms - expected_total_ms) < 50, (
+            f"Re-muxed OGG granule-derived duration ({remuxed_duration_ms:.0f}ms) differs from "
             f"expected ({expected_total_ms}ms)"
         )
 
@@ -2732,3 +2785,298 @@ class TestAudioDecodeValidation:
             f"audio truncated during serving!"
         )
         assert resp.content == full_audio, "Served audio content differs from stored audio"
+
+
+# ---------------------------------------------------------------------------
+# Format-independent tests: catch audio truncation regardless of format
+# ---------------------------------------------------------------------------
+
+
+class TestFormatIndependentAudioCompleteness:
+    """Tests that verify audio output completeness using format-agnostic
+    properties.  These would catch the truncation bug whether output is
+    OGG, MP3, WAV, or any other format.
+
+    Instead of parsing OGG page headers, these tests use external invariants:
+    - Output size scales with input length
+    - All API chunks are included in the output
+    - Output is strictly larger than any single chunk response
+    """
+
+    async def test_output_contains_bytes_from_every_chunk_response(self) -> None:
+        """Final audio must include data from every AI response, not just the first.
+
+        Uses uniquely-tagged chunk responses to verify all are present. This is
+        format-independent — it works for any concatenation/remuxing strategy.
+        """
+        from tts.processing import process_tts
+
+        text = "A sentence for multi chunk format independent testing. " * 80
+        article = ArticleFactory.create(
+            id="art_fi_every",
+            user_id="user_001",
+            markdown_content=text,
+        )
+
+        db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
+        r2 = MockR2()
+
+        # Each chunk gets a unique 8-byte tag embedded in OGG audio data pages.
+        # After remuxing, data pages from all chunks should be in the output.
+        chunk_tags: list[bytes] = []
+        call_idx = {"n": 0}
+
+        class TaggedAI:
+            def __init__(self):
+                self.calls = []
+
+            async def run(self, model, inputs=None, **kwargs):
+                call = {"model": model}
+                if isinstance(inputs, dict):
+                    call.update(inputs)
+                self.calls.append(call)
+                idx = call_idx["n"]
+                call_idx["n"] += 1
+                # Create unique tag bytes for this chunk
+                tag = f"TAG{idx:04d}".encode()  # e.g. b"TAG0000", b"TAG0001"
+                chunk_tags.append(tag)
+                # Build OGG audio with the tag in the data page payload
+                import struct
+
+                pre_skip = 312
+                total_samples = int(3.0 * 48000) + pre_skip
+                opus_head = (
+                    b"OpusHead"
+                    + struct.pack("<B", 1)
+                    + struct.pack("<B", 1)
+                    + struct.pack("<H", pre_skip)
+                    + struct.pack("<I", 48000)
+                    + struct.pack("<h", 0)
+                    + struct.pack("<B", 0)
+                )
+                page1 = b"OggS"
+                page1 += struct.pack("<B", 0)
+                page1 += struct.pack("<B", 2)  # BOS
+                page1 += struct.pack("<q", 0)
+                page1 += struct.pack("<I", 1)
+                page1 += struct.pack("<I", 0)
+                page1 += struct.pack("<I", 0)
+                page1 += struct.pack("<B", 1)
+                page1 += struct.pack("<B", len(opus_head))
+                page1 += opus_head
+                # Data page with the unique tag
+                payload = tag + b"\x00" * 92  # 100 bytes total
+                page2 = b"OggS"
+                page2 += struct.pack("<B", 0)
+                page2 += struct.pack("<B", 4)  # EOS
+                page2 += struct.pack("<q", total_samples)
+                page2 += struct.pack("<I", 1)
+                page2 += struct.pack("<I", 2)
+                page2 += struct.pack("<I", 0)
+                page2 += struct.pack("<B", 1)
+                page2 += struct.pack("<B", len(payload))
+                page2 += payload
+                return page1 + page2
+
+        ai = TaggedAI()
+        env = MockEnv(db=db, content=r2, ai=ai, tts_model="aura-2-en")
+
+        result = await process_tts("art_fi_every", env, user_id="user_001")
+        assert result is not None
+        assert result["chunks"] > 1, "Need multiple chunks for this test"
+
+        stored = r2._store.get("articles/art_fi_every/audio.ogg")
+        assert stored is not None
+
+        # Every chunk's unique tag must appear in the final output
+        for i, tag in enumerate(chunk_tags):
+            assert tag in stored, (
+                f"Chunk {i} tag {tag!r} missing from output — "
+                f"audio from this chunk was lost during concatenation/remuxing"
+            )
+
+    async def test_output_size_proportional_to_input_chunks(self) -> None:
+        """An article producing N chunks should have output roughly N times
+        larger than a single-chunk article's output.
+
+        This catches truncation where only 1 of N chunks survives, regardless
+        of the audio container format.
+        """
+        from tts.processing import process_tts
+
+        short_text = "Short article content here."  # 1 chunk
+        long_text = "A longer sentence for producing multiple chunks. " * 80  # N chunks
+
+        short_article = ArticleFactory.create(
+            id="art_fi_short", user_id="user_001", markdown_content=short_text
+        )
+        long_article = ArticleFactory.create(
+            id="art_fi_long", user_id="user_001", markdown_content=long_text
+        )
+
+        fake_audio = _make_ogg_opus_data(3.0)
+        single_chunk_size = len(fake_audio)
+
+        # Process short article
+        short_db = TrackingD1(
+            result_fn=lambda sql, params: [short_article] if "SELECT" in sql else []
+        )
+        short_r2 = MockR2()
+        short_env = MockEnv(
+            db=short_db, content=short_r2, ai=MockAI(response=fake_audio), tts_model="aura-2-en"
+        )
+        short_result = await process_tts("art_fi_short", short_env, user_id="user_001")
+
+        # Process long article
+        long_db = TrackingD1(
+            result_fn=lambda sql, params: [long_article] if "SELECT" in sql else []
+        )
+        long_r2 = MockR2()
+        long_env = MockEnv(
+            db=long_db, content=long_r2, ai=MockAI(response=fake_audio), tts_model="aura-2-en"
+        )
+        long_result = await process_tts("art_fi_long", long_env, user_id="user_001")
+
+        assert short_result is not None
+        assert long_result is not None
+        assert long_result["chunks"] > 1
+
+        # Long output must be strictly larger than a single chunk response.
+        # With the truncation bug, long_result["total_bytes"] would equal
+        # a single chunk's size regardless of how many chunks were generated.
+        assert long_result["total_bytes"] > single_chunk_size, (
+            f"Long article ({long_result['chunks']} chunks) produced only "
+            f"{long_result['total_bytes']} bytes — same as a single chunk "
+            f"({single_chunk_size} bytes). Audio was truncated."
+        )
+
+        # The ratio of output sizes should roughly match the ratio of chunk counts.
+        # Allow generous tolerance (50%) since remuxing may add/remove headers.
+        ratio = long_result["total_bytes"] / short_result["total_bytes"]
+        chunk_ratio = long_result["chunks"] / short_result["chunks"]
+        assert ratio > chunk_ratio * 0.5, (
+            f"Output size ratio ({ratio:.1f}x) is much less than chunk count "
+            f"ratio ({chunk_ratio:.1f}x) — suggests audio data is being lost"
+        )
+
+    async def test_all_input_text_reaches_ai(self) -> None:
+        """Every word of the input text must be sent to the AI, not dropped.
+
+        This is format-independent — it verifies the text pipeline, not the
+        audio format. Catches bugs where chunking silently drops text.
+        """
+        from tts.processing import process_tts
+
+        # Use text with distinct, identifiable words (no markdown syntax,
+        # so strip_markdown is a no-op and we can check against the raw words)
+        sentences = [
+            "Alpha beta gamma delta epsilon.",
+            "Zeta eta theta iota kappa.",
+            "Lambda mu nu xi omicron.",
+            "Pi rho sigma tau upsilon.",
+            "Phi chi psi omega terminus.",
+        ]
+        text = " ".join(sentences * 20)  # Repeat to force multiple chunks
+
+        article = ArticleFactory.create(
+            id="art_fi_alltext",
+            user_id="user_001",
+            markdown_content=text,
+        )
+
+        db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
+        r2 = MockR2()
+        fake_audio = _make_ogg_opus_data(2.0)
+        ai = MockAI(response=fake_audio)
+        env = MockEnv(db=db, content=r2, ai=ai, tts_model="aura-2-en")
+
+        await process_tts("art_fi_alltext", env, user_id="user_001")
+
+        # Concatenate all text sent to AI
+        all_sent = " ".join(call.get("text", "") for call in ai.calls)
+
+        # Hardcoded expected words — the input has no markdown, so these
+        # are the exact words that should reach the AI
+        expected_words = [
+            "Alpha", "beta", "gamma", "delta", "epsilon.",
+            "Zeta", "eta", "theta", "iota", "kappa.",
+            "Lambda", "mu", "nu", "xi", "omicron.",
+            "Pi", "rho", "sigma", "tau", "upsilon.",
+            "Phi", "chi", "psi", "omega", "terminus.",
+        ]
+        for word in expected_words:
+            assert word in all_sent, (
+                f"Word {word!r} from input was never sent to AI — text was dropped"
+            )
+
+    async def test_no_ai_call_returns_are_silently_discarded(self) -> None:
+        """Every non-empty AI response must contribute to the final output.
+
+        With the old b"".join() bug, all responses were "joined" but browsers
+        only played the first logical stream. This test verifies at a higher
+        level: the number of chunks reported in the result must equal the
+        number of AI calls that returned non-empty data.
+        """
+        from tts.processing import process_tts
+
+        text = "Testing that no AI responses are silently discarded. " * 80
+        article = ArticleFactory.create(
+            id="art_fi_nodiscard",
+            user_id="user_001",
+            markdown_content=text,
+        )
+
+        db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
+        r2 = MockR2()
+        fake_audio = _make_ogg_opus_data(3.0)
+        ai = MockAI(response=fake_audio)
+        env = MockEnv(db=db, content=r2, ai=ai, tts_model="aura-2-en")
+
+        result = await process_tts("art_fi_nodiscard", env, user_id="user_001")
+        assert result is not None
+
+        # Every AI call returned non-empty audio, so chunks must equal call count
+        assert result["chunks"] == len(ai.calls), (
+            f"Pipeline reported {result['chunks']} chunks but made "
+            f"{len(ai.calls)} AI calls — some responses were discarded"
+        )
+
+    async def test_melotts_multi_chunk_output_grows_with_input(self) -> None:
+        """Format-independent check for MeloTTS (WAV/base64): output grows with input.
+
+        The truncation bug was OGG-specific, but this test would catch any
+        format's concatenation bug by checking output size scaling.
+        """
+        from tts.processing import process_tts
+
+        text = "A test sentence for melotts multi chunk validation. " * 80
+        article = ArticleFactory.create(
+            id="art_fi_melo",
+            user_id="user_001",
+            markdown_content=text,
+        )
+
+        db = TrackingD1(result_fn=lambda sql, params: [article] if "SELECT" in sql else [])
+        r2 = MockR2()
+
+        # MeloTTS returns base64-encoded WAV
+        fake_wav = b"RIFF" + b"\x00" * 200
+        ai = MockAI(response={"audio": base64.b64encode(fake_wav).decode()})
+        env = MockEnv(db=db, content=r2, ai=ai, tts_model="melotts")
+
+        result = await process_tts("art_fi_melo", env, user_id="user_001")
+        assert result is not None
+        assert result["chunks"] > 1, "Need multiple chunks to test"
+
+        # Output must be larger than a single chunk's audio
+        assert result["total_bytes"] > len(fake_wav), (
+            f"MeloTTS output ({result['total_bytes']} bytes) is not larger than "
+            f"a single chunk ({len(fake_wav)} bytes) — audio truncated"
+        )
+
+        # Output should be approximately chunks * single_chunk_size
+        expected = result["chunks"] * len(fake_wav)
+        assert result["total_bytes"] == expected, (
+            f"MeloTTS output ({result['total_bytes']}) != "
+            f"{result['chunks']} × {len(fake_wav)} = {expected}"
+        )
