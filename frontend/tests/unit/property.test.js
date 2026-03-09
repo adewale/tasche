@@ -281,6 +281,11 @@ describe('formatTime (property-based)', function () {
     );
   });
 
+  it('returns --:-- for Infinity', function () {
+    expect(formatTime(Infinity)).toBe('--:--');
+    expect(formatTime(-Infinity)).toBe('--:--');
+  });
+
   it('seconds part matches Math.floor(seconds % 60)', function () {
     fc.assert(
       fc.property(fc.integer({ min: 1, max: 100000 }), function (seconds) {
