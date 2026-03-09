@@ -110,8 +110,8 @@ class TestListenLater:
     # GET /api/articles/{article_id}/audio
     # ---------------------------------------------------------------------------
 
-    async def test_returns_409_when_already_pending(self) -> None:
-        """POST listen-later returns 409 when audio is already pending."""
+    async def test_regenerates_when_pending(self) -> None:
+        """POST listen-later re-queues even when audio is already pending."""
         article = ArticleFactory.create(
             id="art_dup1",
             user_id="user_001",
@@ -124,17 +124,19 @@ class TestListenLater:
             return []
 
         db = TrackingD1(result_fn=execute)
-        env = MockEnv(db=db)
+        queue = MockQueue()
+        env = MockEnv(db=db, article_queue=queue, content=MockR2())
 
         client, session_id = await _authenticated_client(env)
         resp = client.post(
             "/api/articles/art_dup1/listen-later",
         )
 
-        assert resp.status_code == 409
-        assert "already in progress" in resp.json()["detail"]
+        assert resp.status_code == 202
+        assert resp.json()["audio_status"] == "pending"
+        assert len(queue.messages) == 1
 
-    async def test_requeues_when_stuck_generating(self) -> None:
+    async def test_regenerates_when_stuck_generating(self) -> None:
         """POST listen-later re-queues when audio is stuck at generating."""
         article = ArticleFactory.create(
             id="art_dup2",
@@ -149,7 +151,7 @@ class TestListenLater:
 
         db = TrackingD1(result_fn=execute)
         queue = MockQueue()
-        env = MockEnv(db=db, article_queue=queue)
+        env = MockEnv(db=db, article_queue=queue, content=MockR2())
 
         client, session_id = await _authenticated_client(env)
         resp = client.post(
@@ -161,8 +163,8 @@ class TestListenLater:
         assert len(queue.messages) == 1
         assert queue.messages[0]["type"] == "tts_generation"
 
-    async def test_returns_200_when_already_ready(self) -> None:
-        """POST listen-later returns 200 with existing data when ready."""
+    async def test_regenerates_when_already_ready(self) -> None:
+        """POST listen-later deletes old audio and re-queues when ready."""
         article = ArticleFactory.create(
             id="art_ready",
             user_id="user_001",
@@ -176,17 +178,21 @@ class TestListenLater:
             return []
 
         db = TrackingD1(result_fn=execute)
-        env = MockEnv(db=db)
+        queue = MockQueue()
+        r2 = MockR2()
+        await r2.put("articles/art_ready/audio.mp3", b"AUDIO")
+        env = MockEnv(db=db, article_queue=queue, content=r2)
 
         client, session_id = await _authenticated_client(env)
         resp = client.post(
             "/api/articles/art_ready/listen-later",
         )
 
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         data = resp.json()
-        assert data["audio_status"] == "ready"
-        assert data["audio_key"] == "articles/art_ready/audio.mp3"
+        assert data["audio_status"] == "pending"
+        # Old audio should be cleaned up
+        assert await r2.get("articles/art_ready/audio.mp3") is None
 
     async def test_enqueues_when_failed(self) -> None:
         """POST listen-later enqueues when previous attempt failed."""

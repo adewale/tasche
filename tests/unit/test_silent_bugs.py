@@ -348,28 +348,17 @@ class TestStreakTimezoneEdgeCase:
 
 
 # ============================================================================
-# Bug 9: listen-later on already-ready audio returns 200, not 202
+# Bug 9 (RESOLVED): listen-later now always re-generates audio (returns 202)
 #
-# The frontend checks `e.status === 409` to show "already in progress",
-# but if audio is already "ready", the backend returns 200 (not 409 or 202).
-# The frontend's handleListenLater in Reader.jsx doesn't handle the 200
-# case and would show "Audio generation queued" toast even though no
-# generation was queued.
-#
-# Actually, looking more carefully: the frontend's request() function
-# parses the JSON response normally for 200. Then handleListenLater
-# calls addToast('Audio generation queued', 'success') regardless.
-# The user sees "Audio generation queued" even though audio is ALREADY ready.
+# Previously the backend returned 200 for already-ready audio, which confused
+# the frontend. Now listen-later always deletes old audio and re-queues,
+# returning 202 consistently.
 # ============================================================================
 
 
 class TestListenLaterAlreadyReady:
-    async def test_listen_later_returns_200_when_audio_already_ready(self) -> None:
-        """POST /listen-later returns 200 (not 202) when audio is already ready.
-
-        The frontend's handleListenLater doesn't distinguish between 202
-        (newly queued) and 200 (already ready), so it shows the wrong toast.
-        """
+    async def test_listen_later_regenerates_when_audio_already_ready(self) -> None:
+        """POST /listen-later returns 202 and re-queues even when audio is ready."""
         article = ArticleFactory.create(
             id="ready_audio",
             user_id="user_001",
@@ -383,7 +372,7 @@ class TestListenLaterAlreadyReady:
             return []
 
         db = MockD1(execute=execute)
-        env = MockEnv(db=db)
+        env = MockEnv(db=db, content=MockR2())
 
         routers = ((tts_router, "/api/articles"),)
         client, session_id = await _authenticated_client_with(env, *routers)
@@ -392,20 +381,9 @@ class TestListenLaterAlreadyReady:
             "/api/articles/ready_audio/listen-later",
         )
 
-        # Backend returns 200 (not 202) when audio is already ready
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         data = resp.json()
-        assert data["audio_status"] == "ready"
-
-        # FRONTEND BUG: Reader.jsx handleListenLater does:
-        #   await apiListenLater(id);
-        #   addToast('Audio generation queued', 'success');
-        #   setAudioRequested(true);
-        #
-        # Since 200 is not an error, the code falls through to the success
-        # path and shows "Audio generation queued" even though audio is
-        # already ready. The correct behavior would be to check the response
-        # and show "Audio is already available" instead.
+        assert data["audio_status"] == "pending"
 
 
 # ============================================================================

@@ -99,8 +99,8 @@ class TestCreateArticle:
         assert data["id"] == existing["id"]
         assert len(updates) == 1
 
-    async def test_reprocess_cleans_up_old_r2_content(self) -> None:
-        """POST /api/articles re-processing cleans up old R2 images/html but preserves audio."""
+    async def test_reprocess_cleans_up_all_r2_content(self) -> None:
+        """POST /api/articles re-processing cleans up ALL old R2 content including audio."""
         existing = ArticleFactory.create(
             id="art_cleanup",
             user_id="user_001",
@@ -120,6 +120,7 @@ class TestCreateArticle:
         await r2.put("articles/art_cleanup/content.html", b"<p>old</p>")
         await r2.put("articles/art_cleanup/images/abc.webp", b"IMG")
         await r2.put("articles/art_cleanup/audio.ogg", b"AUDIO")
+        await r2.put("articles/art_cleanup/audio-timing.json", b"TIMING")
 
         client, session_id = await _authenticated_client(env)
         resp = client.post(
@@ -129,12 +130,11 @@ class TestCreateArticle:
 
         assert resp.status_code == 201
 
-        # Old content should be cleaned up
+        # All old content should be cleaned up (text AND audio)
         assert await r2.get("articles/art_cleanup/content.html") is None
         assert await r2.get("articles/art_cleanup/images/abc.webp") is None
-
-        # Audio should be preserved
-        assert await r2.get("articles/art_cleanup/audio.ogg") is not None
+        assert await r2.get("articles/art_cleanup/audio.ogg") is None
+        assert await r2.get("articles/art_cleanup/audio-timing.json") is None
 
     async def test_finds_duplicate_via_final_url(self) -> None:
         """POST /api/articles detects duplicate when submitted URL matches final_url."""
@@ -782,8 +782,8 @@ class TestListenLaterBehaviour:
         sql = update_stmts[0][0]
         assert "audio_status = 'pending'" in sql
 
-    async def test_save_duplicate_update_does_not_set_audio_status(self) -> None:
-        """POST without listen_later on existing article does not include audio_status in UPDATE."""
+    async def test_save_duplicate_update_resets_audio_status_to_null(self) -> None:
+        """POST without listen_later on existing article resets audio_status to NULL."""
         existing = ArticleFactory.create(
             user_id="user_001",
             original_url="https://example.com/dup-plain-update",
@@ -811,7 +811,8 @@ class TestListenLaterBehaviour:
         assert len(update_stmts) == 1
 
         sql = update_stmts[0][0]
-        assert "audio_status" not in sql
+        assert "audio_status = NULL" in sql
+        assert "audio_status = 'pending'" not in sql
 
     async def test_both_paths_enqueue_article_processing(self) -> None:
         """Both Save and Save Audio enqueue an article_processing message."""
@@ -1683,11 +1684,11 @@ class TestUpdateArticleMultipleFields:
         assert data["reading_progress"] == 0.5
 
 
-class TestListenLaterIdempotency:
-    """Test TTS listen-later endpoint returns correct status for already-ready articles."""
+class TestListenLaterRegeneration:
+    """Test TTS listen-later endpoint always allows re-generation."""
 
-    async def test_listen_later_returns_200_when_audio_ready(self) -> None:
-        """POST /api/articles/{id}/listen-later returns 200 when audio ready."""
+    async def test_listen_later_regenerates_when_audio_ready(self) -> None:
+        """POST /api/articles/{id}/listen-later re-queues even when audio is ready."""
         from src.tts.routes import router as tts_router
 
         article = ArticleFactory.create(
@@ -1705,7 +1706,7 @@ class TestListenLaterIdempotency:
         db = MockD1(execute=execute)
         from tests.conftest import _authenticated_client as _auth_client
 
-        env = MockEnv(db=db)
+        env = MockEnv(db=db, content=MockR2())
         client, session_id = await _auth_client(
             env,
             (tts_router, "/api/articles"),
@@ -1715,11 +1716,11 @@ class TestListenLaterIdempotency:
             "/api/articles/art_audio_ready/listen-later",
         )
 
-        assert resp.status_code == 200, (
-            f"Expected 200 for already-ready audio, got {resp.status_code}"
+        assert resp.status_code == 202, (
+            f"Expected 202 for audio regeneration, got {resp.status_code}"
         )
         data = resp.json()
-        assert data["audio_status"] == "ready"
+        assert data["audio_status"] == "pending"
 
 
 class TestFilterByTag:

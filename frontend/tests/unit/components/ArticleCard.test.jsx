@@ -130,8 +130,8 @@ describe('ArticleCard', () => {
 
   it('shows retry button when audio is stuck generating', () => {
     render(<ArticleCard article={makeArticle({ audio_status: 'generating' })} />);
-    expect(screen.getByTitle('Retry audio')).toBeInTheDocument();
-    expect(screen.getByTitle('Retry audio')).not.toBeDisabled();
+    expect(screen.getByTitle('Regenerate audio')).toBeInTheDocument();
+    expect(screen.getByTitle('Regenerate audio')).not.toBeDisabled();
   });
 
   it('hides listen later button when audio is ready', () => {

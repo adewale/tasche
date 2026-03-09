@@ -212,8 +212,8 @@ export function ArticleCard({ article, selectMode, selected, onToggleSelect }) {
               <IconClock />
             </button>
           )}
-          {!isProcessing && (audioFailed || audioStuck) && (
-            <button title="Retry audio" onClick={handleListenLater} disabled={audioLoading}>
+          {!isProcessing && !audioPending && (hasAudio || audioFailed || audioStuck) && (
+            <button title="Regenerate audio" onClick={handleListenLater} disabled={audioLoading}>
               {audioLoading ? <IconClock /> : <IconRefresh />}
             </button>
           )}

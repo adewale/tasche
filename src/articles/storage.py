@@ -114,15 +114,12 @@ async def get_metadata(r2: Any, article_id: str) -> dict[str, Any] | None:
     return json.loads(raw)
 
 
-_AUDIO_SUFFIXES = ("audio.ogg", "audio.mp3", "audio.wav", "audio-timing.json")
+async def delete_audio_content(r2: Any, article_id: str) -> None:
+    """Delete audio-related R2 objects for an article.
 
-
-async def delete_non_audio_content(r2: Any, article_id: str) -> None:
-    """Delete R2 objects for an article, preserving audio files.
-
-    Used during re-processing: old HTML, images, thumbnails, and metadata
-    are cleaned up so they don't become orphans, but audio files are
-    preserved since audio generation is an independent pipeline.
+    Uses R2 ``list(prefix=...)`` to discover and delete objects whose keys
+    contain ``audio`` (e.g. ``audio.ogg``, ``audio.mp3``, ``audio-timing.json``).
+    Text content (HTML, images, thumbnails, metadata) is preserved.
     """
     prefix = f"articles/{article_id}/"
     cursor = None
@@ -137,8 +134,11 @@ async def delete_non_audio_content(r2: Any, article_id: str) -> None:
         objects = converted.get("objects", []) if isinstance(converted, dict) else []
         for obj in objects:
             key = obj.get("key", "") if isinstance(obj, dict) else getattr(obj, "key", "")
-            if key and not any(key.endswith(s) for s in _AUDIO_SUFFIXES):
-                await r2.delete(key)
+            # Match any file with "audio" in the filename
+            if key:
+                filename = key.rsplit("/", 1)[-1]
+                if "audio" in filename:
+                    await r2.delete(key)
 
         truncated = converted.get("truncated", False) if isinstance(converted, dict) else False
         if not truncated:

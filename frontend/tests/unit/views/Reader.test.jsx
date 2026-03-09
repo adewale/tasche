@@ -218,7 +218,7 @@ describe('Reader', () => {
     });
   });
 
-  it('shows Retry audio button when audio_status is generating (stuck state)', async () => {
+  it('shows Regenerate audio button when audio_status is generating (stuck state)', async () => {
     const { getArticle } = await import('../../../src/api.js');
     getArticle.mockResolvedValueOnce({
       id: 'art-1',
@@ -239,14 +239,14 @@ describe('Reader', () => {
 
     render(<Reader id="art-1" />);
     await waitFor(() => {
-      expect(screen.getByText('Retry audio')).toBeInTheDocument();
+      expect(screen.getByText('Regenerate audio')).toBeInTheDocument();
     });
     // Should NOT show Listen Later or disabled Generating spinner
     expect(screen.queryByText('Listen Later')).not.toBeInTheDocument();
     expect(screen.queryByText('Generating audio...')).not.toBeInTheDocument();
   });
 
-  it('shows Retry audio when audio_status is failed', async () => {
+  it('shows Regenerate audio when audio_status is failed', async () => {
     const { getArticle } = await import('../../../src/api.js');
     getArticle.mockResolvedValueOnce({
       id: 'art-1',
@@ -267,7 +267,7 @@ describe('Reader', () => {
 
     render(<Reader id="art-1" />);
     await waitFor(() => {
-      expect(screen.getByText('Retry audio')).toBeInTheDocument();
+      expect(screen.getByText('Regenerate audio')).toBeInTheDocument();
     });
     // Should NOT show Listen Later — distinct button for failed state
     expect(screen.queryByText('Listen Later')).not.toBeInTheDocument();

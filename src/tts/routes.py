@@ -9,7 +9,6 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse
 from starlette.responses import Response
 
 from articles.routes import _enqueue_or_fail, _get_user_article
@@ -30,47 +29,43 @@ async def listen_later(
     Sets ``audio_status = 'pending'`` in D1, then
     enqueues a ``tts_generation`` message to ``ARTICLE_QUEUE``.
 
+    Always allows re-generation — if audio already exists (any state),
+    the old audio and timing files are deleted from R2 first.
+
     Returns 202 Accepted with the article ID and audio status.
     """
     env = request.scope["env"]
     db = env.DB
+    r2 = env.CONTENT
     user_id = user["user_id"]
 
     # Verify article exists and belongs to user
-    article = await _get_user_article(db, article_id, user_id, fields="id, audio_status, audio_key")
+    article = await _get_user_article(
+        db, article_id, user_id, fields="id, audio_status, audio_key",
+    )
 
-    # Idempotency check: don't enqueue if already in progress or ready
-    audio_status = article.get("audio_status")
-    if audio_status == "pending":
-        raise HTTPException(
-            status_code=409,
-            detail="Audio generation is already in progress",
-        )
-    # Allow re-queue from 'generating' — this state can become stuck
-    # if the queue consumer fails without resetting the status.
-    if audio_status == "ready":
-        return JSONResponse(
-            content={
-                "id": article_id,
-                "audio_status": "ready",
-                "audio_key": article.get("audio_key"),
-            },
-            status_code=200,
-        )
+    # Delete any existing audio files (list-based, format-independent)
+    from articles.storage import delete_audio_content
 
-    # Only enqueue if audio_status is NULL or 'failed'
+    await delete_audio_content(r2, article_id)
+
     now = now_iso()
 
     # Read user's voice preference
     pref = await (
-        db.prepare("SELECT tts_voice FROM user_preferences WHERE user_id = ?").bind(user_id).first()
+        db.prepare(
+            "SELECT tts_voice FROM user_preferences WHERE user_id = ?"
+        )
+        .bind(user_id)
+        .first()
     )
     tts_voice = pref.get("tts_voice") if pref else "athena"
 
-    # Update D1: set audio_status
+    # Update D1: reset audio state
     await (
         db.prepare(
             "UPDATE articles SET audio_status = 'pending', "
+            "audio_key = NULL, audio_duration_seconds = NULL, "
             "updated_at = ? WHERE id = ? AND user_id = ?"
         )
         .bind(now, article_id, user_id)

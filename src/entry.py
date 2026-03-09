@@ -209,6 +209,9 @@ async def _handle_article_processing(message_body: dict, env: object) -> None:
     """Process an article-processing queue message.
 
     Delegates to the content processing pipeline (Phase 4).
+    When ``requeue_tts`` is set in the message, chains a TTS generation
+    job after text processing completes successfully — ensuring markdown
+    content is available before TTS starts.
     """
     from articles.processing import process_article
 
@@ -226,6 +229,18 @@ async def _handle_article_processing(message_body: dict, env: object) -> None:
         return
 
     await process_article(article_id, original_url, env)
+
+    # Chain TTS generation after successful text processing
+    if message_body.get("requeue_tts"):
+        tts_voice = message_body.get("tts_voice", "athena")
+        user_id = message_body.get("user_id")
+        if user_id:
+            await env.ARTICLE_QUEUE.send({
+                "type": "tts_generation",
+                "article_id": article_id,
+                "user_id": user_id,
+                "tts_voice": tts_voice,
+            })
 
 
 async def _handle_tts_generation(message_body: dict, env: object) -> None:

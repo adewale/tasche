@@ -18,7 +18,6 @@ from articles.health import check_original_url
 from articles.storage import (
     article_key,
     delete_article_content,
-    delete_non_audio_content,
     get_content,
     get_metadata,
 )
@@ -199,15 +198,25 @@ async def create_article(
 
     if is_update:
         article_id = existing["id"]
-        # Clean up old R2 content (HTML, images, thumbnail) to prevent
-        # orphaned objects.  Audio files are preserved since TTS is
-        # an independent pipeline.
+        had_audio = existing.get("audio_status") is not None
+        # Clean up ALL old R2 content (text + audio) to prevent orphans
         r2 = env.CONTENT
-        await delete_non_audio_content(r2, article_id)
-        # Reset status so the pipeline re-processes the article
-        update_sql = "UPDATE articles SET status = 'pending'"
-        if listen_later:
-            update_sql += ", audio_status = 'pending'"
+        await delete_article_content(r2, article_id)
+        # Reset status so the pipeline re-processes the article.
+        # Re-queue TTS if the article had audio or listen_later is requested.
+        requeue_tts = listen_later or had_audio
+        if requeue_tts:
+            update_sql = (
+                "UPDATE articles SET status = 'pending', "
+                "audio_status = 'pending', audio_key = NULL, "
+                "audio_duration_seconds = NULL"
+            )
+        else:
+            update_sql = (
+                "UPDATE articles SET status = 'pending', "
+                "audio_status = NULL, audio_key = NULL, "
+                "audio_duration_seconds = NULL"
+            )
         update_sql += ", updated_at = ? WHERE id = ?"
         await db.prepare(update_sql).bind(now, article_id).run()
     else:
@@ -272,17 +281,26 @@ async def create_article(
                 )
 
     # Enqueue processing job
-    await _enqueue_or_fail(
-        env,
-        db,
-        {
-            "type": "article_processing",
-            "article_id": article_id,
-            "url": url,
-            "user_id": user_id,
-        },
-        article_id,
-    )
+    message: dict[str, Any] = {
+        "type": "article_processing",
+        "article_id": article_id,
+        "url": url,
+        "user_id": user_id,
+    }
+
+    # Chain TTS after text processing when article had/wants audio
+    if is_update and requeue_tts:
+        pref = await (
+            db.prepare(
+                "SELECT tts_voice FROM user_preferences WHERE user_id = ?"
+            )
+            .bind(user_id)
+            .first()
+        )
+        message["requeue_tts"] = True
+        message["tts_voice"] = pref.get("tts_voice") if pref else "athena"
+
+    await _enqueue_or_fail(env, db, message, article_id)
 
     result: dict[str, Any] = {"id": article_id, "status": "pending"}
     if is_update:
@@ -899,33 +917,65 @@ async def retry_article(
     """Re-queue an article for processing.
 
     Resets the status to ``pending`` and enqueues a new processing job.
-    Works for any article status — useful for re-extracting content with
-    an updated pipeline.
+    Deletes all R2 content (text AND audio) so nothing is orphaned.
+    If the article had audio in any state, also re-queues TTS generation
+    so audio and timing are rebuilt from the new text.
     """
     env = request.scope["env"]
     db = env.DB
     user_id = user["user_id"]
 
-    article = await _get_user_article(db, article_id, user_id, fields="id, original_url, status")
+    article = await _get_user_article(
+        db, article_id, user_id,
+        fields="id, original_url, status, audio_status",
+    )
 
+    # Clean up ALL R2 content (text + audio) before re-processing
+    await delete_article_content(env.CONTENT, article_id)
+
+    had_audio = article.get("audio_status") is not None
     now = now_iso()
-    await (
-        db.prepare("UPDATE articles SET status = 'pending', updated_at = ? WHERE id = ?")
-        .bind(now, article_id)
-        .run()
-    )
 
-    await _enqueue_or_fail(
-        env,
-        db,
-        {
-            "type": "article_processing",
-            "article_id": article_id,
-            "url": article["original_url"],
-            "user_id": user_id,
-        },
-        article_id,
-    )
+    if had_audio:
+        await (
+            db.prepare(
+                "UPDATE articles SET status = 'pending', "
+                "audio_status = 'pending', audio_key = NULL, "
+                "audio_duration_seconds = NULL, updated_at = ? "
+                "WHERE id = ?"
+            )
+            .bind(now, article_id)
+            .run()
+        )
+    else:
+        await (
+            db.prepare(
+                "UPDATE articles SET status = 'pending', updated_at = ? WHERE id = ?"
+            )
+            .bind(now, article_id)
+            .run()
+        )
+
+    message: dict[str, Any] = {
+        "type": "article_processing",
+        "article_id": article_id,
+        "url": article["original_url"],
+        "user_id": user_id,
+    }
+
+    # Chain TTS after text processing so markdown is available first
+    if had_audio:
+        pref = await (
+            db.prepare(
+                "SELECT tts_voice FROM user_preferences WHERE user_id = ?"
+            )
+            .bind(user_id)
+            .first()
+        )
+        message["requeue_tts"] = True
+        message["tts_voice"] = pref.get("tts_voice") if pref else "athena"
+
+    await _enqueue_or_fail(env, db, message, article_id)
 
     return {"id": article_id, "status": "pending"}
 

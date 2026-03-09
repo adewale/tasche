@@ -2852,6 +2852,11 @@ body.has-audio-player {
   color: var(--text-muted);
 }
 
+.reader-status-inline {
+  font-size: 0.8rem;
+  color: var(--color-danger, #ef4444);
+}
+
 /* Error boundary */
 .error-boundary {
   padding: 32px;

@@ -530,7 +530,13 @@ export function Reader({ id }) {
     setRetrying(true);
     try {
       await apiRetryArticle(id);
-      setArticle({ ...article, status: 'pending' });
+      const updates = { ...article, status: 'pending' };
+      if (article.audio_status) {
+        updates.audio_status = 'pending';
+        updates.audio_key = null;
+        updates.audio_duration_seconds = null;
+      }
+      setArticle(updates);
       addToast('Article re-queued for processing', 'success');
     } catch (e) {
       addToast(e.message, 'error');
@@ -599,7 +605,6 @@ export function Reader({ id }) {
   const audioPending = audioRequested || article.audio_status === 'pending';
   const audioStuck = !audioRequested && article.audio_status === 'generating';
   const audioFailed = article.audio_status === 'failed';
-  const canRequestAudio = !hasAudio && !audioPending && !audioStuck;
 
   return (
     <>
@@ -724,7 +729,10 @@ export function Reader({ id }) {
                   )}
                 </button>
               )}
-              {canRequestAudio && !audioFailed && (
+              {audioFailed && (
+                <span class="reader-status-inline">Processing failed</span>
+              )}
+              {!audioPending && (
                 <button
                   class="btn btn-sm btn-secondary"
                   onClick={handleListenLater}
@@ -733,27 +741,14 @@ export function Reader({ id }) {
                   {listeningLoading ? (
                     <>
                       <IconClock size={14} /> Requesting...
+                    </>
+                  ) : hasAudio || audioFailed || audioStuck ? (
+                    <>
+                      <IconRefresh size={14} /> Regenerate audio
                     </>
                   ) : (
                     <>
                       <IconHeadphones size={14} /> Listen Later
-                    </>
-                  )}
-                </button>
-              )}
-              {(audioFailed || audioStuck) && (
-                <button
-                  class="btn btn-sm btn-secondary"
-                  onClick={handleListenLater}
-                  disabled={listeningLoading}
-                >
-                  {listeningLoading ? (
-                    <>
-                      <IconClock size={14} /> Requesting...
-                    </>
-                  ) : (
-                    <>
-                      <IconRefresh size={14} /> Retry audio
                     </>
                   )}
                 </button>
