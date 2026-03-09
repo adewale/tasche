@@ -608,15 +608,23 @@ class TestTimingManifestWeightingProperties:
         st.floats(min_value=1.0, max_value=20.0),
     )
     @settings(max_examples=200)
-    def test_longer_sentence_gets_more_time(self, short: str, long: str, duration: float) -> None:
-        """In a two-sentence chunk, the longer sentence should get
-        more time than the shorter one."""
-        short = short.strip()
-        long = long.strip()
-        if not short or not long or len(long) <= len(short):
+    def test_heavier_sentence_gets_more_time(self, light: str, heavy: str, duration: float) -> None:
+        """In a two-sentence chunk, the sentence with higher speech weight
+        should get more (or equal) time."""
+        light = light.strip()
+        heavy = heavy.strip()
+        if not light or not heavy:
+            return
+        # Skip if the supposedly-heavy sentence doesn't actually weigh more
+        if _speech_weight(f"{heavy}.") <= _speech_weight(f"{light}."):
             return
 
-        chunks = [{"text": f"{short}. {long}.", "sentences": [f"{short}.", f"{long}."]}]
+        chunks = [
+            {
+                "text": f"{light}. {heavy}.",
+                "sentences": [f"{light}.", f"{heavy}."],
+            }
+        ]
         audio_parts = [_make_ogg_opus_data(duration)]
         manifest = _build_timing_manifest(chunks, audio_parts)
 
@@ -626,6 +634,6 @@ class TestTimingManifestWeightingProperties:
         s0_dur = manifest["sentences"][0]["end_ms"] - manifest["sentences"][0]["start_ms"]
         s1_dur = manifest["sentences"][1]["end_ms"] - manifest["sentences"][1]["start_ms"]
         assert s1_dur >= s0_dur, (
-            f"Longer sentence got less time: short='{short}' ({s0_dur}ms) "
-            f"vs long='{long}' ({s1_dur}ms)"
+            f"Heavier sentence got less time: light='{light}' ({s0_dur}ms) "
+            f"vs heavy='{heavy}' ({s1_dur}ms)"
         )
