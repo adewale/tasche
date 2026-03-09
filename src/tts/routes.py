@@ -40,8 +40,8 @@ async def listen_later(
     user_id = user["user_id"]
 
     # Verify article exists and belongs to user
-    article = await _get_user_article(
-        db, article_id, user_id, fields="id, audio_status, audio_key",
+    await _get_user_article(
+        db, article_id, user_id, fields="id",
     )
 
     # Delete any existing audio files (list-based, format-independent)

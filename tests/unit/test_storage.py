@@ -14,7 +14,6 @@ import pytest
 from articles.storage import (
     article_key,
     delete_article_content,
-
     get_content,
     get_metadata,
     store_content,
