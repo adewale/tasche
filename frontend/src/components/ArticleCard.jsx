@@ -13,7 +13,7 @@ import { playAudio, audioState } from './AudioPlayer.jsx';
 import {
   IconStar,
   IconTrash,
-  IconCheck,
+  IconCircle,
   IconCheckSquare,
   IconHeadphones,
   IconPlay,
@@ -175,11 +175,6 @@ export function ArticleCard({ article, selectMode, selected, onToggleSelect }) {
             {a.domain && <span>{a.domain}</span>}
             {readingTime && <span>{readingTime}</span>}
             <span>{formatDate(a.created_at)}</span>
-            {offlineSaved && (
-              <span class="offline-indicator" title="Available offline">
-                <IconCheck size={10} />
-              </span>
-            )}
           </div>
           {a.excerpt && <div class="article-card-excerpt">{a.excerpt}</div>}
         </div>
@@ -245,6 +240,14 @@ export function ArticleCard({ article, selectMode, selected, onToggleSelect }) {
               onClick={handleFavorite}
             >
               <IconStar filled={!!isFav} />
+            </button>
+          )}
+          {!isProcessing && (
+            <button
+              class="offline-btn"
+              title={offlineSaved ? 'Available offline' : 'Not cached offline'}
+            >
+              <IconCircle filled={offlineSaved} />
             </button>
           )}
           {!isProcessing && (

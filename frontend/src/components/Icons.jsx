@@ -410,6 +410,24 @@ export function IconRefresh({ size = 16, ...props }) {
   );
 }
 
+export function IconCircle({ size = 16, filled = false, ...props }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill={filled ? 'currentColor' : 'none'}
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      {...props}
+    >
+      <circle cx="12" cy="12" r="10" />
+    </svg>
+  );
+}
+
 export function IconArchive({ size = 16, filled = false, ...props }) {
   return (
     <svg
