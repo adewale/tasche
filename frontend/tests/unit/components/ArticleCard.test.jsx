@@ -26,9 +26,13 @@ vi.mock('../../../src/nav.js', () => ({
   },
 }));
 
-vi.mock('../../../src/components/AudioPlayer.jsx', () => ({
-  playAudio: vi.fn(),
-}));
+vi.mock('../../../src/components/AudioPlayer.jsx', () => {
+  const { signal } = require('@preact/signals');
+  return {
+    playAudio: vi.fn(),
+    audioState: signal({ articleId: null, articleTitle: '', isPlaying: false, visible: false }),
+  };
+});
 
 vi.mock('../../../src/state.js', () => ({
   articles: { value: [] },
@@ -43,6 +47,7 @@ vi.mock('../../../src/utils.js', () => ({
 
 import { listenLater } from '../../../src/api.js';
 import { addToast } from '../../../src/state.js';
+import { audioState } from '../../../src/components/AudioPlayer.jsx';
 
 function makeArticle(overrides = {}) {
   return {
@@ -230,5 +235,55 @@ describe('ArticleCard', () => {
     rerender(<ArticleCard article={makeArticle({ status: 'failed' })} />);
     expect(screen.getByTitle('Toggle favourite')).toBeInTheDocument();
     expect(screen.getByTitle('Delete')).toBeInTheDocument();
+  });
+
+  // ── Now-playing sound bars indicator ──
+
+  it('shows sound bars instead of play button when this article is playing', () => {
+    audioState.value = { articleId: 'art-1', articleTitle: 'Test', isPlaying: true, visible: true };
+
+    const { container } = render(
+      <ArticleCard article={makeArticle({ audio_status: 'ready' })} />,
+    );
+    expect(screen.getByTitle('Now playing')).toBeInTheDocument();
+    expect(screen.queryByTitle('Play audio')).not.toBeInTheDocument();
+    expect(container.querySelector('.audio-playing')).toBeInTheDocument();
+    expect(container.querySelector('.sound-bar')).toBeInTheDocument();
+
+    audioState.value = { articleId: null, articleTitle: '', isPlaying: false, visible: false };
+  });
+
+  it('shows play button when a different article is playing', () => {
+    audioState.value = {
+      articleId: 'other-article',
+      articleTitle: 'Other',
+      isPlaying: true,
+      visible: true,
+    };
+
+    render(<ArticleCard article={makeArticle({ audio_status: 'ready' })} />);
+    expect(screen.getByTitle('Play audio')).toBeInTheDocument();
+    expect(screen.queryByTitle('Now playing')).not.toBeInTheDocument();
+
+    audioState.value = { articleId: null, articleTitle: '', isPlaying: false, visible: false };
+  });
+
+  it('shows play button when this article audio is paused', () => {
+    audioState.value = { articleId: 'art-1', articleTitle: 'Test', isPlaying: false, visible: true };
+
+    render(<ArticleCard article={makeArticle({ audio_status: 'ready' })} />);
+    expect(screen.getByTitle('Play audio')).toBeInTheDocument();
+    expect(screen.queryByTitle('Now playing')).not.toBeInTheDocument();
+
+    audioState.value = { articleId: null, articleTitle: '', isPlaying: false, visible: false };
+  });
+
+  it('sound bars button is disabled and non-interactive', () => {
+    audioState.value = { articleId: 'art-1', articleTitle: 'Test', isPlaying: true, visible: true };
+
+    render(<ArticleCard article={makeArticle({ audio_status: 'ready' })} />);
+    expect(screen.getByTitle('Now playing')).toBeDisabled();
+
+    audioState.value = { articleId: null, articleTitle: '', isPlaying: false, visible: false };
   });
 });
