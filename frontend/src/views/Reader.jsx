@@ -17,10 +17,10 @@ import {
   IconPlay,
   IconHeadphones,
   IconClock,
-  IconDownload,
-  IconCheck,
+  IconOffline,
   IconRefresh,
   IconInkDrop,
+  IconTrash,
 } from '../components/Icons.jsx';
 import {
   getArticle,
@@ -695,11 +695,11 @@ export function Reader({ id }) {
                   'Saving...'
                 ) : offlineStatus.hasContent ? (
                   <>
-                    <IconCheck size={14} /> Remove offline
+                    <IconOffline size={14} filled /> Remove offline
                   </>
                 ) : (
                   <>
-                    <IconDownload size={14} /> Save for offline
+                    <IconOffline size={14} /> Save for offline
                   </>
                 )}
               </button>
@@ -712,9 +712,7 @@ export function Reader({ id }) {
               )}
               {hasAudio && (
                 <button
-                  class={
-                    'btn btn-sm offline-btn' + (offlineStatus.hasAudio ? ' offline-btn--saved' : '')
-                  }
+                  class="btn btn-sm"
                   onClick={handleSaveAudioOffline}
                   disabled={savingAudioOffline}
                 >
@@ -722,11 +720,11 @@ export function Reader({ id }) {
                     'Downloading...'
                   ) : offlineStatus.hasAudio ? (
                     <>
-                      <IconCheck size={14} /> Audio offline
+                      <IconOffline size={14} filled /> Audio offline
                     </>
                   ) : (
                     <>
-                      <IconDownload size={14} /> Download audio
+                      <IconOffline size={14} /> Download audio
                     </>
                   )}
                 </button>
@@ -772,7 +770,7 @@ export function Reader({ id }) {
                 <IconRefresh size={14} /> {retrying ? 'Retrying...' : 'Retry'}
               </button>
               <button class="btn btn-sm btn-danger" onClick={handleDelete} disabled={deleting}>
-                {deleting ? 'Deleting...' : 'Delete'}
+                <IconTrash size={14} /> {deleting ? 'Deleting...' : 'Delete'}
               </button>
             </div>
           </div>

@@ -8,6 +8,7 @@ import {
   isOfflineCached,
   saveForOffline,
   removeFromOffline,
+  saveAudioOffline,
 } from '../api.js';
 import { toggleArchive, toggleFavorite, removeArticle } from '../articleActions.js';
 import { nav } from '../nav.js';
@@ -40,6 +41,8 @@ export function ArticleCard({ article, selectMode, selected, onToggleSelect }) {
   const [cardTags, setCardTags] = useState([]);
   const [offlineSaved, setOfflineSaved] = useState(false);
   const [offlineLoading, setOfflineLoading] = useState(false);
+  const [audioOfflineSaved, setAudioOfflineSaved] = useState(false);
+  const [audioOfflineLoading, setAudioOfflineLoading] = useState(false);
   const [audioLoading, setAudioLoading] = useState(false);
 
   useEffect(() => {
@@ -60,7 +63,10 @@ export function ArticleCard({ article, selectMode, selected, onToggleSelect }) {
     }
     isOfflineCached(a.id)
       .then(function (status) {
-        if (!cancelled) setOfflineSaved(status.hasContent);
+        if (!cancelled) {
+          setOfflineSaved(status.hasContent);
+          setAudioOfflineSaved(status.hasAudio);
+        }
       })
       .catch(function () {});
     if (isProcessing) {
@@ -80,9 +86,18 @@ export function ArticleCard({ article, selectMode, selected, onToggleSelect }) {
           setOfflineLoading(false);
           addToast('Saved for offline reading', 'success');
         }
+        if (event.data.type === 'OFFLINE_SAVED' && event.data.what === 'audio') {
+          setAudioOfflineSaved(true);
+          setAudioOfflineLoading(false);
+          addToast('Audio downloaded for offline', 'success');
+        }
         if (event.data.type === 'OFFLINE_SAVE_ERROR' && event.data.what === 'content') {
           setOfflineLoading(false);
           addToast('Could not save offline', 'error');
+        }
+        if (event.data.type === 'OFFLINE_SAVE_ERROR' && event.data.what === 'audio') {
+          setAudioOfflineLoading(false);
+          addToast('Could not download audio offline', 'error');
         }
         if (event.data.type === 'OFFLINE_REMOVED') {
           setOfflineSaved(false);
@@ -107,6 +122,13 @@ export function ArticleCard({ article, selectMode, selected, onToggleSelect }) {
     } else {
       saveForOffline(a.id);
     }
+  }
+
+  function handleAudioOffline(e) {
+    e.stopPropagation();
+    if (audioOfflineLoading || audioOfflineSaved) return;
+    setAudioOfflineLoading(true);
+    saveAudioOffline(a.id);
   }
 
   function handleClick(e) {
@@ -249,6 +271,15 @@ export function ArticleCard({ article, selectMode, selected, onToggleSelect }) {
           {!isProcessing && hasAudio && !isThisPlaying && (
             <button class="audio-ready" title="Play audio" onClick={handlePlayAudio}>
               <IconPlay />
+            </button>
+          )}
+          {!isProcessing && hasAudio && (
+            <button
+              title={audioOfflineSaved ? 'Audio saved offline' : 'Download audio offline'}
+              onClick={handleAudioOffline}
+              disabled={audioOfflineLoading || audioOfflineSaved}
+            >
+              {audioOfflineLoading ? <IconClock /> : <IconOffline filled={audioOfflineSaved} />}
             </button>
           )}
           {!isProcessing && audioPending && (

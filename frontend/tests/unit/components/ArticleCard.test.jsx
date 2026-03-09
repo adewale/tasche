@@ -12,6 +12,7 @@ vi.mock('../../../src/api.js', () => ({
   ),
   saveForOffline: vi.fn(),
   removeFromOffline: vi.fn(),
+  saveAudioOffline: vi.fn(),
 }));
 
 vi.mock('../../../src/hooks/useSWMessage.js', () => ({
@@ -58,6 +59,7 @@ import {
   isOfflineCached,
   saveForOffline,
   removeFromOffline,
+  saveAudioOffline,
 } from '../../../src/api.js';
 import { addToast } from '../../../src/state.js';
 import { audioState } from '../../../src/components/AudioPlayer.jsx';
@@ -346,5 +348,25 @@ describe('ArticleCard', () => {
 
     await user.click(screen.getByTitle('Save for offline'));
     expect(screen.getByTitle('Save for offline')).toBeDisabled();
+  });
+
+  // ── Download audio offline ──
+
+  it('shows download audio button when audio is ready', () => {
+    render(<ArticleCard article={makeArticle({ audio_status: 'ready' })} />);
+    expect(screen.getByTitle('Download audio offline')).toBeInTheDocument();
+  });
+
+  it('calls saveAudioOffline when clicking download audio', async () => {
+    const user = userEvent.setup();
+    render(<ArticleCard article={makeArticle({ audio_status: 'ready' })} />);
+
+    await user.click(screen.getByTitle('Download audio offline'));
+    expect(saveAudioOffline).toHaveBeenCalledWith('art-1');
+  });
+
+  it('hides download audio button when no audio', () => {
+    render(<ArticleCard article={makeArticle()} />);
+    expect(screen.queryByTitle('Download audio offline')).not.toBeInTheDocument();
   });
 });
