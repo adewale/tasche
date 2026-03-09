@@ -60,21 +60,16 @@ vi.mock('../../../src/hooks/useKeyboardShortcuts.js', () => ({
   useKeyboardShortcuts: vi.fn(),
 }));
 
-vi.mock('../../../src/state.js', () => ({
-  articles: { value: [] },
-  filter: { value: 'unread' },
-  offset: { value: 0 },
-  hasMore: { value: true },
-  loading: { value: false },
-  isOffline: { value: false },
-  addToast: vi.fn(),
-  limit: { value: 20 },
-  showShortcuts: { value: false },
-}));
+// Partial mock: real signals, mock only side-effectful functions
+vi.mock('../../../src/state.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    addToast: vi.fn(),
+  };
+});
 
-vi.mock('../../../src/utils.js', () => ({
-  formatDate: vi.fn(() => '2d ago'),
-}));
+// Real utils — formatDate is a pure function that works in jsdom
 
 import { createArticle } from '../../../src/api.js';
 import { addToast } from '../../../src/state.js';

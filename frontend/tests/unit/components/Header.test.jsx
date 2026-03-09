@@ -2,29 +2,20 @@ import { render, screen } from '@testing-library/preact';
 import userEvent from '@testing-library/user-event';
 import { Header } from '../../../src/components/Header.jsx';
 
-vi.mock('../../../src/state.js', () => {
-  const { signal } = require('@preact/signals');
-  return {
-    isOffline: signal(false),
-    syncStatus: signal('idle'),
-    theme: signal('system'),
-    applyTheme: vi.fn(),
-    showShortcuts: signal(false),
-  };
-});
+// Real modules — no mocks for state.js or readerPrefs.js
+// Both use @preact/signals which work natively in jsdom.
+// state.js: isOffline, syncStatus, theme, showShortcuts are real signals
+// readerPrefs.js: readerPrefs signal + updatePref + getReaderStyle are real
 
-const mockUpdatePref = vi.fn();
-vi.mock('../../../src/readerPrefs.js', () => {
-  const { signal } = require('@preact/signals');
-  return {
-    readerPrefs: signal({ theme: 'auto' }),
-    updatePref: (...args) => mockUpdatePref(...args),
-  };
-});
+import { theme, showShortcuts } from '../../../src/state.js';
+import { readerPrefs } from '../../../src/readerPrefs.js';
 
 describe('Header', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    // Reset signal state between tests
+    theme.value = 'system';
+    showShortcuts.value = false;
+    readerPrefs.value = { ...readerPrefs.value, theme: 'auto' };
   });
 
   it('shows global theme toggle when readerMode is not set', async () => {
@@ -49,13 +40,13 @@ describe('Header', () => {
     expect(screen.queryByText('Dark mode')).not.toBeInTheDocument();
   });
 
-  it('calls updatePref when a reader theme option is clicked', async () => {
+  it('updates reader prefs when a reader theme option is clicked', async () => {
     const user = userEvent.setup();
     render(<Header readerMode />);
 
     await user.click(screen.getByTitle('Menu'));
     await user.click(screen.getByText('Sepia'));
-    expect(mockUpdatePref).toHaveBeenCalledWith('theme', 'sepia');
+    expect(readerPrefs.value.theme).toBe('sepia');
   });
 
   it('closes menu after selecting a reader theme', async () => {

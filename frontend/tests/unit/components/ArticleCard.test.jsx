@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/preact';
 import userEvent from '@testing-library/user-event';
 import { ArticleCard } from '../../../src/components/ArticleCard.jsx';
 
-// Mock dependencies
+// Mock boundaries: network, navigation, side-effectful actions
 vi.mock('../../../src/api.js', () => ({
   getArticleTags: vi.fn(() => Promise.resolve([])),
   getArticle: vi.fn(() => Promise.resolve({})),
@@ -34,16 +34,18 @@ vi.mock('../../../src/components/AudioPlayer.jsx', () => {
   };
 });
 
-vi.mock('../../../src/state.js', () => ({
-  articles: { value: [] },
-  addToast: vi.fn(),
-  pollAudioStatus: vi.fn(),
-  pollArticleStatus: vi.fn(),
-}));
+// Partial mock: real signals, mock only side-effectful functions (timers/intervals)
+vi.mock('../../../src/state.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    addToast: vi.fn(),
+    pollAudioStatus: vi.fn(),
+    pollArticleStatus: vi.fn(),
+  };
+});
 
-vi.mock('../../../src/utils.js', () => ({
-  formatDate: vi.fn(() => '2d ago'),
-}));
+// Real utils — formatDate, escapeHtml are pure functions that work in jsdom
 
 import { listenLater } from '../../../src/api.js';
 import { addToast } from '../../../src/state.js';

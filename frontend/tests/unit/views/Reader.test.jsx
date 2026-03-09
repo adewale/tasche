@@ -85,31 +85,22 @@ vi.mock('../../../src/hooks/useSWMessage.js', () => ({
   useSWMessage: vi.fn(),
 }));
 
-vi.mock('../../../src/state.js', () => ({
-  articles: { value: [] },
-  addToast: vi.fn(),
-  pollAudioStatus: vi.fn(),
-  searchQuery: { value: '' },
-}));
+// Partial mock: real signals, mock only side-effectful functions
+vi.mock('../../../src/state.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    addToast: vi.fn(),
+    pollAudioStatus: vi.fn(),
+  };
+});
 
-vi.mock('../../../src/readerPrefs.js', () => ({
-  readerPrefs: { value: { contentMode: 'html', theme: 'auto', immersive: 'on' } },
-  getReaderStyle: vi.fn(() => ({})),
-  updatePref: vi.fn(),
-}));
+// Real readerPrefs — signals + localStorage persistence work in jsdom
+// Real utils — escapeHtml uses DOM (createElement/textContent) which works in jsdom
+// Real DOMPurify — sanitization works in jsdom
 
 vi.mock('../../../src/markdown.js', () => ({
   renderMarkdown: vi.fn((md) => '<p>' + md + '</p>'),
-}));
-
-vi.mock('../../../src/utils.js', () => ({
-  escapeHtml: vi.fn((s) => s),
-}));
-
-vi.mock('dompurify', () => ({
-  default: {
-    sanitize: vi.fn((html) => html),
-  },
 }));
 
 import { listenLater, deleteArticle, retryArticle, checkOriginal } from '../../../src/api.js';
