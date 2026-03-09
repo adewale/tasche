@@ -98,15 +98,16 @@ class TestChunkTextProperties:
 
     @given(text=st.text())
     @settings(max_examples=200)
-    def test_no_sentences_lost(self, text: str) -> None:
-        """All sentences from split_sentences must appear across all chunks."""
-        sentences = split_sentences(text)
+    def test_content_preserved(self, text: str) -> None:
+        """Joining all chunks must produce the same words as the input.
+
+        Uses whitespace normalisation as an independent oracle — no production
+        code on the expected side.
+        """
         chunks = chunk_text(text)
-        # Reconstruct sentences from chunks by re-splitting
-        recovered = []
-        for chunk in chunks:
-            recovered.extend(split_sentences(chunk))
-        assert recovered == sentences
+        joined = " ".join(chunks)
+        # Normalise both sides identically: collapse all whitespace to single spaces
+        assert " ".join(joined.split()) == " ".join(text.split())
 
     @given(text=st.text())
     @settings(max_examples=200)
@@ -143,14 +144,18 @@ class TestChunkTextWithSentencesProperties:
 
     @given(text=st.text())
     @settings(max_examples=200)
-    def test_all_sentences_covered(self, text: str) -> None:
-        """Concatenating all chunk sentences must equal split_sentences(text)."""
-        sentences = split_sentences(text)
+    def test_content_preserved(self, text: str) -> None:
+        """All sentence text joined across chunks must equal the input words.
+
+        Uses whitespace normalisation as an independent oracle — no production
+        code on the expected side.
+        """
         chunks = chunk_text_with_sentences(text)
-        recovered = []
+        all_sentences = []
         for chunk in chunks:
-            recovered.extend(chunk["sentences"])
-        assert recovered == sentences
+            all_sentences.extend(chunk["sentences"])
+        joined = " ".join(all_sentences)
+        assert " ".join(joined.split()) == " ".join(text.split())
 
     @given(text=st.text())
     @settings(max_examples=200)
@@ -212,6 +217,38 @@ class TestStripMarkdownProperties:
         """strip_markdown should never raise an exception on arbitrary text."""
         result = strip_markdown(text)
         assert isinstance(result, str)
+
+    @given(text=st.from_regex(r"[A-Za-z .,;:?']+", fullmatch=True).filter(lambda t: t.strip()))
+    @settings(max_examples=200)
+    def test_plain_text_preserved(self, text: str) -> None:
+        """Text with no markdown syntax must survive stripping unchanged.
+
+        Uses a restricted alphabet (letters, spaces, basic punctuation) that
+        contains no markdown syntax characters, so the function should only
+        normalise whitespace.
+        """
+        result = strip_markdown(text)
+        assert " ".join(result.split()) == " ".join(text.split())
+
+    @given(text=st.text())
+    @settings(max_examples=200)
+    def test_no_new_characters(self, text: str) -> None:
+        """Every alphanumeric character in the output must come from the input.
+
+        strip_markdown only removes syntax — it should never introduce new
+        alphanumeric content.  Uses character-count comparison as an
+        independent oracle.
+        """
+        from collections import Counter
+
+        result = strip_markdown(text)
+        output_chars = Counter(ch for ch in result if ch.isalnum())
+        input_chars = Counter(ch for ch in text if ch.isalnum())
+        for ch, count in output_chars.items():
+            assert count <= input_chars.get(ch, 0), (
+                f"Character {ch!r} appears {count} times in output but only "
+                f"{input_chars.get(ch, 0)} times in input"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -559,6 +596,22 @@ class TestSanitizeFts5QueryProperties:
         for ch in result:
             if ch != '"' and ch != " ":
                 assert ch not in _FTS5_SPECIAL_CHARS
+
+    @given(query=st.text())
+    @settings(max_examples=200)
+    def test_non_special_chars_preserved(self, query: str) -> None:
+        """Every non-special, non-whitespace character must pass through.
+
+        Extracts the "content" characters from input and output independently
+        (stripping FTS5 specials and whitespace from input, stripping quotes
+        and whitespace from output) and verifies they match exactly.
+        """
+        result = _sanitize_fts5_query(query)
+        input_content = "".join(
+            ch for ch in query if ch not in _FTS5_SPECIAL_CHARS and not ch.isspace()
+        )
+        output_content = "".join(ch for ch in result if ch != '"' and not ch.isspace())
+        assert output_content == input_content
 
 
 # ---------------------------------------------------------------------------

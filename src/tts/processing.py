@@ -22,6 +22,7 @@ from __future__ import annotations
 import base64
 import json
 import re
+import struct
 import traceback
 
 from articles.storage import article_key
@@ -139,6 +140,228 @@ def _ogg_duration_seconds(data: bytes) -> float:
     if last_granule <= pre_skip:
         return 0.0
     return (last_granule - pre_skip) / 48000.0
+
+
+def _parse_ogg_pages(data: bytes) -> list[dict]:
+    """Parse an OGG byte stream into a list of page dicts.
+
+    Each page dict has: header_type, granule, serial, page_seq,
+    num_segments, segment_table, payload.
+    """
+    pages: list[dict] = []
+    i = 0
+
+    while i <= len(data) - 27:
+        if data[i : i + 4] != b"OggS":
+            i += 1
+            continue
+
+        header_type = data[i + 5]
+        granule = struct.unpack_from("<q", data, i + 6)[0]
+        serial = struct.unpack_from("<I", data, i + 14)[0]
+        page_seq = struct.unpack_from("<I", data, i + 18)[0]
+        num_segments = data[i + 26]
+        seg_table = data[i + 27 : i + 27 + num_segments]
+        payload_size = sum(seg_table)
+        payload_start = i + 27 + num_segments
+        payload = data[payload_start : payload_start + payload_size]
+
+        pages.append(
+            {
+                "header_type": header_type,
+                "granule": granule,
+                "serial": serial,
+                "page_seq": page_seq,
+                "num_segments": num_segments,
+                "segment_table": bytes(seg_table),
+                "payload": payload,
+            }
+        )
+
+        i = payload_start + payload_size
+
+    return pages
+
+
+def _write_ogg_page(
+    header_type: int,
+    granule: int,
+    serial: int,
+    page_seq: int,
+    segment_table: bytes,
+    payload: bytes,
+) -> bytes:
+    """Write a single OGG page with a correct CRC-32 checksum."""
+    # Build page without checksum (set to 0 for CRC calculation)
+    header = b"OggS"
+    header += struct.pack("<B", 0)  # version
+    header += struct.pack("<B", header_type)
+    header += struct.pack("<q", granule)
+    header += struct.pack("<I", serial)
+    header += struct.pack("<I", page_seq)
+    header += struct.pack("<I", 0)  # checksum placeholder
+    header += struct.pack("<B", len(segment_table))
+    page = header + segment_table + payload
+
+    # Calculate OGG CRC-32 and patch it in
+    crc = _ogg_crc32(page)
+    page = page[:22] + struct.pack("<I", crc) + page[26:]
+
+    return page
+
+
+# OGG CRC-32 lookup table (polynomial 0x04C11DB7, no bit reversal)
+_OGG_CRC_TABLE: list[int] | None = None
+
+
+def _ogg_crc32(data: bytes) -> int:
+    """Compute the OGG-specific CRC-32 checksum.
+
+    OGG uses a direct (non-reflected) CRC-32 with polynomial 0x04C11DB7,
+    which differs from the standard zlib/gzip CRC-32.
+    """
+    global _OGG_CRC_TABLE
+    if _OGG_CRC_TABLE is None:
+        table = []
+        for i in range(256):
+            r = i << 24
+            for _ in range(8):
+                if r & 0x80000000:
+                    r = ((r << 1) ^ 0x04C11DB7) & 0xFFFFFFFF
+                else:
+                    r = (r << 1) & 0xFFFFFFFF
+            table.append(r)
+        _OGG_CRC_TABLE = table
+
+    crc = 0
+    for byte in data:
+        crc = (_OGG_CRC_TABLE[(crc >> 24) ^ byte] ^ (crc << 8)) & 0xFFFFFFFF
+    return crc
+
+
+def _remux_ogg_opus(audio_parts: list[bytes]) -> bytes:
+    """Re-mux multiple complete OGG Opus files into a single logical stream.
+
+    Each element of *audio_parts* is a self-contained OGG Opus file with
+    its own BOS/EOS pages, headers, and granule positions.  Browsers only
+    play the first logical stream (stopping at the first EOS page), so
+    naive ``b"".join()`` causes audio truncation.
+
+    This function:
+    1. Keeps the ID header (OpusHead) and comment header (OpusTags) from
+       the first chunk.
+    2. Extracts audio data pages from every chunk, adjusting granule
+       positions to be continuous across the single output stream.
+    3. Writes all pages with a single serial number, sequential page
+       sequence numbers, and correct CRC-32 checksums.
+
+    For a single chunk, returns it unchanged (no re-mux needed).
+    """
+    if len(audio_parts) <= 1:
+        return audio_parts[0] if audio_parts else b""
+
+    serial = 1  # Arbitrary serial number for the output stream
+    page_seq = 0
+    output_pages: list[bytes] = []
+
+    # Track cumulative granule offset so positions are continuous
+    granule_offset = 0
+    first_pre_skip = 0
+
+    for chunk_idx, chunk_data in enumerate(audio_parts):
+        pages = _parse_ogg_pages(chunk_data)
+        if not pages:
+            continue
+
+        # Find this chunk's pre_skip from OpusHead
+        chunk_pre_skip = 0
+        for page in pages:
+            if page["payload"][:8] == b"OpusHead" and len(page["payload"]) >= 12:
+                chunk_pre_skip = struct.unpack_from("<H", page["payload"], 10)[0]
+                break
+
+        # Find the last granule in this chunk (from the EOS or last data page)
+        chunk_last_granule = 0
+        for page in reversed(pages):
+            if page["granule"] > 0:
+                chunk_last_granule = page["granule"]
+                break
+
+        for page in pages:
+            is_header = page["payload"][:8] in (b"OpusHead", b"OpusTags")
+
+            if chunk_idx == 0:
+                # First chunk: keep headers as-is, keep data pages as-is
+                if is_header:
+                    # Preserve BOS flag only on the very first page
+                    ht = page["header_type"]
+                    output_pages.append(
+                        _write_ogg_page(
+                            ht & ~0x04,  # Clear EOS if somehow set on header
+                            page["granule"],
+                            serial,
+                            page_seq,
+                            page["segment_table"],
+                            page["payload"],
+                        )
+                    )
+                    page_seq += 1
+                    if page["payload"][:8] == b"OpusHead":
+                        first_pre_skip = chunk_pre_skip
+                else:
+                    # Data page from first chunk
+                    ht = page["header_type"] & ~0x04  # Clear EOS
+                    output_pages.append(
+                        _write_ogg_page(
+                            ht,
+                            page["granule"],
+                            serial,
+                            page_seq,
+                            page["segment_table"],
+                            page["payload"],
+                        )
+                    )
+                    page_seq += 1
+            else:
+                # Subsequent chunks: skip headers, re-map data page granules
+                if is_header:
+                    continue
+
+                # Adjust granule: shift by the cumulative offset
+                new_granule = page["granule"]
+                if new_granule > 0:
+                    # Remove this chunk's pre_skip contribution and add offset
+                    new_granule = page["granule"] - chunk_pre_skip + granule_offset + first_pre_skip
+
+                ht = page["header_type"] & ~0x06  # Clear BOS and EOS
+                output_pages.append(
+                    _write_ogg_page(
+                        ht,
+                        new_granule,
+                        serial,
+                        page_seq,
+                        page["segment_table"],
+                        page["payload"],
+                    )
+                )
+                page_seq += 1
+
+        # Update granule offset for the next chunk
+        if chunk_last_granule > chunk_pre_skip:
+            granule_offset += chunk_last_granule - chunk_pre_skip
+
+    # Set EOS flag on the very last page
+    if output_pages:
+        last_page = output_pages[-1]
+        # Parse the header_type byte (byte 5) and set EOS flag
+        patched = last_page[:5] + bytes([last_page[5] | 0x04]) + last_page[6:]
+        # Recompute CRC
+        patched = patched[:22] + struct.pack("<I", 0) + patched[26:]
+        crc = _ogg_crc32(patched)
+        patched = patched[:22] + struct.pack("<I", crc) + patched[26:]
+        output_pages[-1] = patched
+
+    return b"".join(output_pages)
 
 
 # Sentence boundary regex: split on .!? followed by whitespace or end of string.
@@ -646,7 +869,14 @@ async def process_tts(
         if not audio_parts:
             raise ValueError("Workers AI returned empty audio data")
 
-        audio_data = b"".join(audio_parts)
+        # Re-mux OGG Opus chunks into a single logical stream.
+        # Naive b"".join() produces a chained OGG file with multiple
+        # BOS/EOS pairs — browsers only play the first stream, silently
+        # truncating all subsequent chunks.
+        if len(audio_parts) > 1 and audio_parts[0][:4] == b"OggS":
+            audio_data = _remux_ogg_opus(audio_parts)
+        else:
+            audio_data = b"".join(audio_parts)
 
         evt = current_event()
         if evt:
