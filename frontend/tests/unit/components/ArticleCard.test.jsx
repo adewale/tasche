@@ -244,9 +244,7 @@ describe('ArticleCard', () => {
   it('shows sound bars instead of play button when this article is playing', () => {
     audioState.value = { articleId: 'art-1', articleTitle: 'Test', isPlaying: true, visible: true };
 
-    const { container } = render(
-      <ArticleCard article={makeArticle({ audio_status: 'ready' })} />,
-    );
+    const { container } = render(<ArticleCard article={makeArticle({ audio_status: 'ready' })} />);
     expect(screen.getByTitle('Now playing')).toBeInTheDocument();
     expect(screen.queryByTitle('Play audio')).not.toBeInTheDocument();
     expect(container.querySelector('.audio-playing')).toBeInTheDocument();
@@ -271,7 +269,12 @@ describe('ArticleCard', () => {
   });
 
   it('shows play button when this article audio is paused', () => {
-    audioState.value = { articleId: 'art-1', articleTitle: 'Test', isPlaying: false, visible: true };
+    audioState.value = {
+      articleId: 'art-1',
+      articleTitle: 'Test',
+      isPlaying: false,
+      visible: true,
+    };
 
     render(<ArticleCard article={makeArticle({ audio_status: 'ready' })} />);
     expect(screen.getByTitle('Play audio')).toBeInTheDocument();

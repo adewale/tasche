@@ -805,7 +805,8 @@ textarea {
 }
 
 @keyframes sound-bar-pulse {
-  0%, 100% {
+  0%,
+  100% {
     transform: scaleY(1);
   }
   50% {
