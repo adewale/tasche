@@ -2157,19 +2157,8 @@ mark {
   cursor: wait;
 }
 
-.offline-indicator {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 2px;
-  background: var(--success);
-  color: var(--text-on-color);
-  font-size: 0.625rem;
-  font-weight: 700;
-  line-height: 1;
-  flex-shrink: 0;
+.offline-btn {
+  opacity: 0.4;
 }
 
 .offline-badge {

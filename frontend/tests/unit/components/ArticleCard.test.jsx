@@ -211,8 +211,8 @@ describe('ArticleCard', () => {
   it('shows all action buttons when ready', () => {
     const { container } = render(<ArticleCard article={makeArticle({ status: 'ready' })} />);
     var buttons = container.querySelectorAll('.article-card-actions button');
-    // Listen later + Archive + Star + Delete = 4
-    expect(buttons.length).toBe(4);
+    // Listen later + Archive + Star + Offline + Delete = 5
+    expect(buttons.length).toBe(5);
   });
 
   it('restores buttons when article transitions from processing to ready', () => {
