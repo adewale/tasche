@@ -1152,3 +1152,109 @@ Commit `8d05ec2` added 16 features in a single 14,143-line commit. Several bugs 
 The commit was too large to review effectively. Each of the 16 features touched the service worker, API, frontend, and tests — making it impossible to isolate which feature introduced which bug.
 
 **Lesson:** Large feature-dump commits are a liability. Each feature should be a separate commit (or PR) so bugs can be bisected and reverted independently. When you can't tell which of 16 features broke the service worker, you've lost the primary value of version control.
+
+---
+
+## Feature Pruning, Design Audits, and Property-Based Testing (2026-03-07 to 2026-03-09)
+
+### 76. AI-Generated Features Accumulate Faster Than They're Validated
+
+Commit `cabab55` removed 2,586 lines across 21 files — three features (data export, rule-based auto-tagging, TTS sentence highlighting) that were added speculatively in a single prior session and never used. The removed code included 1,395 lines of tests.
+
+When an AI can produce a complete feature (backend + frontend + tests) in one session, the temptation is to ship it. But features added before anyone validates they're wanted create pure maintenance cost — including the tests that "protect" them.
+
+**Lesson:** Validate the feature is wanted *before* writing the tests. Test count is not a quality signal. The ease of removal was proportional to how cleanly isolated each feature was (separate files, separate routes), which is the one thing the original commit got right.
+
+### 77. Research-Spec-Implement Is the Right Workflow for AI-Assisted Features
+
+The bookmarklet tagging popup went through a 5-commit arc: (1) research document studying Pinboard and Huffduffer bookmarklet UX, (2) spec with 4 design options and tradeoffs, (3–4) two spec revisions to match existing code patterns, (5) implementation.
+
+The spec revisions (`e3c0296`, `e05056b`) caught integration issues *before* implementation: one renamed UI labels to match the existing app, another replaced a custom autocomplete with native `<datalist>` and eliminated a new backend endpoint entirely. The "reuse inventory" pattern — explicitly cataloguing existing CSS classes, API endpoints, and data models — forced the implementation to stay consistent rather than reinventing.
+
+Compare this to the three features removed in lesson 76, which skipped research and spec entirely.
+
+**Lesson:** For AI-assisted development, the research→spec→implement pipeline produces better results than jumping straight to code. The spec's primary value isn't documentation — it's forcing the AI to align with existing patterns before generating new code. A "reuse inventory" section in the spec is especially effective at preventing unnecessary new abstractions.
+
+### 78. UI Design Audits as Structured Code Changes
+
+The CRAP design principles audit (`7326afb`) produced a structured document with line-referenced findings across Contrast, Repetition, Alignment, and Proximity. The implementation commit (`013d0eb`) was structured as a checklist against those four principles, making review tractable.
+
+But the audit broke 9 Playwright E2E tests (`c571815`). The breakage came from: removing CSS classes (`.btn-save-audio` consolidated into generic `.btn .btn-sm .btn-secondary`), removing settings sections, moving navigation items into a hamburger menu, and changing how empty containers render.
+
+**Lesson:** UI refactoring breaks E2E tests more aggressively than backend changes. When planning a design audit, budget for E2E test repair as part of the same work. Use text/role-based Playwright selectors (`page.locator('button', { hasText: 'Save audio' })`) instead of CSS class selectors — they survive design refactors.
+
+### 79. CSS Class Selectors Are Fragile; Text and Role Selectors Are Resilient
+
+The CRAP design fix removed `.btn-save-audio` and consolidated button styling. Every Playwright test using `.btn-save-audio` broke. Every test using `button:has-text("Save audio")` survived.
+
+Additional Playwright patterns discovered during the fix:
+- `toBeVisible()` vs `toBeAttached()` matters — when a design change makes an empty container render but not be visible, `toBeVisible()` fails while `toBeAttached()` correctly checks DOM presence.
+- Navigation tests must mirror the user's actual click path — moving items into a hamburger menu means tests need to open the menu first.
+- Search completion detection needs multiple selectors: `page.locator('.search-results-info, .article-card, .empty-state').first()` handles all completion states.
+
+**Lesson:** Prefer semantic selectors (text content, ARIA roles, test IDs) over CSS class selectors in E2E tests. CSS classes are presentation concerns that change during design work; user-visible text and semantic roles are stable across design iterations.
+
+### 80. `uv sync` vs `uv sync --group test` Is a CI Footgun
+
+The GitHub Actions CI workflow (`5607238`) ran `make check` which passed locally but failed in CI because `uv sync` doesn't install test dependencies (ruff, pytest, hypothesis). These live in a `[dependency-groups]` section of `pyproject.toml` and require `--group test`.
+
+The fix (`6ded9b9`) was a 1-line change. The workflow ran fine after.
+
+**Lesson:** `uv sync` installs only production dependencies by default. Test dependencies in `[dependency-groups]` require explicit `--group` flags. This is a uv-specific footgun that doesn't exist with pip. Using `make check` as the single CI command is a good pattern (local and CI run the same gates), but the Makefile's install step must match CI's install step.
+
+### 81. Cloudflare Secret Propagation Is Eventually Consistent
+
+Commit `c4d8825` fixed E2E tests that failed because `wrangler secret put DISABLE_AUTH` returns before the Worker uses the new value. The first E2E test request hit a 401 because the secret hadn't propagated yet.
+
+**Fix:** Poll `GET /api/articles` up to 10 times with 3-second intervals, checking for non-401 status before running tests.
+
+**Lesson:** After `wrangler secret put` returns, there's a propagation delay (empirically up to 30 seconds) before the Worker uses the new value. Poll for readiness, don't sleep for a fixed duration. This is undocumented behavior with no SLA.
+
+### 82. In-Memory SQLite Integration Tests Fill the Gap Between Mocks and E2E
+
+The bm25 search column weights (`63bd5a7`) changed FTS5 search from equal-weight ranking to `ORDER BY bm25(articles_fts, 10.0, 5.0, 1.0)` (title 10×, excerpt 5×, content 1×). The existing unit tests only inspected the SQL string — they couldn't validate ranking behavior.
+
+Commit `887c8e3` added SQLite-backed integration tests that create a real `sqlite3.Connection` with FTS5 tables, triggers, and the exact same SQL the search endpoint generates. Key tests: title matches rank above excerpt matches, excerpt above content, user isolation, result shape. This proves the SQL is valid and the ranking works correctly — something impossible with mocked D1 bindings.
+
+**Gotcha:** The FTS5 column weights `(10.0, 5.0, 1.0)` correspond positionally to the FTS5 column definition order (`title, excerpt, markdown_content`). Getting this wrong silently boosts the wrong field. The integration tests catch this; string-inspection tests cannot.
+
+**Lesson:** For SQL-heavy features, in-memory SQLite tests occupy a valuable middle ground between mock-based unit tests (fast but can't validate SQL semantics) and E2E tests against real D1 (slow, requires deployment). Reuse the actual SQL from production code in tests so they break when the production SQL changes.
+
+### 83. Property-Based Testing Catches Real Bugs That Manual Tests Miss
+
+The TTS timing system was enhanced with syllable-weighted sentence distribution (`4d2f446`). Hypothesis property tests (`test_speech_weight.py`, 79 tests with `max_examples=200`) found a real bug: the test `test_longer_sentence_gets_more_time` assumed longer sentences (by character count) should get more time. Hypothesis generated `'a a a a a a'` (6 words, 6 syllables, 11 chars) vs `'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'` (1 word, 1 syllable, 30 chars) — proving that syllable count can invert the character-count ordering.
+
+The fix (`27a927b`) changed the test to filter by `_speech_weight()` instead of `len()`. The test's assumption was wrong; the algorithm was correct.
+
+Also encountered fast-check v4 breaking API changes for frontend property tests:
+- `fc.stringOf` removed — use `fc.array(fc.constantFrom(...)).map(a => a.join(''))` instead
+- `fc.anything()` generates non-primitive objects — restrict to `fc.oneof(fc.string(), fc.constant(null), ...)`
+- `fc.date()` can produce invalid dates — generate timestamps as integers instead
+
+**Lesson:** Property-based tests are high-value for algorithmic code (syllable estimation, timing distribution, binary search). They find edge cases that manual parametrized tests miss because they explore the input space systematically. When a property test fails, the bug is usually in the test's assumptions, not the code — which is itself a valuable signal that you've misunderstood your own algorithm's behavior.
+
+### 84. OGG Opus Duration Parsing Without C Extensions
+
+The immersive reading feature needed audio duration to distribute timing across sentences. Rather than depending on an audio library (which would be a C extension incompatible with Pyodide), the code parses OGG page headers directly: reads `OggS` sync patterns, extracts `granule_position` and `pre_skip` from OpusHead, computes `(granule - pre_skip) / 48000`.
+
+This is a recurring Pyodide pattern: when the standard library for a task requires C extensions, implement the minimum viable parser for the specific format you need. Full OGG demuxing is thousands of lines; extracting duration from an Opus stream is ~40 lines.
+
+**Lesson:** For Pyodide/WASM environments, "parse just enough of the binary format" is often better than finding a pure-Python library. The implementation is small, has no dependencies, and is easily tested with synthetic byte sequences. This pattern applies to any binary format where you need one specific field.
+
+### 85. DOM Manipulation Across Element Boundaries
+
+Two features — immersive sentence highlighting and search term highlighting — both hit the same DOM limitation: `range.surroundContents()` throws when a range spans across element boundaries (e.g., a sentence that starts in one `<p>` and ends in an `<em>`). This is common in real article HTML.
+
+**Fix:** Replace `surroundContents(span)` with `extractContents()` + `span.appendChild(fragment)` + `insertNode(span)`. This works across elements by extracting the range's content as a document fragment and reinserting it inside a wrapper.
+
+Both features also require careful cleanup: removing wrapper `<span>` elements, calling `normalize()` to merge adjacent text nodes, and rebuilding TreeWalker state after DOM mutation. Missing cleanup causes memory leaks or DOM corruption on re-render.
+
+**Lesson:** `range.surroundContents()` is unusable for real-world HTML where ranges commonly cross element boundaries. The `extractContents()` + `insertNode()` pattern is the correct approach. Any code that wraps text ranges in the DOM must also implement thorough cleanup (unwrap spans, normalize text nodes, remove event listeners).
+
+### 86. Service Worker Changes Must Touch All Affected Code Paths
+
+When the audio-timing endpoint was added, three Service Worker code paths needed updating: (1) `handleSaveAudioOffline` — also fetch and cache `/audio-timing`, (2) `handleAutoPrecache` — cache timing for articles with `audio_status === 'ready'`, (3) `evictIfNeeded` — delete cached timing when evicting an article. Missing any of these breaks offline immersive reading.
+
+This mirrors lesson 67 (apply known fixes comprehensively) but for the Service Worker specifically.
+
+**Lesson:** When adding a new cacheable resource, audit every SW code path: save-for-offline, auto-precache, eviction, cache invalidation, and offline fallback. The SW has no type system or import graph to tell you which paths need updating — you must grep for sibling resources (e.g., `audio.ogg`) and ensure the new resource (`audio-timing.json`) appears in every place the sibling does.
