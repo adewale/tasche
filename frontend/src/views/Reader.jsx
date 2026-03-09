@@ -325,7 +325,6 @@ export function Reader({ id }) {
           contentNode.closest('.reader-body')?.classList.remove('tts-playing');
         }
       };
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     },
     [
       id,
@@ -729,9 +728,7 @@ export function Reader({ id }) {
                   )}
                 </button>
               )}
-              {audioFailed && (
-                <span class="reader-status-inline">Processing failed</span>
-              )}
+              {audioFailed && <span class="reader-status-inline">Processing failed</span>}
               {!audioPending && (
                 <button
                   class="btn btn-sm btn-secondary"
