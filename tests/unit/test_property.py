@@ -13,10 +13,10 @@ from datetime import date, timedelta
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from articles.extraction import calculate_reading_time, count_words
-from search.routes import _sanitize_fts5_query
-from stats.routes import _calculate_streak
-from tts.processing import (
+from src.articles.extraction import calculate_reading_time, count_words
+from src.articles.routes import _sanitize_fts5_query
+from src.stats.routes import _calculate_streak
+from src.tts.processing import (
     _build_timing_manifest,
     _estimate_duration,
     _ogg_duration_seconds,

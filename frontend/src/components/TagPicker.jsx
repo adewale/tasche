@@ -1,13 +1,15 @@
-import { useState, useEffect } from 'preact/hooks';
+import { useState, useEffect, useRef } from 'preact/hooks';
 import { tags as tagsSignal, addToast } from '../state.js';
-import { listTags, getArticleTags, addArticleTag, removeArticleTag } from '../api.js';
+import { listTags, createTag as apiCreateTag, getArticleTags, addArticleTag, removeArticleTag } from '../api.js';
 
 export function TagPicker({ articleId }) {
   const [articleTags, setArticleTags] = useState([]);
   const [showPicker, setShowPicker] = useState(false);
-  const [selectedTagId, setSelectedTagId] = useState('');
+  const [filterText, setFilterText] = useState('');
+  const [highlightIndex, setHighlightIndex] = useState(0);
   const [addingTag, setAddingTag] = useState(false);
   const [removingTagId, setRemovingTagId] = useState(null);
+  const inputRef = useRef(null);
 
   useEffect(() => {
     if (!articleId) return;
@@ -16,20 +18,67 @@ export function TagPicker({ articleId }) {
       .catch(() => {});
   }, [articleId]);
 
-  async function handleAddTag() {
-    if (addingTag) return;
-    if (!selectedTagId) {
-      addToast('Select a tag', 'error');
-      return;
+  // Focus the input when picker opens
+  useEffect(() => {
+    if (showPicker && inputRef.current) {
+      inputRef.current.focus();
     }
+  }, [showPicker]);
+
+  // Build filtered suggestions
+  var allTags = tagsSignal.value;
+  var appliedIds = new Set(articleTags.map((t) => t.id));
+  var available = allTags.filter((t) => !appliedIds.has(t.id));
+  var trimmed = filterText.trim();
+  var filtered = trimmed
+    ? available.filter((t) => t.name.toLowerCase().includes(trimmed.toLowerCase()))
+    : available;
+
+  // Should we show "Create" option?
+  var exactMatch = trimmed
+    ? allTags.some((t) => t.name.toLowerCase() === trimmed.toLowerCase())
+    : true;
+  var showCreate = trimmed && !exactMatch;
+  var totalOptions = filtered.length + (showCreate ? 1 : 0);
+
+  // Clamp highlight when list changes
+  useEffect(() => {
+    if (highlightIndex >= totalOptions) {
+      setHighlightIndex(Math.max(0, totalOptions - 1));
+    }
+  }, [totalOptions, highlightIndex]);
+
+  async function selectTag(tagId, tagName) {
+    if (addingTag) return;
     setAddingTag(true);
     try {
-      await addArticleTag(articleId, selectedTagId);
-      const tagName = tagsSignal.value.find((t) => t.id === selectedTagId);
-      setArticleTags([...articleTags, { id: selectedTagId, name: tagName ? tagName.name : 'Tag' }]);
+      await addArticleTag(articleId, tagId);
+      setArticleTags([...articleTags, { id: tagId, name: tagName }]);
       addToast('Tag added', 'success');
-      setShowPicker(false);
-      setSelectedTagId('');
+      setFilterText('');
+      setHighlightIndex(0);
+    } catch (e) {
+      addToast(e.message, 'error');
+    } finally {
+      setAddingTag(false);
+    }
+  }
+
+  async function createAndApply(name) {
+    if (addingTag) return;
+    setAddingTag(true);
+    try {
+      var tag = await apiCreateTag(name);
+      // Update global tags signal
+      var newTags = [...tagsSignal.value, tag];
+      newTags.sort((a, b) => a.name.localeCompare(b.name));
+      tagsSignal.value = newTags;
+      // Apply to article
+      await addArticleTag(articleId, tag.id);
+      setArticleTags([...articleTags, { id: tag.id, name: tag.name }]);
+      addToast('Tag created and added', 'success');
+      setFilterText('');
+      setHighlightIndex(0);
     } catch (e) {
       addToast(e.message, 'error');
     } finally {
@@ -52,7 +101,6 @@ export function TagPicker({ articleId }) {
   }
 
   async function openPicker() {
-    // Load all tags if not yet loaded
     if (tagsSignal.value.length === 0) {
       try {
         tagsSignal.value = await listTags();
@@ -61,6 +109,48 @@ export function TagPicker({ articleId }) {
       }
     }
     setShowPicker(true);
+    setFilterText('');
+    setHighlightIndex(0);
+  }
+
+  function closePicker() {
+    setShowPicker(false);
+    setFilterText('');
+    setHighlightIndex(0);
+  }
+
+  function handleKeyDown(e) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlightIndex((prev) => (prev + 1 < totalOptions ? prev + 1 : prev));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightIndex((prev) => (prev > 0 ? prev - 1 : 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (totalOptions === 0) return;
+      if (highlightIndex < filtered.length) {
+        var tag = filtered[highlightIndex];
+        selectTag(tag.id, tag.name);
+      } else if (showCreate) {
+        createAndApply(trimmed);
+      }
+    } else if (e.key === 'Escape') {
+      closePicker();
+    }
+  }
+
+  function highlightMatch(name) {
+    if (!trimmed) return name;
+    var idx = name.toLowerCase().indexOf(trimmed.toLowerCase());
+    if (idx === -1) return name;
+    return (
+      <>
+        {name.slice(0, idx)}
+        <strong>{name.slice(idx, idx + trimmed.length)}</strong>
+        {name.slice(idx + trimmed.length)}
+      </>
+    );
   }
 
   return (
@@ -91,31 +181,57 @@ export function TagPicker({ articleId }) {
         )}
       </div>
       {showPicker && (
-        <div class="tag-picker">
-          <select
-            class="input tag-picker-select"
-            value={selectedTagId}
-            onChange={(e) => setSelectedTagId(e.target.value)}
-          >
-            <option value="">Select a tag...</option>
-            {tagsSignal.value
-              .filter((t) => !articleTags.some((at) => at.id === t.id))
-              .map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-          </select>
-          <button class="btn btn-sm btn-primary" onClick={handleAddTag} disabled={addingTag}>
-            {addingTag ? 'Adding...' : 'Add'}
-          </button>
-          <button
-            class="btn btn-sm btn-secondary"
-            onClick={() => {
-              setShowPicker(false);
-              setSelectedTagId('');
+        <div class="tag-picker-autocomplete">
+          <input
+            ref={inputRef}
+            class="input tag-picker-input"
+            type="text"
+            placeholder="Type to filter or create..."
+            value={filterText}
+            onInput={(e) => {
+              setFilterText(e.target.value);
+              setHighlightIndex(0);
             }}
-          >
+            onKeyDown={handleKeyDown}
+            autocapitalize="off"
+            autocorrect="off"
+            spellcheck={false}
+          />
+          <div class="tag-picker-dropdown">
+            {filtered.map((t, i) => (
+              // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
+              <div
+                key={t.id}
+                class={'tag-picker-option' + (i === highlightIndex ? ' tag-picker-option--active' : '')}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  selectTag(t.id, t.name);
+                }}
+                onMouseEnter={() => setHighlightIndex(i)}
+              >
+                {highlightMatch(t.name)}
+              </div>
+            ))}
+            {showCreate && (
+              // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
+              <div
+                class={'tag-picker-option tag-picker-option--create' + (highlightIndex === filtered.length ? ' tag-picker-option--active' : '')}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  createAndApply(trimmed);
+                }}
+                onMouseEnter={() => setHighlightIndex(filtered.length)}
+              >
+                + Create "{trimmed}"
+              </div>
+            )}
+            {totalOptions === 0 && trimmed && exactMatch && (
+              <div class="tag-picker-option tag-picker-option--empty">
+                No matching tags
+              </div>
+            )}
+          </div>
+          <button class="btn btn-sm btn-secondary" onClick={closePicker}>
             Cancel
           </button>
         </div>

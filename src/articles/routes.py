@@ -335,7 +335,7 @@ async def list_articles(
     reading_status: str | None = Query(default=None),
     is_favorite: bool | None = Query(default=None),
     audio_status: str | None = Query(default=None),
-    tag: str | None = Query(default=None),
+    tag: list[str] | None = Query(default=None),
     sort: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
@@ -347,6 +347,10 @@ async def list_articles(
     ``reading_status``, ``is_favorite``, ``audio_status``, and ``tag``.
     All filters compose naturally — e.g. ``?q=python&tag=abc&reading_status=unread``
     searches for "python" within unread articles tagged "abc".
+
+    Multiple ``tag`` parameters may be passed for intersection filtering
+    (articles must have *all* specified tags).  Up to 4 tags are allowed;
+    more than 4 returns 400.
 
     When ``q`` is provided, results are ordered by FTS5 relevance unless
     ``sort`` is explicitly set.  Results are paginated via ``limit`` and
@@ -414,10 +418,24 @@ async def list_articles(
         params.append(audio_status)
 
     if tag is not None:
-        where_clauses.append(
-            "articles.id IN (SELECT article_id FROM article_tags WHERE tag_id = ?)"
-        )
-        params.append(tag)
+        if len(tag) > 4:
+            raise HTTPException(status_code=400, detail="At most 4 tag filters are allowed")
+        if len(tag) == 1:
+            where_clauses.append(
+                "articles.id IN (SELECT article_id FROM article_tags WHERE tag_id = ?)"
+            )
+            params.append(tag[0])
+        else:
+            placeholders = ", ".join("?" for _ in tag)
+            where_clauses.append(
+                f"articles.id IN ("
+                f"SELECT article_id FROM article_tags "
+                f"WHERE tag_id IN ({placeholders}) "
+                f"GROUP BY article_id "
+                f"HAVING COUNT(DISTINCT tag_id) = ?)"
+            )
+            params.extend(tag)
+            params.append(len(tag))
 
     where = " AND ".join(where_clauses)
 

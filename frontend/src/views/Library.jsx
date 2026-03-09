@@ -617,6 +617,7 @@ export function Library({ tag, q }) {
                 selected={selectMode ? selected.has(a.id) : index === selectedIndex}
                 selectMode={selectMode}
                 onToggleSelect={handleToggleSelect}
+                activeTagId={tag}
               />
             );
           })}

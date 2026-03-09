@@ -9,12 +9,16 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi.testclient import TestClient
+from hypothesis import assume, given, settings
+from hypothesis import strategies as st
 
+from src.articles.routes import router as articles_router
 from src.tags.routes import article_tags_router, router
 from tests.conftest import (
     ArticleFactory,
     MockD1,
     MockEnv,
+    TrackingD1,
     make_test_helpers,
 )
 
@@ -888,3 +892,255 @@ class TestArticleTagEdgeCases:
         tag_queries = [c for c in calls if "FROM tags" in c["sql"]]
         assert len(tag_queries) >= 1
         assert "INNER JOIN article_tags" in tag_queries[0]["sql"]
+
+
+# ---------------------------------------------------------------------------
+# Multi-tag intersection filtering (GET /api/articles?tag=...&tag=...)
+# ---------------------------------------------------------------------------
+
+_make_articles_app, _articles_client = make_test_helpers(
+    (articles_router, "/api/articles"),
+)
+
+
+class TestMultiTagFiltering:
+    async def test_single_tag_filter_uses_subquery(self) -> None:
+        """GET /api/articles?tag=t1 uses IN (SELECT ...) for single tag."""
+        db = TrackingD1(result_fn=lambda sql, params: [])
+        env = MockEnv(db=db)
+
+        client, _ = await _articles_client(env)
+        resp = client.get("/api/articles?tag=tag_1")
+
+        assert resp.status_code == 200
+        # Find the main SELECT query
+        select_sqls = [sql for sql, _ in db.executed if "FROM articles" in sql and "LIMIT" in sql]
+        assert len(select_sqls) >= 1
+        assert "tag_id = ?" in select_sqls[0]
+        # Should NOT use HAVING for single tag
+        assert "HAVING" not in select_sqls[0]
+
+    async def test_two_tag_filter_uses_having_count(self) -> None:
+        """GET /api/articles?tag=t1&tag=t2 uses HAVING COUNT for intersection."""
+        db = TrackingD1(result_fn=lambda sql, params: [])
+        env = MockEnv(db=db)
+
+        client, _ = await _articles_client(env)
+        resp = client.get("/api/articles?tag=tag_1&tag=tag_2")
+
+        assert resp.status_code == 200
+        select_sqls = [sql for sql, _ in db.executed if "FROM articles" in sql and "LIMIT" in sql]
+        assert len(select_sqls) >= 1
+        sql = select_sqls[0]
+        assert "tag_id IN" in sql
+        assert "HAVING COUNT(DISTINCT tag_id)" in sql
+
+    async def test_two_tag_filter_binds_correct_params(self) -> None:
+        """Multi-tag filter binds all tag IDs plus the count."""
+        db = TrackingD1(result_fn=lambda sql, params: [])
+        env = MockEnv(db=db)
+
+        client, _ = await _articles_client(env)
+        client.get("/api/articles?tag=aaa&tag=bbb")
+
+        select_queries = [
+            (sql, params)
+            for sql, params in db.executed
+            if "FROM articles" in sql and "LIMIT" in sql
+        ]
+        assert len(select_queries) >= 1
+        _, params = select_queries[0]
+        # params should contain: user_id, aaa, bbb, 2 (count), limit, offset
+        assert "aaa" in params
+        assert "bbb" in params
+        assert 2 in params
+
+    async def test_four_tags_accepted(self) -> None:
+        """GET /api/articles with 4 tag params succeeds (max allowed)."""
+        db = TrackingD1(result_fn=lambda sql, params: [])
+        env = MockEnv(db=db)
+
+        client, _ = await _articles_client(env)
+        resp = client.get("/api/articles?tag=a&tag=b&tag=c&tag=d")
+
+        assert resp.status_code == 200
+
+    async def test_five_tags_rejected(self) -> None:
+        """GET /api/articles with 5+ tag params returns 400."""
+        db = TrackingD1(result_fn=lambda sql, params: [])
+        env = MockEnv(db=db)
+
+        client, _ = await _articles_client(env)
+        resp = client.get("/api/articles?tag=a&tag=b&tag=c&tag=d&tag=e")
+
+        assert resp.status_code == 400
+        assert "4" in resp.json()["detail"]
+
+    async def test_three_tag_filter(self) -> None:
+        """GET /api/articles?tag=a&tag=b&tag=c uses HAVING COUNT = 3."""
+        db = TrackingD1(result_fn=lambda sql, params: [])
+        env = MockEnv(db=db)
+
+        client, _ = await _articles_client(env)
+        client.get("/api/articles?tag=x&tag=y&tag=z")
+
+        select_queries = [
+            (sql, params)
+            for sql, params in db.executed
+            if "FROM articles" in sql and "LIMIT" in sql
+        ]
+        assert len(select_queries) >= 1
+        _, params = select_queries[0]
+        assert 3 in params
+
+    async def test_tag_filter_combines_with_reading_status(self) -> None:
+        """Tag filter + reading_status both appear in the query."""
+        db = TrackingD1(result_fn=lambda sql, params: [])
+        env = MockEnv(db=db)
+
+        client, _ = await _articles_client(env)
+        resp = client.get("/api/articles?tag=t1&reading_status=unread")
+
+        assert resp.status_code == 200
+        select_sqls = [sql for sql, _ in db.executed if "FROM articles" in sql and "LIMIT" in sql]
+        assert len(select_sqls) >= 1
+        sql = select_sqls[0]
+        assert "reading_status = ?" in sql
+        assert "tag_id = ?" in sql
+
+
+# ---------------------------------------------------------------------------
+# Property-based tests for tag operations (Hypothesis)
+# ---------------------------------------------------------------------------
+
+# Strategy for valid tag names: 1-100 chars, no leading/trailing whitespace
+_tag_name_strategy = st.text(
+    min_size=1,
+    max_size=100,
+    alphabet=st.characters(
+        whitelist_categories=("L", "N", "P", "S"),
+        whitelist_characters=" -_/",
+    ),
+).filter(lambda s: len(s.strip()) > 0)
+
+
+class TestTagPropertyBased:
+    """Property-based tests for tag CRUD state machine.
+
+    These tests verify invariants that should hold for *any* valid tag name,
+    not just specific examples.
+    """
+
+    @given(name=_tag_name_strategy)
+    @settings(max_examples=30)
+    async def test_create_tag_preserves_trimmed_name(self, name: str) -> None:
+        """Creating a tag always returns the trimmed version of the name."""
+
+        def execute(sql: str, params: list) -> list:
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, _ = await _authenticated_client(env)
+        resp = client.post("/api/tags", json={"name": name})
+
+        if resp.status_code == 201:
+            assert resp.json()["name"] == name.strip()
+
+    @given(name=_tag_name_strategy)
+    @settings(max_examples=30)
+    async def test_create_then_rename_roundtrip(self, name: str) -> None:
+        """A tag can be created and then renamed to any valid name."""
+        trimmed = name.strip()
+        assume(len(trimmed) > 0)
+
+        created_tag = {
+            "id": "tag_roundtrip",
+            "user_id": "user_001",
+            "name": "original",
+            "created_at": "2025-01-01",
+        }
+
+        def execute(sql: str, params: list) -> list:
+            # For create: no duplicate
+            if "SELECT" in sql and "name = ?" in sql and "id != ?" not in sql:
+                return []
+            # For rename: tag exists
+            if "FROM tags" in sql and "id = ?" in sql and "name = ?" not in sql:
+                return [created_tag]
+            # For rename: no duplicate with new name
+            if "FROM tags" in sql and "name = ?" in sql and "id != ?" in sql:
+                return []
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, _ = await _authenticated_client(env)
+        resp = client.patch(
+            "/api/tags/tag_roundtrip",
+            json={"name": name},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["name"] == trimmed
+
+    @given(name=st.text(min_size=101, max_size=200))
+    @settings(max_examples=10)
+    async def test_long_names_always_rejected(self, name: str) -> None:
+        """Tag names over 100 characters are always rejected."""
+        env = MockEnv()
+        client, _ = await _authenticated_client(env)
+
+        resp = client.post("/api/tags", json={"name": name})
+        assert resp.status_code == 400
+
+    @given(data=st.data())
+    @settings(max_examples=20)
+    async def test_duplicate_detection_is_idempotent(self, data: st.DataObject) -> None:
+        """Creating the same tag name twice always returns 409 on the second attempt."""
+        name = data.draw(_tag_name_strategy)
+        trimmed = name.strip()
+
+        existing = {"id": "tag_dup", "user_id": "user_001", "name": trimmed}
+
+        def execute(sql: str, params: list) -> list:
+            if "SELECT" in sql and "name = ?" in sql:
+                return [existing]
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, _ = await _authenticated_client(env)
+        resp = client.post("/api/tags", json={"name": name})
+
+        assert resp.status_code == 409
+
+    @given(
+        tag_ids=st.lists(
+            st.text(
+                min_size=5,
+                max_size=20,
+                alphabet=st.characters(whitelist_categories=("L", "N")),
+            ),
+            min_size=1,
+            max_size=6,
+            unique=True,
+        )
+    )
+    @settings(max_examples=20)
+    async def test_tag_count_limit_invariant(self, tag_ids: list[str]) -> None:
+        """Filtering with >4 tags always fails; <=4 always succeeds."""
+        db = TrackingD1(result_fn=lambda sql, params: [])
+        env = MockEnv(db=db)
+
+        client, _ = await _articles_client(env)
+        qs = "&".join(f"tag={t}" for t in tag_ids)
+        resp = client.get(f"/api/articles?{qs}")
+
+        if len(tag_ids) <= 4:
+            assert resp.status_code == 200
+        else:
+            assert resp.status_code == 400

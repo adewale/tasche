@@ -13,7 +13,6 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import pytest
 from fastapi.testclient import TestClient
 
 from src.articles.routes import _sanitize_fts5_query, router
