@@ -28,6 +28,7 @@ import {
   limit as limitSignal,
   showShortcuts,
   searchQuery,
+  tags as tagsSignal,
 } from '../state.js';
 import {
   listArticles,
@@ -452,12 +453,14 @@ export function Library({ tags, q }) {
             <h2 class="section-title">Articles tagged</h2>
             <div class="tag-filter-bar">
               {tags.map(function (tagId) {
+                var tagObj = tagsSignal.value.find(function (t) { return t.id === tagId; });
+                var tagName = tagObj ? tagObj.name : tagId;
                 return (
                   <span key={tagId} class="tag-filter-chip">
-                    {tagId}
+                    {tagName}
                     <button
                       class="tag-filter-chip-remove"
-                      title={'Remove tag filter ' + tagId}
+                      title={'Remove tag filter ' + tagName}
                       onClick={function () {
                         var remaining = tags.filter(function (t) { return t !== tagId; });
                         if (remaining.length === 0) {
