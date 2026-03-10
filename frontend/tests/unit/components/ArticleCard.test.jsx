@@ -389,7 +389,10 @@ describe('ArticleCard', () => {
 
   it('highlights a single matching tag chip', async () => {
     const article = makeArticle({
-      tags: [{ id: 'tag-1', name: 'python' }, { id: 'tag-2', name: 'rust' }],
+      tags: [
+        { id: 'tag-1', name: 'python' },
+        { id: 'tag-2', name: 'rust' },
+      ],
     });
     const { container } = render(
       <ArticleCard article={article} activeTagIds={new Set(['tag-1'])} />,
@@ -430,9 +433,7 @@ describe('ArticleCard', () => {
 
   it('does not highlight chips when activeTagIds is empty set', async () => {
     const article = makeArticle({ tags: [{ id: 'tag-1', name: 'python' }] });
-    const { container } = render(
-      <ArticleCard article={article} activeTagIds={new Set()} />,
-    );
+    const { container } = render(<ArticleCard article={article} activeTagIds={new Set()} />);
 
     await waitFor(() => {
       var chips = container.querySelectorAll('.tag-chip');

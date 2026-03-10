@@ -111,7 +111,9 @@ export function listArticles(params) {
   if (params.audio_status) qs.set('audio_status', params.audio_status);
   if (params.tag) {
     if (Array.isArray(params.tag)) {
-      params.tag.forEach(function (t) { qs.append('tag', t); });
+      params.tag.forEach(function (t) {
+        qs.append('tag', t);
+      });
     } else {
       qs.append('tag', params.tag);
     }

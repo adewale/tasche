@@ -453,7 +453,9 @@ export function Library({ tags, q }) {
             <h2 class="section-title">Articles tagged</h2>
             <div class="tag-filter-bar">
               {tags.map(function (tagId) {
-                var tagObj = tagsSignal.value.find(function (t) { return t.id === tagId; });
+                var tagObj = tagsSignal.value.find(function (t) {
+                  return t.id === tagId;
+                });
                 var tagName = tagObj ? tagObj.name : tagId;
                 return (
                   <span key={tagId} class="tag-filter-chip">
@@ -462,7 +464,9 @@ export function Library({ tags, q }) {
                       class="tag-filter-chip-remove"
                       title={'Remove tag filter ' + tagName}
                       onClick={function () {
-                        var remaining = tags.filter(function (t) { return t !== tagId; });
+                        var remaining = tags.filter(function (t) {
+                          return t !== tagId;
+                        });
                         if (remaining.length === 0) {
                           nav.clearTagFilter();
                         } else {
@@ -533,7 +537,11 @@ export function Library({ tags, q }) {
                   onKeyDown={handleSearchKeyDown}
                 />
                 {q && (
-                  <button class="btn btn-sm btn-secondary" onClick={clearSearch} title="Clear search">
+                  <button
+                    class="btn btn-sm btn-secondary"
+                    onClick={clearSearch}
+                    title="Clear search"
+                  >
                     <IconX size={14} />
                   </button>
                 )}
@@ -541,7 +549,8 @@ export function Library({ tags, q }) {
               {q && (
                 <div class="search-results-info">
                   Searching for "{q}"
-                  {!isLoading && ' — ' + articleList.length + ' result' + (articleList.length !== 1 ? 's' : '')}
+                  {!isLoading &&
+                    ' — ' + articleList.length + ' result' + (articleList.length !== 1 ? 's' : '')}
                 </div>
               )}
             </div>
@@ -629,17 +638,15 @@ export function Library({ tags, q }) {
         )}
 
         <div class="article-list">
-          {articleList.length === 0 && !isLoading && (
-            q ? (
-              <EmptyState title="No results found">
-                Try a different search query.
-              </EmptyState>
+          {articleList.length === 0 &&
+            !isLoading &&
+            (q ? (
+              <EmptyState title="No results found">Try a different search query.</EmptyState>
             ) : (
               <EmptyState icon={IconBookOpen} title="No articles yet">
                 Save a URL above to get started.
               </EmptyState>
-            )
-          )}
+            ))}
           {articleList.map(function (a, index) {
             return (
               <ArticleCard

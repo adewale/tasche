@@ -1,6 +1,12 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { tags as tagsSignal, addToast } from '../state.js';
-import { listTags, createTag as apiCreateTag, getArticleTags, addArticleTag, removeArticleTag } from '../api.js';
+import {
+  listTags,
+  createTag as apiCreateTag,
+  getArticleTags,
+  addArticleTag,
+  removeArticleTag,
+} from '../api.js';
 
 export function TagPicker({ articleId }) {
   const [articleTags, setArticleTags] = useState([]);
@@ -193,16 +199,18 @@ export function TagPicker({ articleId }) {
               setHighlightIndex(0);
             }}
             onKeyDown={handleKeyDown}
-            autocapitalize="off"
-            autocorrect="off"
-            spellcheck={false}
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
           />
           <div class="tag-picker-dropdown">
             {filtered.map((t, i) => (
               // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
               <div
                 key={t.id}
-                class={'tag-picker-option' + (i === highlightIndex ? ' tag-picker-option--active' : '')}
+                class={
+                  'tag-picker-option' + (i === highlightIndex ? ' tag-picker-option--active' : '')
+                }
                 onMouseDown={(e) => {
                   e.preventDefault();
                   selectTag(t.id, t.name);
@@ -215,7 +223,10 @@ export function TagPicker({ articleId }) {
             {showCreate && (
               // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
               <div
-                class={'tag-picker-option tag-picker-option--create' + (highlightIndex === filtered.length ? ' tag-picker-option--active' : '')}
+                class={
+                  'tag-picker-option tag-picker-option--create' +
+                  (highlightIndex === filtered.length ? ' tag-picker-option--active' : '')
+                }
                 onMouseDown={(e) => {
                   e.preventDefault();
                   createAndApply(trimmed);
@@ -226,9 +237,7 @@ export function TagPicker({ articleId }) {
               </div>
             )}
             {totalOptions === 0 && trimmed && exactMatch && (
-              <div class="tag-picker-option tag-picker-option--empty">
-                No matching tags
-              </div>
+              <div class="tag-picker-option tag-picker-option--empty">No matching tags</div>
             )}
           </div>
           <button class="btn btn-sm btn-secondary" onClick={closePicker}>

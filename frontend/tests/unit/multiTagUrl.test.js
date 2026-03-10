@@ -97,34 +97,30 @@ describe('parseTagsFromHash / buildTagHash roundtrip (property-based)', function
       ),
       { minLength: 1, maxLength: 30 },
     )
-    .map(function (chars) { return chars.join(''); });
+    .map(function (chars) {
+      return chars.join('');
+    });
 
   it('roundtrip: parse(build(tags)) === tags', function () {
     fc.assert(
-      fc.property(
-        fc.array(tagIdArb, { minLength: 0, maxLength: 4 }),
-        function (tags) {
-          var hash = buildTagHash(tags);
-          var parsed = parseTagsFromHash(hash);
-          expect(parsed).toEqual(tags);
-        },
-      ),
+      fc.property(fc.array(tagIdArb, { minLength: 0, maxLength: 4 }), function (tags) {
+        var hash = buildTagHash(tags);
+        var parsed = parseTagsFromHash(hash);
+        expect(parsed).toEqual(tags);
+      }),
       { numRuns: 200 },
     );
   });
 
   it('order is preserved through roundtrip', function () {
     fc.assert(
-      fc.property(
-        fc.array(tagIdArb, { minLength: 2, maxLength: 4 }),
-        function (tags) {
-          var hash = buildTagHash(tags);
-          var parsed = parseTagsFromHash(hash);
-          for (var i = 0; i < tags.length; i++) {
-            expect(parsed[i]).toBe(tags[i]);
-          }
-        },
-      ),
+      fc.property(fc.array(tagIdArb, { minLength: 2, maxLength: 4 }), function (tags) {
+        var hash = buildTagHash(tags);
+        var parsed = parseTagsFromHash(hash);
+        for (var i = 0; i < tags.length; i++) {
+          expect(parsed[i]).toBe(tags[i]);
+        }
+      }),
       { numRuns: 200 },
     );
   });
@@ -136,14 +132,11 @@ describe('parseTagsFromHash / buildTagHash roundtrip (property-based)', function
 
   it('parse never returns more tags than were in the URL', function () {
     fc.assert(
-      fc.property(
-        fc.array(tagIdArb, { minLength: 0, maxLength: 4 }),
-        function (tags) {
-          var hash = buildTagHash(tags);
-          var parsed = parseTagsFromHash(hash);
-          expect(parsed.length).toBe(tags.length);
-        },
-      ),
+      fc.property(fc.array(tagIdArb, { minLength: 0, maxLength: 4 }), function (tags) {
+        var hash = buildTagHash(tags);
+        var parsed = parseTagsFromHash(hash);
+        expect(parsed.length).toBe(tags.length);
+      }),
       { numRuns: 200 },
     );
   });
