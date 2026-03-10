@@ -14,7 +14,7 @@ import {
 } from '../components/Icons.jsx';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts.js';
 import { toggleArchive, toggleFavorite, removeArticle } from '../articleActions.js';
-import { nav } from '../nav.js';
+import { nav, buildTagHash } from '../nav.js';
 import {
   articles,
   filter as filterSignal,
@@ -72,7 +72,7 @@ function getSavedSort() {
   return 'newest';
 }
 
-export function Library({ tag, q }) {
+export function Library({ tags, q }) {
   const [saveUrl, setSaveUrl] = useState('');
   const [savingType, setSavingType] = useState(null); // null | 'save' | 'audio'
   const [bulkActing, setBulkActing] = useState(false);
@@ -106,7 +106,7 @@ export function Library({ tag, q }) {
     setSelectedIndex(-1);
     loadArticles(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentFilter, tag, currentSort, q]);
+  }, [currentFilter, tags && tags.join(','), currentSort, q]);
 
   // Reset selectedIndex when article list changes
   useEffect(() => {
@@ -185,7 +185,7 @@ export function Library({ tag, q }) {
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentFilter, tag, currentSort, q]);
+  }, [currentFilter, tags && tags.join(','), currentSort, q]);
 
   // Scroll selected card into view
   useEffect(() => {
@@ -210,8 +210,8 @@ export function Library({ tag, q }) {
       if (currentSort && currentSort !== 'newest') {
         params.sort = currentSort;
       }
-      if (tag) {
-        params.tag = tag;
+      if (tags && tags.length > 0) {
+        params.tag = tags;
       } else if (currentFilter === 'unread') {
         params.reading_status = 'unread';
       } else if (currentFilter === 'archived') {
@@ -444,12 +444,40 @@ export function Library({ tag, q }) {
     <>
       <Header />
       <main class="main-content">
-        {tag ? (
+        {tags && tags.length > 0 ? (
           <>
             <a href="#/tags" class="reader-back">
               Back to tags
             </a>
             <h2 class="section-title">Articles tagged</h2>
+            <div class="tag-filter-bar">
+              {tags.map(function (tagId) {
+                return (
+                  <span key={tagId} class="tag-filter-chip">
+                    {tagId}
+                    <button
+                      class="tag-filter-chip-remove"
+                      title={'Remove tag filter ' + tagId}
+                      onClick={function () {
+                        var remaining = tags.filter(function (t) { return t !== tagId; });
+                        if (remaining.length === 0) {
+                          nav.clearTagFilter();
+                        } else {
+                          window.location.hash = buildTagHash(remaining);
+                        }
+                      }}
+                    >
+                      ×
+                    </button>
+                  </span>
+                );
+              })}
+              {tags.length > 1 && (
+                <button class="btn btn-sm btn-secondary" onClick={nav.clearTagFilter}>
+                  Clear all
+                </button>
+              )}
+            </div>
           </>
         ) : (
           <>
@@ -617,7 +645,7 @@ export function Library({ tag, q }) {
                 selected={selectMode ? selected.has(a.id) : index === selectedIndex}
                 selectMode={selectMode}
                 onToggleSelect={handleToggleSelect}
-                activeTagId={tag}
+                activeTagIds={tags && tags.length > 0 ? new Set(tags) : null}
               />
             );
           })}

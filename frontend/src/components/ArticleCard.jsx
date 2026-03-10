@@ -31,7 +31,7 @@ import { useSWMessage } from '../hooks/useSWMessage.js';
 
 const tagCache = new Map();
 
-export function ArticleCard({ article, selectMode, selected, onToggleSelect, activeTagId }) {
+export function ArticleCard({ article, selectMode, selected, onToggleSelect, activeTagIds }) {
   const a = article;
   const readingTime = a.reading_time_minutes ? a.reading_time_minutes + ' min read' : '';
   const isFav = a.is_favorite;
@@ -248,7 +248,7 @@ export function ArticleCard({ article, selectMode, selected, onToggleSelect, act
           <div class="article-card-tags">
             {cardTags.slice(0, 3).map(function (tag) {
               var chipClass = 'tag-chip';
-              if (activeTagId && tag.id === activeTagId) chipClass += ' tag-chip--highlighted';
+              if (activeTagIds && activeTagIds.has(tag.id)) chipClass += ' tag-chip--highlighted';
               return (
                 <a
                   key={tag.id}

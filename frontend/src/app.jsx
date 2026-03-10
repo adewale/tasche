@@ -5,6 +5,7 @@ import { Toast } from './components/Toast.jsx';
 import { AudioPlayer } from './components/AudioPlayer.jsx';
 import { KeyboardShortcutsHelp } from './components/KeyboardShortcutsHelp.jsx';
 import { showShortcuts } from './state.js';
+import { parseTagsFromHash } from './nav.js';
 import { Library } from './views/Library.jsx';
 import { Reader } from './views/Reader.jsx';
 import { MarkdownView } from './views/MarkdownView.jsx';
@@ -19,15 +20,14 @@ import './app.css';
 
 /**
  * FilteredLibrary handles the `#/?tag=xxx` and `#/?q=xxx` route patterns.
- * Extracts tag and q params from window.location.hash.
+ * Extracts tags (possibly multiple) and q params from window.location.hash.
  */
 function FilteredLibrary() {
   const hash = window.location.hash;
-  const tagMatch = hash.match(/[?&]tag=([^&]+)/);
-  const tag = tagMatch ? decodeURIComponent(tagMatch[1]) : null;
+  const tags = parseTagsFromHash(hash);
   const qMatch = hash.match(/[?&]q=([^&]*)/);
   const q = qMatch ? decodeURIComponent(qMatch[1]) : null;
-  return <Library tag={tag} q={q} />;
+  return <Library tags={tags} q={q} />;
 }
 
 class ErrorBoundary extends Component {

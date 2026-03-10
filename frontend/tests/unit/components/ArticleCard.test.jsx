@@ -369,4 +369,67 @@ describe('ArticleCard', () => {
     render(<ArticleCard article={makeArticle()} />);
     expect(screen.queryByTitle('Download audio offline')).not.toBeInTheDocument();
   });
+
+  // ── Multi-tag highlighting ──
+
+  it('does not highlight chips when activeTagIds is null', async () => {
+    const article = makeArticle({ tags: [{ id: 'tag-1', name: 'python' }] });
+    const { container } = render(<ArticleCard article={article} activeTagIds={null} />);
+
+    await waitFor(() => {
+      var chips = container.querySelectorAll('.tag-chip');
+      expect(chips.length).toBe(1);
+      expect(chips[0].classList.contains('tag-chip--highlighted')).toBe(false);
+    });
+  });
+
+  it('highlights a single matching tag chip', async () => {
+    const article = makeArticle({
+      tags: [{ id: 'tag-1', name: 'python' }, { id: 'tag-2', name: 'rust' }],
+    });
+    const { container } = render(
+      <ArticleCard article={article} activeTagIds={new Set(['tag-1'])} />,
+    );
+
+    await waitFor(() => {
+      var chips = container.querySelectorAll('.tag-chip');
+      expect(chips.length).toBe(2);
+      expect(chips[0].classList.contains('tag-chip--highlighted')).toBe(true);
+      expect(chips[1].classList.contains('tag-chip--highlighted')).toBe(false);
+    });
+  });
+
+  it('highlights multiple matching tag chips', async () => {
+    const article = makeArticle({
+      tags: [
+        { id: 'tag-1', name: 'python' },
+        { id: 'tag-2', name: 'rust' },
+        { id: 'tag-3', name: 'go' },
+      ],
+    });
+    const { container } = render(
+      <ArticleCard article={article} activeTagIds={new Set(['tag-1', 'tag-3'])} />,
+    );
+
+    await waitFor(() => {
+      var chips = container.querySelectorAll('.tag-chip');
+      expect(chips.length).toBe(3);
+      expect(chips[0].classList.contains('tag-chip--highlighted')).toBe(true);
+      expect(chips[1].classList.contains('tag-chip--highlighted')).toBe(false);
+      expect(chips[2].classList.contains('tag-chip--highlighted')).toBe(true);
+    });
+  });
+
+  it('does not highlight chips when activeTagIds is empty set', async () => {
+    const article = makeArticle({ tags: [{ id: 'tag-1', name: 'python' }] });
+    const { container } = render(
+      <ArticleCard article={article} activeTagIds={new Set()} />,
+    );
+
+    await waitFor(() => {
+      var chips = container.querySelectorAll('.tag-chip');
+      expect(chips.length).toBe(1);
+      expect(chips[0].classList.contains('tag-chip--highlighted')).toBe(false);
+    });
+  });
 });

@@ -54,6 +54,7 @@ vi.mock('../../../src/components/Icons.jsx', () => ({
   IconArchive: () => <span>Archive</span>,
   IconTrash: () => <span>Trash</span>,
   IconX: () => <span>X</span>,
+  IconSearch: () => <span>Search</span>,
 }));
 
 vi.mock('../../../src/hooks/useKeyboardShortcuts.js', () => ({
@@ -198,5 +199,51 @@ describe('Library', () => {
   it('renders sort select', () => {
     render(<Library />);
     expect(screen.getByText('Newest first')).toBeInTheDocument();
+  });
+
+  // ── Multi-tag filter bar ──
+
+  it('shows tag filter bar when tags prop is non-empty', () => {
+    render(<Library tags={['tag-1']} />);
+    expect(screen.getByText('Articles tagged')).toBeInTheDocument();
+    expect(screen.getByTitle('Remove tag filter tag-1')).toBeInTheDocument();
+  });
+
+  it('does not show tag filter bar when tags is empty', () => {
+    render(<Library tags={[]} />);
+    expect(screen.queryByText('Articles tagged')).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Paste a URL to save...')).toBeInTheDocument();
+  });
+
+  it('does not show tag filter bar when tags is undefined', () => {
+    render(<Library />);
+    expect(screen.queryByText('Articles tagged')).not.toBeInTheDocument();
+  });
+
+  it('shows clear all button when multiple tags active', () => {
+    render(<Library tags={['tag-1', 'tag-2']} />);
+    expect(screen.getByText('Clear all')).toBeInTheDocument();
+  });
+
+  it('does not show clear all for single tag', () => {
+    render(<Library tags={['tag-1']} />);
+    expect(screen.queryByText('Clear all')).not.toBeInTheDocument();
+  });
+
+  it('shows remove button for each active tag', () => {
+    render(<Library tags={['tag-1', 'tag-2', 'tag-3']} />);
+    expect(screen.getByTitle('Remove tag filter tag-1')).toBeInTheDocument();
+    expect(screen.getByTitle('Remove tag filter tag-2')).toBeInTheDocument();
+    expect(screen.getByTitle('Remove tag filter tag-3')).toBeInTheDocument();
+  });
+
+  it('passes tags array to listArticles', async () => {
+    const { listArticles } = await import('../../../src/api.js');
+    render(<Library tags={['tag-1', 'tag-2']} />);
+    await waitFor(() => {
+      expect(listArticles).toHaveBeenCalledWith(
+        expect.objectContaining({ tag: ['tag-1', 'tag-2'] }),
+      );
+    });
   });
 });
