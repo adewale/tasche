@@ -114,21 +114,70 @@ test.describe('Article lifecycle', () => {
   });
 });
 
-test.describe('Search', () => {
-  test('search page loads', async ({ page }) => {
-    await page.goto('/#/search');
-    await expect(page.locator('input[type="search"]')).toBeVisible({ timeout: 10000 });
+test.describe('Header search', () => {
+  test('search input is hidden by default and appears on click', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('.header-logo')).toBeVisible({ timeout: 10000 });
+
+    // Search input should exist but be invisible (visibility: hidden)
+    const searchInput = page.locator('.header-search-input');
+    await expect(searchInput).toHaveCSS('visibility', 'hidden');
+
+    // Click the search button in the header actions
+    await page.locator('.header-actions button[title="Search"]').click();
+
+    // Input should now be visible and focused
+    await expect(searchInput).toHaveCSS('visibility', 'visible');
+    await expect(searchInput).toBeFocused();
   });
 
-  test('search UI completes without errors', async ({ page }) => {
-    await page.goto('/#/search');
-    const searchInput = page.locator('input[type="search"]');
-    await searchInput.fill('test');
-    await page.locator('.search-container .btn-primary').click();
+  test('search input has no icon to its left', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('.header-logo')).toBeVisible({ timeout: 10000 });
 
-    // Wait for search to complete — results info, results, or empty state
+    // Open search
+    await page.locator('.header-actions button[title="Search"]').click();
+    await expect(page.locator('.header-search-input')).toHaveCSS('visibility', 'visible');
+
+    // The search container should not have any direct SVG children (no icon to the left)
+    const directIcons = page.locator('.header-search > svg');
+    await expect(directIcons).toHaveCount(0);
+  });
+
+  test('search input takes at least 75% of available space', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('.header-logo')).toBeVisible({ timeout: 10000 });
+
+    // Measure the space between logo and actions
+    const logo = page.locator('.header-logo');
+    const actions = page.locator('.header-actions');
+    const search = page.locator('.header-search');
+
+    const logoBox = await logo.boundingBox();
+    const actionsBox = await actions.boundingBox();
+    const searchBox = await search.boundingBox();
+
+    // Available space = from end of logo to start of actions
+    const availableWidth = actionsBox.x - (logoBox.x + logoBox.width);
+    // Search container width (includes its margins)
+    const searchWidth = searchBox.width;
+
+    expect(searchWidth / availableWidth).toBeGreaterThanOrEqual(0.75);
+  });
+
+  test('search completes without errors', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('.header-logo')).toBeVisible({ timeout: 10000 });
+
+    // Open search and type a query
+    await page.locator('.header-actions button[title="Search"]').click();
+    const searchInput = page.locator('.header-search-input');
+    await searchInput.fill('test');
+    await searchInput.press('Enter');
+
+    // Wait for results or empty state
     await expect(
-      page.locator('.search-results-info, .article-card, .empty-state').first(),
+      page.locator('.article-card, [data-testid="empty-state"], .empty-state').first(),
     ).toBeVisible({
       timeout: 10000,
     });
@@ -220,9 +269,6 @@ test.describe('Navigation', () => {
   test('header navigation links work', async ({ page }) => {
     await page.goto('/');
     await expect(page.locator('.header-logo')).toBeVisible({ timeout: 10000 });
-
-    await page.locator('a[href="#/search"]').click();
-    await expect(page.locator('input[type="search"]')).toBeVisible({ timeout: 5000 });
 
     // Tags and Settings are inside the hamburger menu
     await page.locator('.hamburger-menu button').click();

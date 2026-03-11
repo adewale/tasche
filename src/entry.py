@@ -179,10 +179,7 @@ from tags.routes import router as tags_router  # noqa: E402
 app.include_router(tags_router, prefix="/api/tags", tags=["tags"])
 app.include_router(article_tags_router, prefix="/api/articles", tags=["tags"])
 
-# Phase 5: search router
-from search.routes import router as search_router  # noqa: E402
-
-app.include_router(search_router, prefix="/api/search", tags=["search"])
+# Phase 5: search is unified into the articles list endpoint (?q= param).
 
 # Phase 6: TTS router
 from tts.routes import router as tts_router  # noqa: E402

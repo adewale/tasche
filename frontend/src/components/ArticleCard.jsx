@@ -11,7 +11,7 @@ import {
   saveAudioOffline,
 } from '../api.js';
 import { toggleArchive, toggleFavorite, removeArticle } from '../articleActions.js';
-import { nav } from '../nav.js';
+import { nav, parseLibraryParams, buildLibraryHash } from '../nav.js';
 import { playAudio, audioState } from './AudioPlayer.jsx';
 import {
   IconStar,
@@ -31,7 +31,7 @@ import { useSWMessage } from '../hooks/useSWMessage.js';
 
 const tagCache = new Map();
 
-export function ArticleCard({ article, selectMode, selected, onToggleSelect }) {
+export function ArticleCard({ article, selectMode, selected, onToggleSelect, activeTagIds }) {
   const a = article;
   const readingTime = a.reading_time_minutes ? a.reading_time_minutes + ' min read' : '';
   const isFav = a.is_favorite;
@@ -246,20 +246,47 @@ export function ArticleCard({ article, selectMode, selected, onToggleSelect }) {
       <div class="article-card-footer">
         {cardTags.length > 0 && (
           <div class="article-card-tags">
-            {cardTags.map(function (tag) {
-              return (
-                <a
-                  key={tag.id}
-                  href={'#/?tag=' + tag.id}
-                  class="tag-chip"
-                  onClick={function (e) {
-                    handleTagClick(e, tag.id);
-                  }}
-                >
-                  {tag.name}
-                </a>
-              );
-            })}
+            {cardTags
+              .slice()
+              .sort(function (a, b) {
+                return a.name.localeCompare(b.name);
+              })
+              .slice(0, 3)
+              .map(function (tag) {
+                var chipClass = 'tag-chip';
+                if (activeTagIds && activeTagIds.has(tag.id)) chipClass += ' tag-chip--highlighted';
+                var currentP = parseLibraryParams(window.location.hash);
+                var currentTags = currentP.tags;
+                var chipHref =
+                  currentTags.indexOf(tag.id) >= 0
+                    ? buildLibraryHash({
+                        tags: currentTags.filter(function (t) {
+                          return t !== tag.id;
+                        }),
+                        q: currentP.q,
+                        filter: currentP.filter,
+                        sort: currentP.sort,
+                      })
+                    : buildLibraryHash({
+                        tags: currentTags.concat(tag.id),
+                        q: currentP.q,
+                        filter: currentP.filter,
+                        sort: currentP.sort,
+                      });
+                return (
+                  <a
+                    key={tag.id}
+                    href={chipHref}
+                    class={chipClass}
+                    onClick={function (e) {
+                      handleTagClick(e, tag.id);
+                    }}
+                  >
+                    {tag.name}
+                  </a>
+                );
+              })}
+            {cardTags.length > 3 && <span class="tag-chip-overflow">+{cardTags.length - 3}</span>}
           </div>
         )}
         <div class="article-card-actions">

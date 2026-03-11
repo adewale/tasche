@@ -299,7 +299,7 @@ async function invalidateApiCache(mutationUrl) {
       var pathname = cachedUrl.pathname;
 
       // Always invalidate list endpoints — any mutation can change the list
-      if (pathname === '/api/articles' || pathname === '/api/search') {
+      if (pathname === '/api/articles') {
         await cache.delete(keys[i]);
         continue;
       }

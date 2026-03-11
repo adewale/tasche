@@ -227,11 +227,15 @@ Tasche stores articles in **dual format**:
 
 ### Search Library
 
-1. User types in search box
+Search is a filter on the article list, not a separate view. All filters compose naturally.
+
+1. User types in the search bar on the library view
 2. Input is sanitized: FTS5 operators stripped, each word quoted as a literal (see §9.2)
-3. FTS5 searches title, excerpt, and full markdown content, ordered by relevance (`rank`)
-4. Results highlight matching terms
-5. User clicks result → opens reader view
+3. `GET /api/articles?q=...` filters via FTS5 INNER JOIN, composable with `tag`, `reading_status`, `is_favorite`, `audio_status`, and `sort` params
+4. When `q` is present and `sort` is not specified, results are ordered by FTS5 relevance (`rank`); otherwise the user's chosen sort applies
+5. Results show as standard article cards (with tags, thumbnails, etc.)
+6. User clicks result → opens reader view
+7. User can clear search to return to the normal library view
 
 ### Listen Later
 
@@ -1038,8 +1042,8 @@ This avoids loading the full SPA and completes in under 2 seconds.
 | `api.js` | Full API client, offline functions, service worker messaging |
 | `state.js` | Global state via @preact/signals (user, articles, toasts, etc.) |
 | `markdown.js` | Markdown-to-HTML renderer with XSS protection |
-| `utils.js` | Shared utilities (escapeHtml, formatDate, highlightTerms) |
-| `views/` | Library, Reader, Search, Tags, Settings, Login |
+| `utils.js` | Shared utilities (escapeHtml, formatDate, formatTime) |
+| `views/` | Library (includes search), Reader, Tags, Settings, Login |
 | `components/` | ArticleCard, AudioPlayer, Header, Pagination, TagPicker, Toast |
 | `public/sw.js` | Service worker: 4 cache tiers, LRU eviction, offline sync |
 | `public/manifest.json` | PWA manifest with share target |
@@ -1133,34 +1137,14 @@ Each screen below is a route in the SPA. The wireframes show layout structure, n
 - Original status indicator: shows `original_status` with appropriate message (see §7.7)
 - Scroll position saved on navigate away (percentage-based), restored on return
 
-**Search View** (`#/search`)
+**Search** (integrated into Library View at `#/?q=...`)
 
-```
-┌─────────────────────────────────────────────────┐
-│  [← Back]  Search                                │
-├─────────────────────────────────────────────────┤
-│  ┌─────────────────────────────────────────────┐│
-│  │ 🔍 Search your articles...                  ││
-│  └─────────────────────────────────────────────┘│
-│                                                  │
-│  3 results for "machine learning"                │
-│                                                  │
-│  ┌─────────────────────────────────────────────┐│
-│  │ Introduction to **Machine Learning**         ││
-│  │ blog.example.com · 8 min · Jan 2026         ││
-│  │ "...neural networks enable **machine**       ││
-│  │  **learning** at scale across..."            ││
-│  └─────────────────────────────────────────────┘│
-│  ┌─────────────────────────────────────────────┐│
-│  │ ...more results (highlight matching terms)  ││
-│  └─────────────────────────────────────────────┘│
-└─────────────────────────────────────────────────┘
-```
+Search is not a separate view — it is a composable filter on the library. The search bar appears between the save form and the filter tabs. When active (`?q=...`), articles are filtered via FTS5 and displayed as standard article cards with tags, thumbnails, and all other metadata. All existing filters (status tabs, sort, tag) compose with search.
 
-- Search input with debounced query (300ms)
-- Results show: title with highlighted matches, domain, reading time, date
-- Snippet with highlighted matching terms from article content
-- Results ordered by FTS5 relevance (`rank`), not recency
+- Search input with debounced query (300ms), press `/` to focus
+- `Escape` clears the search and returns to the unfiltered library
+- Results ordered by FTS5 relevance (`rank`) by default, overridable via sort dropdown
+- Standard article cards (not a separate result format) — tags are always visible
 
 **Tags View** (`#/tags`)
 
@@ -1471,7 +1455,7 @@ Each milestone is a **vertical slice** — it delivers a complete, end-to-end us
 | 2 | Authentication | GitHub OAuth login → KV session → protected API routes → login/logout UI | ✅ |
 | 3 | Save & Read | POST URL → article created in D1 → queue message → list articles → view article in browser | ✅ |
 | 4 | Content Pipeline | Queue consumer fetches page → readability extraction → images to WebP → HTML+MD in R2 → FTS5 index → article displays in reader | ✅ |
-| 5 | Search & Tags | Search box → FTS5 query → ranked results displayed · Create tags → assign to articles → filter library by tag | ✅ |
+| 5 | Search & Tags | Search as composable filter on `GET /api/articles?q=...` → FTS5 + all existing filters compose · Create tags → assign to articles → filter library by tag | ✅ |
 | 6 | Listen Later | Click headphone icon → TTS queued → Workers AI generates audio → audio player appears in reader view | ✅ |
 | 7 | Frontend MVP | Vanilla JS SPA: library grid, reader view, search, tags, audio player, offline mutation queue, bookmarklet, share target | ✅ |
 | 8 | Observability | Wide events middleware emits one JSON log line per request with full context | ✅ |

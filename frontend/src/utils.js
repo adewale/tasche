@@ -39,49 +39,6 @@ export function formatTime(seconds) {
   return m + ':' + (s < 10 ? '0' : '') + s;
 }
 
-/**
- * Split text into segments with highlighting information.
- * Returns an array of { text, highlighted } objects.
- * Matches whole words or word prefixes (case-insensitive).
- */
-export function highlightTerms(text, query) {
-  if (!text || !query) return [{ text: text || '', highlighted: false }];
-
-  var terms = query
-    .trim()
-    .split(/\s+/)
-    .filter(function (t) {
-      return t.length > 0;
-    });
-
-  if (terms.length === 0) return [{ text: text, highlighted: false }];
-
-  // Escape regex special chars in each term, match at word boundary
-  var escaped = terms.map(function (t) {
-    return t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  });
-
-  // Match word boundary + any term (prefix matching)
-  var pattern = new RegExp('(\\b(?:' + escaped.join('|') + ')\\w*)', 'gi');
-  var segments = [];
-  var lastIndex = 0;
-  var match;
-
-  while ((match = pattern.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      segments.push({ text: text.slice(lastIndex, match.index), highlighted: false });
-    }
-    segments.push({ text: match[0], highlighted: true });
-    lastIndex = pattern.lastIndex;
-  }
-
-  if (lastIndex < text.length) {
-    segments.push({ text: text.slice(lastIndex), highlighted: false });
-  }
-
-  return segments.length > 0 ? segments : [{ text: text, highlighted: false }];
-}
-
 export function getBookmarkletCode() {
   var origin = window.location.origin;
   return (

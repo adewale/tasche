@@ -5,10 +5,10 @@ import { Toast } from './components/Toast.jsx';
 import { AudioPlayer } from './components/AudioPlayer.jsx';
 import { KeyboardShortcutsHelp } from './components/KeyboardShortcutsHelp.jsx';
 import { showShortcuts } from './state.js';
+import { parseLibraryParams } from './nav.js';
 import { Library } from './views/Library.jsx';
 import { Reader } from './views/Reader.jsx';
 import { MarkdownView } from './views/MarkdownView.jsx';
-import { Search } from './views/Search.jsx';
 import { Tags } from './views/Tags.jsx';
 import { Settings } from './views/Settings.jsx';
 import { Stats } from './views/Stats.jsx';
@@ -19,14 +19,13 @@ import { getSession, createArticle, triggerSync, triggerAutoPrecache } from './a
 import './app.css';
 
 /**
- * TagFilteredLibrary handles the `#/?tag=xxx` route pattern.
- * Extracts the tag param from window.location.hash.
+ * FilteredLibrary extracts all library params from the URL hash.
+ * Used for both bare `#/` and parameterized `#/?tag=abc&q=hello` routes.
  */
-function TagFilteredLibrary() {
+function FilteredLibrary() {
   const hash = window.location.hash;
-  const match = hash.match(/[?&]tag=([^&]+)/);
-  const tag = match ? decodeURIComponent(match[1]) : null;
-  return <Library tag={tag} />;
+  const p = parseLibraryParams(hash);
+  return <Library tags={p.tags} q={p.q} filter={p.filter} sort={p.sort} />;
 }
 
 class ErrorBoundary extends Component {
@@ -61,7 +60,7 @@ export function App() {
   const [ready, setReady] = useState(false);
 
   // Global "?" keyboard shortcut to toggle the shortcuts help panel.
-  // Registered here so it works on ALL screens (Library, Reader, Search,
+  // Registered here so it works on ALL screens (Library, Reader,
   // Tags, Stats, Settings), not just Library.
   useEffect(function () {
     function handleGlobalKeyDown(e) {
@@ -235,12 +234,6 @@ function AppRouter() {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
-  // Check if the current hash has a tag filter: #/?tag=xxx
-  if (currentPath.startsWith('/?tag=') || currentPath.match(/^\/\?.*tag=/)) {
-    if (!user.value) return <Login />;
-    return <TagFilteredLibrary />;
-  }
-
   // Manual hash routing
   if (currentPath === '/login') {
     return <Login />;
@@ -250,8 +243,9 @@ function AppRouter() {
     return <Login />;
   }
 
-  if (currentPath === '/' || currentPath === '') {
-    return <Library />;
+  // Library: bare #/ or #/?... with params
+  if (currentPath === '/' || currentPath === '' || currentPath.match(/^\/\?/)) {
+    return <FilteredLibrary />;
   }
 
   const markdownMatch = currentPath.match(/^\/article\/(.+)\/markdown$/);
@@ -262,10 +256,6 @@ function AppRouter() {
   const articleMatch = currentPath.match(/^\/article\/(.+)$/);
   if (articleMatch) {
     return <Reader id={articleMatch[1]} />;
-  }
-
-  if (currentPath === '/search') {
-    return <Search />;
   }
 
   if (currentPath === '/tags') {
@@ -281,5 +271,5 @@ function AppRouter() {
   }
 
   // Default to library
-  return <Library />;
+  return <FilteredLibrary />;
 }

@@ -13,9 +13,9 @@ Remaining:
 
 Items described in the spec but not yet implemented.
 
-### ~~Search Result Highlighting (Phase 10)~~ — Done
+### ~~Search Result Highlighting (Phase 10)~~ — Removed
 
-Implemented: `HighlightedText` component in `Search.jsx`, `highlightTerms()` in `utils.js`, `<mark>` CSS with light/dark mode support.
+Removed with search unification: `Search.jsx` deleted, `highlightTerms()` removed from `utils.js`. Search is now inline in the Library view.
 
 ### ~~Media Session API Polish (Phase 10)~~ — Done
 

@@ -17,14 +17,22 @@ vi.mock('../../../src/articleActions.js', () => ({
   removeArticle: vi.fn(() => Promise.resolve(true)),
 }));
 
-vi.mock('../../../src/nav.js', () => ({
-  nav: {
-    article: vi.fn(),
-    search: vi.fn(),
-    library: vi.fn(),
-    tagFilter: vi.fn(),
-  },
-}));
+vi.mock('../../../src/nav.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    nav: {
+      article: vi.fn(),
+      search: vi.fn(),
+      clearSearch: vi.fn(),
+      library: vi.fn(),
+      tagFilter: vi.fn(),
+      clearTagFilter: vi.fn(),
+      setFilter: vi.fn(),
+      setSort: vi.fn(),
+    },
+  };
+});
 
 vi.mock('../../../src/components/Header.jsx', () => ({
   Header: () => <div data-testid="header">Header</div>,
@@ -72,7 +80,7 @@ vi.mock('../../../src/state.js', async (importOriginal) => {
 // Real utils — formatDate is a pure function that works in jsdom
 
 import { createArticle } from '../../../src/api.js';
-import { addToast } from '../../../src/state.js';
+import { addToast, tags as tagsSignal } from '../../../src/state.js';
 
 describe('Library', () => {
   beforeEach(() => {
@@ -198,5 +206,77 @@ describe('Library', () => {
   it('renders sort select', () => {
     render(<Library />);
     expect(screen.getByText('Newest first')).toBeInTheDocument();
+  });
+
+  // ── Multi-tag filter bar ──
+
+  it('shows tag filter bar when tags prop is non-empty', () => {
+    render(<Library tags={['tag-1']} />);
+    expect(screen.getByText('Articles tagged')).toBeInTheDocument();
+    expect(screen.getByTitle('Remove tag filter tag-1')).toBeInTheDocument();
+  });
+
+  it('does not show tag filter bar when tags is empty', () => {
+    render(<Library tags={[]} />);
+    expect(screen.queryByText('Articles tagged')).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Paste a URL to save...')).toBeInTheDocument();
+  });
+
+  it('does not show tag filter bar when tags is undefined', () => {
+    render(<Library />);
+    expect(screen.queryByText('Articles tagged')).not.toBeInTheDocument();
+  });
+
+  it('shows clear all button when multiple tags active', () => {
+    render(<Library tags={['tag-1', 'tag-2']} />);
+    expect(screen.getByText('Clear all')).toBeInTheDocument();
+  });
+
+  it('does not show clear all for single tag', () => {
+    render(<Library tags={['tag-1']} />);
+    expect(screen.queryByText('Clear all')).not.toBeInTheDocument();
+  });
+
+  it('shows remove button for each active tag (falls back to ID when names unavailable)', () => {
+    tagsSignal.value = [];
+    render(<Library tags={['tag-1', 'tag-2', 'tag-3']} />);
+    expect(screen.getByTitle('Remove tag filter tag-1')).toBeInTheDocument();
+    expect(screen.getByTitle('Remove tag filter tag-2')).toBeInTheDocument();
+    expect(screen.getByTitle('Remove tag filter tag-3')).toBeInTheDocument();
+  });
+
+  // ── Tag name resolution ──
+
+  it('displays tag names instead of IDs when tags signal has data', () => {
+    tagsSignal.value = [
+      { id: 'tag-1', name: 'python' },
+      { id: 'tag-2', name: 'rust' },
+    ];
+    render(<Library tags={['tag-1', 'tag-2']} />);
+    expect(screen.getByText('python')).toBeInTheDocument();
+    expect(screen.getByText('rust')).toBeInTheDocument();
+    expect(screen.getByTitle('Remove tag filter python')).toBeInTheDocument();
+    expect(screen.getByTitle('Remove tag filter rust')).toBeInTheDocument();
+
+    tagsSignal.value = [];
+  });
+
+  it('falls back to tag ID when tag is not in global tags signal', () => {
+    tagsSignal.value = [{ id: 'tag-1', name: 'python' }];
+    render(<Library tags={['tag-1', 'unknown-tag']} />);
+    expect(screen.getByText('python')).toBeInTheDocument();
+    expect(screen.getByText('unknown-tag')).toBeInTheDocument();
+
+    tagsSignal.value = [];
+  });
+
+  it('passes tags array to listArticles', async () => {
+    const { listArticles } = await import('../../../src/api.js');
+    render(<Library tags={['tag-1', 'tag-2']} />);
+    await waitFor(() => {
+      expect(listArticles).toHaveBeenCalledWith(
+        expect.objectContaining({ tag: ['tag-1', 'tag-2'] }),
+      );
+    });
   });
 });

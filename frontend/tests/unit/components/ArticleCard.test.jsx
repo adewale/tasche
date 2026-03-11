@@ -25,13 +25,17 @@ vi.mock('../../../src/articleActions.js', () => ({
   removeArticle: vi.fn(() => Promise.resolve(true)),
 }));
 
-vi.mock('../../../src/nav.js', () => ({
-  nav: {
-    article: vi.fn(),
-    tagFilter: vi.fn(),
-    library: vi.fn(),
-  },
-}));
+vi.mock('../../../src/nav.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    nav: {
+      article: vi.fn(),
+      tagFilter: vi.fn(),
+      library: vi.fn(),
+    },
+  };
+});
 
 vi.mock('../../../src/components/AudioPlayer.jsx', () => {
   const { signal } = require('@preact/signals');
@@ -368,5 +372,163 @@ describe('ArticleCard', () => {
   it('hides download audio button when no audio', () => {
     render(<ArticleCard article={makeArticle()} />);
     expect(screen.queryByTitle('Download audio offline')).not.toBeInTheDocument();
+  });
+
+  // ── Multi-tag highlighting ──
+
+  it('does not highlight chips when activeTagIds is null', async () => {
+    const article = makeArticle({ tags: [{ id: 'tag-1', name: 'python' }] });
+    const { container } = render(<ArticleCard article={article} activeTagIds={null} />);
+
+    await waitFor(() => {
+      var chips = container.querySelectorAll('.tag-chip');
+      expect(chips.length).toBe(1);
+      expect(chips[0].classList.contains('tag-chip--highlighted')).toBe(false);
+    });
+  });
+
+  it('highlights a single matching tag chip', async () => {
+    const article = makeArticle({
+      tags: [
+        { id: 'tag-1', name: 'python' },
+        { id: 'tag-2', name: 'rust' },
+      ],
+    });
+    const { container } = render(
+      <ArticleCard article={article} activeTagIds={new Set(['tag-1'])} />,
+    );
+
+    await waitFor(() => {
+      var chips = container.querySelectorAll('.tag-chip');
+      expect(chips.length).toBe(2);
+      expect(chips[0].classList.contains('tag-chip--highlighted')).toBe(true);
+      expect(chips[1].classList.contains('tag-chip--highlighted')).toBe(false);
+    });
+  });
+
+  it('highlights multiple matching tag chips (sorted alphabetically)', async () => {
+    const article = makeArticle({
+      tags: [
+        { id: 'tag-1', name: 'python' },
+        { id: 'tag-2', name: 'rust' },
+        { id: 'tag-3', name: 'go' },
+      ],
+    });
+    const { container } = render(
+      <ArticleCard article={article} activeTagIds={new Set(['tag-1', 'tag-3'])} />,
+    );
+
+    // Sorted: go (tag-3, highlighted), python (tag-1, highlighted), rust (tag-2, not)
+    await waitFor(() => {
+      var chips = container.querySelectorAll('.tag-chip');
+      expect(chips.length).toBe(3);
+      expect(chips[0].textContent).toBe('go');
+      expect(chips[0].classList.contains('tag-chip--highlighted')).toBe(true);
+      expect(chips[1].textContent).toBe('python');
+      expect(chips[1].classList.contains('tag-chip--highlighted')).toBe(true);
+      expect(chips[2].textContent).toBe('rust');
+      expect(chips[2].classList.contains('tag-chip--highlighted')).toBe(false);
+    });
+  });
+
+  it('does not highlight chips when activeTagIds is empty set', async () => {
+    const article = makeArticle({ tags: [{ id: 'tag-1', name: 'python' }] });
+    const { container } = render(<ArticleCard article={article} activeTagIds={new Set()} />);
+
+    await waitFor(() => {
+      var chips = container.querySelectorAll('.tag-chip');
+      expect(chips.length).toBe(1);
+      expect(chips[0].classList.contains('tag-chip--highlighted')).toBe(false);
+    });
+  });
+
+  // ── Alphabetical tag chip sorting ──
+
+  it('renders tag chips in alphabetical order by name', async () => {
+    const article = makeArticle({
+      tags: [
+        { id: 'tag-z', name: 'zsh' },
+        { id: 'tag-a', name: 'ansible' },
+        { id: 'tag-m', name: 'make' },
+      ],
+    });
+    const { container } = render(<ArticleCard article={article} />);
+
+    await waitFor(() => {
+      var chips = container.querySelectorAll('.tag-chip');
+      expect(chips.length).toBe(3);
+      expect(chips[0].textContent).toBe('ansible');
+      expect(chips[1].textContent).toBe('make');
+      expect(chips[2].textContent).toBe('zsh');
+    });
+  });
+
+  it('overflow count uses sorted order (first 3 alphabetically shown)', async () => {
+    const article = makeArticle({
+      tags: [
+        { id: 'tag-4', name: 'zsh' },
+        { id: 'tag-3', name: 'ansible' },
+        { id: 'tag-2', name: 'make' },
+        { id: 'tag-1', name: 'docker' },
+      ],
+    });
+    const { container } = render(<ArticleCard article={article} />);
+
+    await waitFor(() => {
+      var chips = container.querySelectorAll('.tag-chip');
+      expect(chips.length).toBe(3);
+      expect(chips[0].textContent).toBe('ansible');
+      expect(chips[1].textContent).toBe('docker');
+      expect(chips[2].textContent).toBe('make');
+      expect(container.querySelector('.tag-chip-overflow').textContent).toBe('+1');
+    });
+  });
+
+  // ── Additive tag chip href ──
+
+  it('chip href builds additive multi-tag URL when tag filter is active', async () => {
+    // Simulate current URL has tag-1 active
+    window.location.hash = '#/?tag=tag-1';
+    const article = makeArticle({
+      tags: [{ id: 'tag-2', name: 'rust' }],
+    });
+    const { container } = render(<ArticleCard article={article} />);
+
+    await waitFor(() => {
+      var chip = container.querySelector('.tag-chip');
+      expect(chip.getAttribute('href')).toBe('#/?tag=tag-1&tag=tag-2');
+    });
+
+    window.location.hash = '';
+  });
+
+  it('chip href removes tag from URL when tag is already in filter', async () => {
+    window.location.hash = '#/?tag=tag-1&tag=tag-2';
+    const article = makeArticle({
+      tags: [{ id: 'tag-1', name: 'python' }],
+    });
+    const { container } = render(<ArticleCard article={article} />);
+
+    await waitFor(() => {
+      var chip = container.querySelector('.tag-chip');
+      expect(chip.getAttribute('href')).toBe('#/?tag=tag-2');
+    });
+
+    window.location.hash = '';
+  });
+
+  it('chip href is single-tag URL when no filter is active', async () => {
+    window.location.hash = '#/';
+    const article = makeArticle({
+      tags: [{ id: 'tag-1', name: 'python' }],
+    });
+    const { container } = render(<ArticleCard article={article} />);
+
+    await waitFor(() => {
+      var chip = container.querySelector('.tag-chip');
+      expect(chip.getAttribute('href')).toBe('#/?tag=tag-1');
+    });
+
+    window.location.hash = '';
   });
 });

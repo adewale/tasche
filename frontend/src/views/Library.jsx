@@ -13,10 +13,9 @@ import {
 } from '../components/Icons.jsx';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts.js';
 import { toggleArchive, toggleFavorite, removeArticle } from '../articleActions.js';
-import { nav } from '../nav.js';
+import { nav, buildLibraryHash } from '../nav.js';
 import {
   articles,
-  filter as filterSignal,
   offset as offsetSignal,
   hasMore as hasMoreSignal,
   loading as loadingSignal,
@@ -26,6 +25,8 @@ import {
   pollArticleStatus,
   limit as limitSignal,
   showShortcuts,
+  searchQuery,
+  tags as tagsSignal,
 } from '../state.js';
 import {
   listArticles,
@@ -70,22 +71,31 @@ function getSavedSort() {
   return 'newest';
 }
 
-export function Library({ tag }) {
+export function Library({ tags, q, filter, sort }) {
   const [saveUrl, setSaveUrl] = useState('');
   const [savingType, setSavingType] = useState(null); // null | 'save' | 'audio'
   const [bulkActing, setBulkActing] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   var showHelp = showShortcuts.value;
-  const [currentSort, setCurrentSort] = useState(getSavedSort);
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState(new Set());
-  const currentFilter = filterSignal.value;
+
+  // Resolve filter and sort: URL params take priority, then defaults
+  var activeFilter = filter || 'unread';
+  var activeSort = sort || getSavedSort();
+
   const articleList = articles.value;
   const isLoading = loadingSignal.value;
   const moreAvailable = hasMoreSignal.value;
   const urlInputRef = useRef(null);
   const lastLoadTimeRef = useRef(0);
   const hasLoadedOnce = useRef(false);
+
+  // Sync searchQuery signal for Reader highlighting
+  useEffect(() => {
+    searchQuery.value = q || '';
+  }, [q]);
+
   useEffect(() => {
     loadingSignal.value = true;
     articles.value = [];
@@ -94,7 +104,7 @@ export function Library({ tag }) {
     setSelectedIndex(-1);
     loadArticles(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentFilter, tag, currentSort]);
+  }, [activeFilter, tags && tags.join(','), activeSort, q]);
 
   // Reset selectedIndex when article list changes
   useEffect(() => {
@@ -106,6 +116,7 @@ export function Library({ tag }) {
 
   // Keyboard shortcuts
   // Note: '?' is handled globally in App so it works on all screens.
+  // '/' is handled globally in Header so it works from any Library state.
   useKeyboardShortcuts(
     showHelp
       ? {}
@@ -153,9 +164,6 @@ export function Library({ tag }) {
               removeArticle(list[selectedIndex].id);
             }
           },
-          '/': function () {
-            nav.search();
-          },
           n: function () {
             if (urlInputRef.current) urlInputRef.current.focus();
           },
@@ -173,7 +181,7 @@ export function Library({ tag }) {
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentFilter, tag, currentSort]);
+  }, [activeFilter, tags && tags.join(','), activeSort, q]);
 
   // Scroll selected card into view
   useEffect(() => {
@@ -192,18 +200,21 @@ export function Library({ tag }) {
 
     try {
       const params = { limit: limitSignal.value, offset: currentOffset };
-      if (currentSort && currentSort !== 'newest') {
-        params.sort = currentSort;
+      if (q) {
+        params.q = q;
       }
-      if (tag) {
-        params.tag = tag;
-      } else if (currentFilter === 'unread') {
+      if (activeSort && activeSort !== 'newest') {
+        params.sort = activeSort;
+      }
+      if (tags && tags.length > 0) {
+        params.tag = tags;
+      } else if (activeFilter === 'unread') {
         params.reading_status = 'unread';
-      } else if (currentFilter === 'archived') {
+      } else if (activeFilter === 'archived') {
         params.reading_status = 'archived';
-      } else if (currentFilter === 'favorites') {
+      } else if (activeFilter === 'favorites') {
         params.is_favorite = 1;
-      } else if (currentFilter === 'listen') {
+      } else if (activeFilter === 'listen') {
         params.audio_status = 'ready';
       }
 
@@ -285,18 +296,8 @@ export function Library({ tag }) {
     if (e.key === 'Enter') handleSave(false);
   }
 
-  function setFilter(key) {
-    filterSignal.value = key;
-  }
-
   function handleSortChange(e) {
-    var value = e.target.value;
-    setCurrentSort(value);
-    try {
-      localStorage.setItem('tasche_sort', value);
-    } catch (_err) {
-      // localStorage unavailable
-    }
+    nav.setSort(e.target.value);
   }
 
   function toggleSelectMode() {
@@ -393,12 +394,51 @@ export function Library({ tag }) {
     <>
       <Header />
       <main class="main-content">
-        {tag ? (
+        {tags && tags.length > 0 ? (
           <>
             <a href="#/tags" class="reader-back">
               Back to tags
             </a>
             <h2 class="section-title">Articles tagged</h2>
+            <div class="tag-filter-bar">
+              {tags.map(function (tagId) {
+                var tagObj = tagsSignal.value.find(function (t) {
+                  return t.id === tagId;
+                });
+                var tagName = tagObj ? tagObj.name : tagId;
+                return (
+                  <span key={tagId} class="tag-filter-chip">
+                    {tagName}
+                    <button
+                      class="tag-filter-chip-remove"
+                      title={'Remove tag filter ' + tagName}
+                      onClick={function () {
+                        var remaining = tags.filter(function (t) {
+                          return t !== tagId;
+                        });
+                        if (remaining.length === 0) {
+                          nav.clearTagFilter();
+                        } else {
+                          window.location.hash = buildLibraryHash({
+                            tags: remaining,
+                            q: q,
+                            filter: filter,
+                            sort: sort,
+                          });
+                        }
+                      }}
+                    >
+                      ×
+                    </button>
+                  </span>
+                );
+              })}
+              {tags.length > 1 && (
+                <button class="btn btn-sm btn-secondary" onClick={nav.clearTagFilter}>
+                  Clear all
+                </button>
+              )}
+            </div>
           </>
         ) : (
           <>
@@ -438,16 +478,25 @@ export function Library({ tag }) {
                 </button>
               </div>
             </div>
-            <hr class="save-filter-divider" />
+            {q && (
+              <div class="search-results-info">
+                Searching for &ldquo;{q}&rdquo;
+                {!isLoading &&
+                  ' \u2014 ' +
+                    articleList.length +
+                    ' result' +
+                    (articleList.length !== 1 ? 's' : '')}
+              </div>
+            )}
             <div class="filter-bar">
               <div class="filter-tabs">
                 {FILTERS.map(function (f) {
                   return (
                     <button
                       key={f.key}
-                      class={'filter-tab' + (currentFilter === f.key ? ' active' : '')}
+                      class={'filter-tab' + (activeFilter === f.key ? ' active' : '')}
                       onClick={function () {
-                        setFilter(f.key);
+                        nav.setFilter(f.key);
                       }}
                     >
                       {f.label}
@@ -457,7 +506,7 @@ export function Library({ tag }) {
               </div>
               <select
                 class="input input-inline-select"
-                value={currentSort}
+                value={activeSort}
                 onChange={handleSortChange}
                 aria-label="Sort articles"
               >
@@ -523,11 +572,15 @@ export function Library({ tag }) {
         )}
 
         <div class="article-list">
-          {articleList.length === 0 && !isLoading && (
-            <EmptyState icon={IconBookOpen} title="No articles yet">
-              Save a URL above to get started.
-            </EmptyState>
-          )}
+          {articleList.length === 0 &&
+            !isLoading &&
+            (q ? (
+              <EmptyState title="No results found">Try a different search query.</EmptyState>
+            ) : (
+              <EmptyState icon={IconBookOpen} title="No articles yet">
+                Save a URL above to get started.
+              </EmptyState>
+            ))}
           {articleList.map(function (a, index) {
             return (
               <ArticleCard
@@ -536,6 +589,7 @@ export function Library({ tag }) {
                 selected={selectMode ? selected.has(a.id) : index === selectedIndex}
                 selectMode={selectMode}
                 onToggleSelect={handleToggleSelect}
+                activeTagIds={tags && tags.length > 0 ? new Set(tags) : null}
               />
             );
           })}
