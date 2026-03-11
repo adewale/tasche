@@ -39,7 +39,9 @@ export function Header({ readerMode }) {
     var p = parseLibraryParams(window.location.hash);
     return p.q || '';
   });
-  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(function () {
+    return !!parseLibraryParams(window.location.hash).q;
+  });
   const searchInputRef = useRef(null);
   const searchDebounceRef = useRef(null);
   const menuRef = useRef(null);
@@ -52,7 +54,7 @@ export function Header({ readerMode }) {
       var p = parseLibraryParams(hash);
       setSearchInput(p.q || '');
       if (!isLibraryRoute(hash)) {
-        setMobileSearchOpen(false);
+        setSearchOpen(false);
       }
     }
     window.addEventListener('hashchange', onHashChange);
@@ -69,7 +71,7 @@ export function Header({ readerMode }) {
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (e.key === '/' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
-        setMobileSearchOpen(true);
+        setSearchOpen(true);
         if (searchInputRef.current) searchInputRef.current.focus();
       }
     }
@@ -79,14 +81,14 @@ export function Header({ readerMode }) {
     };
   }, []);
 
-  // Focus input when mobile search opens
+  // Focus input when search opens
   useEffect(
     function () {
-      if (mobileSearchOpen && searchInputRef.current) {
+      if (searchOpen && searchInputRef.current) {
         searchInputRef.current.focus();
       }
     },
-    [mobileSearchOpen],
+    [searchOpen],
   );
 
   // Clean up debounce on unmount
@@ -153,14 +155,14 @@ export function Header({ readerMode }) {
       var p = parseLibraryParams(window.location.hash);
       if (p.q) nav.clearSearch();
       if (searchInputRef.current) searchInputRef.current.blur();
-      setMobileSearchOpen(false);
+      setSearchOpen(false);
     }
   }
 
   function clearSearch() {
     setSearchInput('');
     nav.clearSearch();
-    setMobileSearchOpen(false);
+    setSearchOpen(false);
   }
 
   var isDark =
@@ -172,7 +174,7 @@ export function Header({ readerMode }) {
   return (
     <>
       <header class="header">
-        <div class={'header-inner' + (mobileSearchOpen ? ' header-inner--search-open' : '')}>
+        <div class={'header-inner' + (searchOpen ? ' header-inner--search-open' : '')}>
           <a href="#/" class="header-logo">
             <IconLogo size={28} />
             Tasche
@@ -194,8 +196,7 @@ export function Header({ readerMode }) {
             )}
           </a>
           {searchEnabled && (
-            <div class="header-search">
-              <IconSearch size={16} />
+            <div class={'header-search' + (searchOpen ? ' header-search--open' : '')}>
               <input
                 ref={searchInputRef}
                 class="input header-search-input"
@@ -219,13 +220,17 @@ export function Header({ readerMode }) {
             {syncing === 'syncing' && <span class="sync-status">Syncing...</span>}
             {searchEnabled && (
               <button
-                class="btn btn-icon header-search-toggle"
+                class="btn btn-icon"
                 title="Search"
                 onClick={function () {
-                  setMobileSearchOpen(true);
+                  if (searchOpen) {
+                    clearSearch();
+                  } else {
+                    setSearchOpen(true);
+                  }
                 }}
               >
-                <IconSearch />
+                {searchOpen ? <IconX /> : <IconSearch />}
               </button>
             )}
             <div class="hamburger-menu" ref={menuRef}>
