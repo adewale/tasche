@@ -176,7 +176,9 @@ test.describe('Header search', () => {
     await searchInput.press('Enter');
 
     // Wait for results or empty state
-    await expect(page.locator('.article-card, [data-testid="empty-state"], .empty-state').first()).toBeVisible({
+    await expect(
+      page.locator('.article-card, [data-testid="empty-state"], .empty-state').first(),
+    ).toBeVisible({
       timeout: 10000,
     });
   });
