@@ -330,22 +330,22 @@ class TestSearchComposesWithFilters:
         assert "article_tags WHERE tag_id = ?" in sql
         assert "articles.is_favorite = ?" in sql
 
-    async def test_search_defaults_to_relevance_ordering(self) -> None:
-        """When q is provided without sort, ORDER BY is FTS5 rank."""
+    async def test_search_defaults_to_weighted_bm25_ordering(self) -> None:
+        """When q is provided without sort, ORDER BY uses weighted bm25."""
         client, db = await _search_client()
         client.get("/api/articles?q=test")
 
         sql = _select_sql(db)
-        assert "ORDER BY articles_fts.rank" in sql
+        assert "ORDER BY bm25(articles_fts, 10.0, 5.0, 1.0)" in sql
 
     async def test_explicit_sort_overrides_relevance(self) -> None:
-        """When q and sort are both provided, sort wins over FTS5 rank."""
+        """When q and sort are both provided, sort wins over bm25."""
         client, db = await _search_client()
         client.get("/api/articles?q=test&sort=oldest")
 
         sql = _select_sql(db)
         assert "ORDER BY created_at ASC" in sql
-        assert "articles_fts.rank" not in sql
+        assert "bm25(" not in sql
 
     async def test_pagination_params_passed_through(self) -> None:
         """limit and offset are the last two params in the query."""

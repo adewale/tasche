@@ -443,7 +443,7 @@ async def list_articles(
     if sort is not None:
         order_by = _VALID_SORT_OPTIONS[sort]
     elif safe_q:
-        order_by = "articles_fts.rank"
+        order_by = "bm25(articles_fts, 10.0, 5.0, 1.0)"
     else:
         order_by = _VALID_SORT_OPTIONS["newest"]
 
