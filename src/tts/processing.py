@@ -619,16 +619,18 @@ def strip_markdown(text: str) -> str:
         if stripped in ("---", "***", "___"):
             continue
 
-        # Remove heading markers
-        if stripped.startswith("#"):
-            # Count the heading level and strip the markers
-            heading_text = stripped.lstrip("#").strip()
-            result_lines.append(heading_text)
-            continue
-
-        # Remove blockquote markers
-        if stripped.startswith(">"):
-            stripped = stripped.lstrip(">").strip()
+        # Strip all line-level markdown prefixes (headings, blockquotes,
+        # list markers) in a loop so nested combos like "> # Title" or
+        # "# > text" are fully cleaned in one pass (ensures idempotency).
+        changed = True
+        while changed:
+            changed = False
+            if stripped.startswith("#"):
+                stripped = stripped.lstrip("#").strip()
+                changed = True
+            if stripped.startswith(">"):
+                stripped = stripped.lstrip(">").strip()
+                changed = True
 
         # Remove list markers (-, *, 1.)
         if len(stripped) >= 2:
