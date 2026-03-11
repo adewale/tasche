@@ -1042,7 +1042,7 @@ This avoids loading the full SPA and completes in under 2 seconds.
 | `api.js` | Full API client, offline functions, service worker messaging |
 | `state.js` | Global state via @preact/signals (user, articles, toasts, etc.) |
 | `markdown.js` | Markdown-to-HTML renderer with XSS protection |
-| `utils.js` | Shared utilities (escapeHtml, formatDate, highlightTerms) |
+| `utils.js` | Shared utilities (escapeHtml, formatDate, formatTime) |
 | `views/` | Library (includes search), Reader, Tags, Settings, Login |
 | `components/` | ArticleCard, AudioPlayer, Header, Pagination, TagPicker, Toast |
 | `public/sw.js` | Service worker: 4 cache tiers, LRU eviction, offline sync |
