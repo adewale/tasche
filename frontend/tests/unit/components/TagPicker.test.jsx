@@ -180,8 +180,9 @@ describe('TagPicker', () => {
     await waitFor(() => screen.getByText('+ Tag'));
 
     await user.click(screen.getByText('+ Tag'));
+    const input = screen.getByPlaceholderText('Type to filter or create...');
     // First option (Python) is highlighted by default
-    await user.keyboard('{Enter}');
+    await user.type(input, '{Enter}');
 
     await waitFor(() => {
       expect(addArticleTag).toHaveBeenCalledWith('art-1', 'tag-2');
@@ -194,9 +195,9 @@ describe('TagPicker', () => {
     await waitFor(() => screen.getByText('+ Tag'));
 
     await user.click(screen.getByText('+ Tag'));
+    const input = screen.getByPlaceholderText('Type to filter or create...');
     // Move down to second option (Rust)
-    await user.keyboard('{ArrowDown}');
-    await user.keyboard('{Enter}');
+    await user.type(input, '{ArrowDown}{Enter}');
 
     await waitFor(() => {
       expect(addArticleTag).toHaveBeenCalledWith('art-1', 'tag-3');

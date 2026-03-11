@@ -205,7 +205,7 @@ export function TagPicker({ articleId }) {
           />
           <div class="tag-picker-dropdown">
             {filtered.map((t, i) => (
-              // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
+              // eslint-disable-next-line jsx-a11y/no-static-element-interactions
               <div
                 key={t.id}
                 class={
@@ -221,7 +221,7 @@ export function TagPicker({ articleId }) {
               </div>
             ))}
             {showCreate && (
-              // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
+              // eslint-disable-next-line jsx-a11y/no-static-element-interactions
               <div
                 class={
                   'tag-picker-option tag-picker-option--create' +

@@ -99,6 +99,13 @@ export function Library({ tags, q }) {
     searchQuery.value = q || '';
   }, [q]);
 
+  // Clear pending search debounce on unmount
+  useEffect(() => {
+    return () => {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    };
+  }, []);
+
   useEffect(() => {
     loadingSignal.value = true;
     articles.value = [];
