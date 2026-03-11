@@ -11,7 +11,7 @@ import {
   saveAudioOffline,
 } from '../api.js';
 import { toggleArchive, toggleFavorite, removeArticle } from '../articleActions.js';
-import { nav, parseTagsFromHash, buildTagHash } from '../nav.js';
+import { nav, parseLibraryParams, buildLibraryHash } from '../nav.js';
 import { playAudio, audioState } from './AudioPlayer.jsx';
 import {
   IconStar,
@@ -255,15 +255,24 @@ export function ArticleCard({ article, selectMode, selected, onToggleSelect, act
               .map(function (tag) {
                 var chipClass = 'tag-chip';
                 if (activeTagIds && activeTagIds.has(tag.id)) chipClass += ' tag-chip--highlighted';
-                var currentTags = parseTagsFromHash(window.location.hash);
+                var currentP = parseLibraryParams(window.location.hash);
+                var currentTags = currentP.tags;
                 var chipHref =
                   currentTags.indexOf(tag.id) >= 0
-                    ? buildTagHash(
-                        currentTags.filter(function (t) {
+                    ? buildLibraryHash({
+                        tags: currentTags.filter(function (t) {
                           return t !== tag.id;
                         }),
-                      )
-                    : buildTagHash(currentTags.concat(tag.id));
+                        q: currentP.q,
+                        filter: currentP.filter,
+                        sort: currentP.sort,
+                      })
+                    : buildLibraryHash({
+                        tags: currentTags.concat(tag.id),
+                        q: currentP.q,
+                        filter: currentP.filter,
+                        sort: currentP.sort,
+                      });
                 return (
                   <a
                     key={tag.id}

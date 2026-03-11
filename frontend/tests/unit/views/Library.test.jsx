@@ -24,9 +24,12 @@ vi.mock('../../../src/nav.js', async (importOriginal) => {
     nav: {
       article: vi.fn(),
       search: vi.fn(),
+      clearSearch: vi.fn(),
       library: vi.fn(),
       tagFilter: vi.fn(),
       clearTagFilter: vi.fn(),
+      setFilter: vi.fn(),
+      setSort: vi.fn(),
     },
   };
 });
@@ -59,7 +62,6 @@ vi.mock('../../../src/components/Icons.jsx', () => ({
   IconArchive: () => <span>Archive</span>,
   IconTrash: () => <span>Trash</span>,
   IconX: () => <span>X</span>,
-  IconSearch: () => <span>Search</span>,
 }));
 
 vi.mock('../../../src/hooks/useKeyboardShortcuts.js', () => ({

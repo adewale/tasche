@@ -229,6 +229,73 @@ textarea {
   transform: translateY(-0.5px);
 }
 
+.header-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  max-width: 400px;
+  margin: 0 16px;
+  position: relative;
+}
+
+.header-search svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.header-search-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  font-size: 0.875rem;
+}
+
+.header-search-clear {
+  position: absolute;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+}
+
+.header-search-clear:hover {
+  color: var(--text);
+}
+
+.header-search-toggle {
+  display: none;
+}
+
+@media (max-width: 639px) {
+  .header-search {
+    display: none;
+  }
+
+  .header-search-toggle {
+    display: flex;
+  }
+
+  .header-inner--search-open .header-logo {
+    display: none;
+  }
+
+  .header-inner--search-open .header-search {
+    display: flex;
+    max-width: none;
+    margin: 0 8px 0 0;
+  }
+
+  .header-inner--search-open .header-search-toggle {
+    display: none;
+  }
+}
+
 .header-actions {
   display: flex;
   align-items: center;

@@ -5,7 +5,7 @@ import { Toast } from './components/Toast.jsx';
 import { AudioPlayer } from './components/AudioPlayer.jsx';
 import { KeyboardShortcutsHelp } from './components/KeyboardShortcutsHelp.jsx';
 import { showShortcuts } from './state.js';
-import { parseTagsFromHash } from './nav.js';
+import { parseLibraryParams } from './nav.js';
 import { Library } from './views/Library.jsx';
 import { Reader } from './views/Reader.jsx';
 import { MarkdownView } from './views/MarkdownView.jsx';
@@ -19,15 +19,13 @@ import { getSession, createArticle, triggerSync, triggerAutoPrecache } from './a
 import './app.css';
 
 /**
- * FilteredLibrary handles the `#/?tag=xxx` and `#/?q=xxx` route patterns.
- * Extracts tags (possibly multiple) and q params from window.location.hash.
+ * FilteredLibrary extracts all library params from the URL hash.
+ * Used for both bare `#/` and parameterized `#/?tag=abc&q=hello` routes.
  */
 function FilteredLibrary() {
   const hash = window.location.hash;
-  const tags = parseTagsFromHash(hash);
-  const qMatch = hash.match(/[?&]q=([^&]*)/);
-  const q = qMatch ? decodeURIComponent(qMatch[1]) : null;
-  return <Library tags={tags} q={q} />;
+  const p = parseLibraryParams(hash);
+  return <Library tags={p.tags} q={p.q} filter={p.filter} sort={p.sort} />;
 }
 
 class ErrorBoundary extends Component {
@@ -236,12 +234,6 @@ function AppRouter() {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
-  // Check if the current hash has query params: #/?tag=xxx or #/?q=xxx
-  if (currentPath.match(/^\/\?/)) {
-    if (!user.value) return <Login />;
-    return <FilteredLibrary />;
-  }
-
   // Manual hash routing
   if (currentPath === '/login') {
     return <Login />;
@@ -251,8 +243,9 @@ function AppRouter() {
     return <Login />;
   }
 
-  if (currentPath === '/' || currentPath === '') {
-    return <Library />;
+  // Library: bare #/ or #/?... with params
+  if (currentPath === '/' || currentPath === '' || currentPath.match(/^\/\?/)) {
+    return <FilteredLibrary />;
   }
 
   const markdownMatch = currentPath.match(/^\/article\/(.+)\/markdown$/);
@@ -278,5 +271,5 @@ function AppRouter() {
   }
 
   // Default to library
-  return <Library />;
+  return <FilteredLibrary />;
 }

@@ -16,8 +16,7 @@ export const tags = signal([]);
 // Search (composed into the library list endpoint)
 export const searchQuery = signal('');
 
-// Filters & pagination
-export const filter = signal('unread'); // unread, listen, favorites, archived
+// Pagination
 export const offset = signal(0);
 export const limit = signal(20);
 export const hasMore = signal(true);

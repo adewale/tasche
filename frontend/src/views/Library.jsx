@@ -10,14 +10,12 @@ import {
   IconArchive,
   IconTrash,
   IconX,
-  IconSearch,
 } from '../components/Icons.jsx';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts.js';
 import { toggleArchive, toggleFavorite, removeArticle } from '../articleActions.js';
-import { nav, buildTagHash } from '../nav.js';
+import { nav, buildLibraryHash } from '../nav.js';
 import {
   articles,
-  filter as filterSignal,
   offset as offsetSignal,
   hasMore as hasMoreSignal,
   loading as loadingSignal,
@@ -73,19 +71,19 @@ function getSavedSort() {
   return 'newest';
 }
 
-export function Library({ tags, q }) {
+export function Library({ tags, q, filter, sort }) {
   const [saveUrl, setSaveUrl] = useState('');
   const [savingType, setSavingType] = useState(null); // null | 'save' | 'audio'
   const [bulkActing, setBulkActing] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   var showHelp = showShortcuts.value;
-  const [currentSort, setCurrentSort] = useState(getSavedSort);
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState(new Set());
-  const [searchInput, setSearchInput] = useState(q || '');
-  const searchInputRef = useRef(null);
-  const searchDebounceRef = useRef(null);
-  const currentFilter = filterSignal.value;
+
+  // Resolve filter and sort: URL params take priority, then defaults
+  var activeFilter = filter || 'unread';
+  var activeSort = sort || getSavedSort();
+
   const articleList = articles.value;
   const isLoading = loadingSignal.value;
   const moreAvailable = hasMoreSignal.value;
@@ -93,18 +91,10 @@ export function Library({ tags, q }) {
   const lastLoadTimeRef = useRef(0);
   const hasLoadedOnce = useRef(false);
 
-  // Sync search input when q prop changes (e.g. navigating to #/?q=...)
+  // Sync searchQuery signal for Reader highlighting
   useEffect(() => {
-    setSearchInput(q || '');
     searchQuery.value = q || '';
   }, [q]);
-
-  // Clear pending search debounce on unmount
-  useEffect(() => {
-    return () => {
-      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-    };
-  }, []);
 
   useEffect(() => {
     loadingSignal.value = true;
@@ -114,7 +104,7 @@ export function Library({ tags, q }) {
     setSelectedIndex(-1);
     loadArticles(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentFilter, tags && tags.join(','), currentSort, q]);
+  }, [activeFilter, tags && tags.join(','), activeSort, q]);
 
   // Reset selectedIndex when article list changes
   useEffect(() => {
@@ -126,6 +116,7 @@ export function Library({ tags, q }) {
 
   // Keyboard shortcuts
   // Note: '?' is handled globally in App so it works on all screens.
+  // '/' is handled globally in Header so it works from any Library state.
   useKeyboardShortcuts(
     showHelp
       ? {}
@@ -173,9 +164,6 @@ export function Library({ tags, q }) {
               removeArticle(list[selectedIndex].id);
             }
           },
-          '/': function () {
-            if (searchInputRef.current) searchInputRef.current.focus();
-          },
           n: function () {
             if (urlInputRef.current) urlInputRef.current.focus();
           },
@@ -193,7 +181,7 @@ export function Library({ tags, q }) {
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentFilter, tags && tags.join(','), currentSort, q]);
+  }, [activeFilter, tags && tags.join(','), activeSort, q]);
 
   // Scroll selected card into view
   useEffect(() => {
@@ -215,18 +203,18 @@ export function Library({ tags, q }) {
       if (q) {
         params.q = q;
       }
-      if (currentSort && currentSort !== 'newest') {
-        params.sort = currentSort;
+      if (activeSort && activeSort !== 'newest') {
+        params.sort = activeSort;
       }
       if (tags && tags.length > 0) {
         params.tag = tags;
-      } else if (currentFilter === 'unread') {
+      } else if (activeFilter === 'unread') {
         params.reading_status = 'unread';
-      } else if (currentFilter === 'archived') {
+      } else if (activeFilter === 'archived') {
         params.reading_status = 'archived';
-      } else if (currentFilter === 'favorites') {
+      } else if (activeFilter === 'favorites') {
         params.is_favorite = 1;
-      } else if (currentFilter === 'listen') {
+      } else if (activeFilter === 'listen') {
         params.audio_status = 'ready';
       }
 
@@ -308,18 +296,8 @@ export function Library({ tags, q }) {
     if (e.key === 'Enter') handleSave(false);
   }
 
-  function setFilter(key) {
-    filterSignal.value = key;
-  }
-
   function handleSortChange(e) {
-    var value = e.target.value;
-    setCurrentSort(value);
-    try {
-      localStorage.setItem('tasche_sort', value);
-    } catch (_err) {
-      // localStorage unavailable
-    }
+    nav.setSort(e.target.value);
   }
 
   function toggleSelectMode() {
@@ -397,42 +375,6 @@ export function Library({ tags, q }) {
     }
   }
 
-  function handleSearchInput(e) {
-    var val = e.target.value;
-    setSearchInput(val);
-    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-    var trimmed = val.trim();
-    if (trimmed) {
-      searchDebounceRef.current = setTimeout(function () {
-        nav.search(trimmed);
-      }, 300);
-    } else if (!val) {
-      // Cleared the input — go back to unfiltered library
-      if (q) nav.library();
-    }
-  }
-
-  function handleSearchKeyDown(e) {
-    if (e.key === 'Enter') {
-      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-      var trimmed = searchInput.trim();
-      if (trimmed) {
-        nav.search(trimmed);
-      }
-    }
-    if (e.key === 'Escape') {
-      setSearchInput('');
-      if (q) nav.library();
-      if (searchInputRef.current) searchInputRef.current.blur();
-    }
-  }
-
-  function clearSearch() {
-    setSearchInput('');
-    searchQuery.value = '';
-    nav.library();
-  }
-
   function renderSkeletons() {
     return Array.from({ length: 3 }, function (_, i) {
       return (
@@ -477,7 +419,12 @@ export function Library({ tags, q }) {
                         if (remaining.length === 0) {
                           nav.clearTagFilter();
                         } else {
-                          window.location.hash = buildTagHash(remaining);
+                          window.location.hash = buildLibraryHash({
+                            tags: remaining,
+                            q: q,
+                            filter: filter,
+                            sort: sort,
+                          });
                         }
                       }}
                     >
@@ -531,45 +478,25 @@ export function Library({ tags, q }) {
                 </button>
               </div>
             </div>
-            <div class="search-bar">
-              <div class="input-group">
-                <IconSearch size={16} />
-                <input
-                  ref={searchInputRef}
-                  class="input"
-                  type="search"
-                  placeholder="Search articles..."
-                  value={searchInput}
-                  onInput={handleSearchInput}
-                  onKeyDown={handleSearchKeyDown}
-                />
-                {q && (
-                  <button
-                    class="btn btn-sm btn-secondary"
-                    onClick={clearSearch}
-                    title="Clear search"
-                  >
-                    <IconX size={14} />
-                  </button>
-                )}
+            {q && (
+              <div class="search-results-info">
+                Searching for &ldquo;{q}&rdquo;
+                {!isLoading &&
+                  ' \u2014 ' +
+                    articleList.length +
+                    ' result' +
+                    (articleList.length !== 1 ? 's' : '')}
               </div>
-              {q && (
-                <div class="search-results-info">
-                  Searching for "{q}"
-                  {!isLoading &&
-                    ' — ' + articleList.length + ' result' + (articleList.length !== 1 ? 's' : '')}
-                </div>
-              )}
-            </div>
+            )}
             <div class="filter-bar">
               <div class="filter-tabs">
                 {FILTERS.map(function (f) {
                   return (
                     <button
                       key={f.key}
-                      class={'filter-tab' + (currentFilter === f.key ? ' active' : '')}
+                      class={'filter-tab' + (activeFilter === f.key ? ' active' : '')}
                       onClick={function () {
-                        setFilter(f.key);
+                        nav.setFilter(f.key);
                       }}
                     >
                       {f.label}
@@ -579,7 +506,7 @@ export function Library({ tags, q }) {
               </div>
               <select
                 class="input input-inline-select"
-                value={currentSort}
+                value={activeSort}
                 onChange={handleSortChange}
                 aria-label="Sort articles"
               >
