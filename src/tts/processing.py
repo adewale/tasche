@@ -905,12 +905,14 @@ async def process_tts(
         else:
             duration = _estimate_duration(tts_text)
 
+        now = now_iso()
         await (
             db.prepare(
                 "UPDATE articles SET audio_key = ?, audio_duration_seconds = ?, "
-                "audio_status = ?, updated_at = ? WHERE id = ? AND user_id = ?"
+                "audio_status = ?, audio_generated_at = ?, updated_at = ? "
+                "WHERE id = ? AND user_id = ?"
             )
-            .bind(audio_r2_key, duration, "ready", now_iso(), article_id, user_id)
+            .bind(audio_r2_key, duration, "ready", now, now, article_id, user_id)
             .run()
         )
 
