@@ -1089,12 +1089,19 @@ class TestTagPropertyBased:
     @given(name=st.text(min_size=101, max_size=200))
     @settings(max_examples=10)
     async def test_long_names_always_rejected(self, name: str) -> None:
-        """Tag names over 100 characters are always rejected."""
+        """Tag names over 100 characters (after strip) are always rejected."""
         env = MockEnv()
         client, _ = await _authenticated_client(env)
 
         resp = client.post("/api/tags", json={"name": name})
-        assert resp.status_code == 400
+        stripped = name.strip()
+        if not stripped:
+            assert resp.status_code == 422
+        elif len(stripped) > 100:
+            assert resp.status_code == 400
+        else:
+            # Stripped name is ≤100 chars — accepted (201) or duplicate (409)
+            assert resp.status_code in (201, 409)
 
     @given(data=st.data())
     @settings(max_examples=20)
