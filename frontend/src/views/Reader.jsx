@@ -41,18 +41,19 @@ import { initImmersive, destroyImmersive } from '../immersive.js';
 import DOMPurify from 'dompurify';
 import { renderMarkdown } from '../markdown.js';
 import { escapeHtml, formatDate } from '../utils.js';
+import { getAudioStatusFlags } from '../utils/audioStatus.js';
 
 /**
  * Breath marks: small tick marks in the margin at positions where
  * the reader previously paused. Stored per-article in localStorage.
  * Each return visit adds a mark; older marks fade (decreasing opacity).
  */
-var BREATH_MARKS_KEY = 'tasche-breath-marks';
-var MAX_BREATH_MARKS = 5;
+const BREATH_MARKS_KEY = 'tasche-breath-marks';
+const MAX_BREATH_MARKS = 5;
 
 function loadBreathMarks(articleId) {
   try {
-    var all = JSON.parse(localStorage.getItem(BREATH_MARKS_KEY) || '{}');
+    const all = JSON.parse(localStorage.getItem(BREATH_MARKS_KEY) || '{}');
     return (all[articleId] || []).slice(-MAX_BREATH_MARKS);
   } catch (_e) {
     return [];
@@ -62,10 +63,10 @@ function loadBreathMarks(articleId) {
 function saveBreathMark(articleId, position) {
   if (!position || position <= 0) return;
   try {
-    var all = JSON.parse(localStorage.getItem(BREATH_MARKS_KEY) || '{}');
-    var marks = all[articleId] || [];
+    const all = JSON.parse(localStorage.getItem(BREATH_MARKS_KEY) || '{}');
+    const marks = all[articleId] || [];
     // Don't add if very close to the last mark
-    var last = marks[marks.length - 1];
+    const last = marks[marks.length - 1];
     if (last && Math.abs(last - position) < 0.02) return;
     marks.push(position);
     all[articleId] = marks.slice(-MAX_BREATH_MARKS);
@@ -80,10 +81,10 @@ function saveBreathMark(articleId, position) {
  */
 function clearSearchHighlights(container) {
   if (!container) return;
-  var marks = container.querySelectorAll('mark.search-highlight');
-  for (var i = 0; i < marks.length; i++) {
-    var mark = marks[i];
-    var parent = mark.parentNode;
+  const marks = container.querySelectorAll('mark.search-highlight');
+  for (let i = 0; i < marks.length; i++) {
+    const mark = marks[i];
+    const parent = mark.parentNode;
     if (parent) {
       parent.replaceChild(document.createTextNode(mark.textContent), mark);
       parent.normalize();
@@ -98,7 +99,7 @@ function clearSearchHighlights(container) {
 function highlightSearchTerms(container, query) {
   if (!container || !query) return;
 
-  var terms = query
+  const terms = query
     .trim()
     .split(/\s+/)
     .filter(function (t) {
@@ -107,18 +108,18 @@ function highlightSearchTerms(container, query) {
   if (terms.length === 0) return;
 
   // Build a regex that matches any of the terms, case-insensitive
-  var escaped = terms.map(function (t) {
+  const escaped = terms.map(function (t) {
     return t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   });
-  var regex = new RegExp('(' + escaped.join('|') + ')', 'gi');
+  const regex = new RegExp('(' + escaped.join('|') + ')', 'gi');
 
   // Collect text nodes first (mutating the DOM while walking is unsafe)
-  var walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
-  var textNodes = [];
-  var node;
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
+  const textNodes = [];
+  let node;
   while ((node = walker.nextNode())) {
     // Skip nodes inside <script>, <style>, or already-highlighted marks
-    var parentTag = node.parentElement ? node.parentElement.tagName : '';
+    const parentTag = node.parentElement ? node.parentElement.tagName : '';
     if (parentTag === 'SCRIPT' || parentTag === 'STYLE' || parentTag === 'MARK') continue;
     if (regex.test(node.nodeValue)) {
       textNodes.push(node);
@@ -126,12 +127,12 @@ function highlightSearchTerms(container, query) {
     regex.lastIndex = 0;
   }
 
-  for (var i = 0; i < textNodes.length; i++) {
-    var textNode = textNodes[i];
-    var text = textNode.nodeValue;
-    var frag = document.createDocumentFragment();
-    var lastIndex = 0;
-    var match;
+  for (let i = 0; i < textNodes.length; i++) {
+    const textNode = textNodes[i];
+    const text = textNode.nodeValue;
+    const frag = document.createDocumentFragment();
+    let lastIndex = 0;
+    let match;
 
     regex.lastIndex = 0;
     while ((match = regex.exec(text)) !== null) {
@@ -140,7 +141,7 @@ function highlightSearchTerms(container, query) {
         frag.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
       }
       // The matched term wrapped in <mark>
-      var mark = document.createElement('mark');
+      const mark = document.createElement('mark');
       mark.className = 'search-highlight';
       mark.textContent = match[0];
       frag.appendChild(mark);
@@ -214,10 +215,10 @@ export function Reader({ id }) {
       }
       window.removeEventListener('scroll', handleScroll);
       // Save a breath mark at the current scroll position on unmount
-      var scrollTop = window.scrollY || document.documentElement.scrollTop;
-      var docHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+      const scrollTop = window.scrollY || document.documentElement.scrollTop;
+      const docHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
       if (docHeight > 0) {
-        var pos = Math.min(1, Math.max(0, scrollTop / docHeight));
+        const pos = Math.min(1, Math.max(0, scrollTop / docHeight));
         saveBreathMark(currentId, Math.round(pos * 10000) / 10000);
       }
     };
@@ -284,8 +285,8 @@ export function Reader({ id }) {
         handleFavorite();
       },
       m: function () {
-        var current = readerPrefs.value.contentMode || 'html';
-        var next = current === 'html' ? 'markdown' : current === 'markdown' ? 'source' : 'html';
+        const current = readerPrefs.value.contentMode || 'html';
+        const next = current === 'html' ? 'markdown' : current === 'markdown' ? 'source' : 'html';
         updatePref('contentMode', next);
       },
     },
@@ -295,11 +296,11 @@ export function Reader({ id }) {
   // Immersive reading: activate when audio plays for this article
   useEffect(
     function () {
-      var contentNode = contentRef.current;
-      var audioInfo = audioState.value;
-      var prefs = readerPrefs.value;
-      var isThisArticle = audioInfo.articleId === id;
-      var immersiveEnabled = prefs.immersive !== 'off' && prefs.contentMode !== 'source';
+      const contentNode = contentRef.current;
+      const audioInfo = audioState.value;
+      const prefs = readerPrefs.value;
+      const isThisArticle = audioInfo.articleId === id;
+      const immersiveEnabled = prefs.immersive !== 'off' && prefs.contentMode !== 'source';
 
       if (!isThisArticle || !audioInfo.visible || !immersiveEnabled) {
         destroyImmersive();
@@ -310,7 +311,7 @@ export function Reader({ id }) {
       }
 
       // Fetch timing data and init
-      var cancelled = false;
+      let cancelled = false;
 
       function activate() {
         if (immersiveTiming && contentNode) {
@@ -348,7 +349,7 @@ export function Reader({ id }) {
   // Lazy-load markdown content when user switches to Rendered or Source mode
   useEffect(
     function () {
-      var mode = readerPrefs.value.contentMode;
+      const mode = readerPrefs.value.contentMode;
       if (mode !== 'markdown' && mode !== 'source') return;
       if (markdownRaw !== null || markdownLoading) return;
       if (!article) return;
@@ -356,7 +357,7 @@ export function Reader({ id }) {
       setMarkdownLoading(true);
       getArticleMarkdown(id)
         .then(function (md) {
-          var raw = md || article.markdown_content || '';
+          const raw = md || article.markdown_content || '';
           setMarkdownRaw(raw);
           if (raw) {
             setMarkdownHtml(renderMarkdown(raw));
@@ -381,14 +382,14 @@ export function Reader({ id }) {
   // Search term highlighting — when arriving from search results
   useEffect(
     function () {
-      var query = searchQuery.value;
-      var container = contentRef.current;
+      const query = searchQuery.value;
+      const container = contentRef.current;
       if (!article || !container || !query) return;
 
       highlightSearchTerms(container, query);
 
       // Scroll to the first highlight
-      var firstMark = container.querySelector('mark.search-highlight');
+      const firstMark = container.querySelector('mark.search-highlight');
       if (firstMark) {
         firstMark.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
@@ -403,7 +404,7 @@ export function Reader({ id }) {
 
   async function handleArchiveToggle() {
     if (!article) return;
-    var newStatus = article.reading_status === 'archived' ? 'unread' : 'archived';
+    const newStatus = article.reading_status === 'archived' ? 'unread' : 'archived';
     await toggleArchive(article);
     setArticle({ ...article, reading_status: newStatus });
   }
@@ -466,7 +467,7 @@ export function Reader({ id }) {
       addToast('Audio generation queued', 'success');
       setAudioRequested(true);
       pollAudioStatus(id, async function (articleId) {
-        var updated = await getArticle(articleId);
+        const updated = await getArticle(articleId);
         setArticle(updated);
         return updated;
       });
@@ -596,10 +597,9 @@ export function Reader({ id }) {
   const isArchived = article.reading_status === 'archived';
   const isFav = article.is_favorite;
   const ostatus = article.original_status || 'unknown';
-  const hasAudio = article.audio_status === 'ready';
-  const audioPending = audioRequested || article.audio_status === 'pending';
-  const audioStuck = !audioRequested && article.audio_status === 'generating';
-  const audioFailed = article.audio_status === 'failed';
+  const { hasAudio, audioPending, audioStuck, audioFailed } = getAudioStatusFlags(article, {
+    audioRequested,
+  });
 
   return (
     <>
@@ -817,7 +817,7 @@ export function Reader({ id }) {
               )}
               {breathMarks.length > 0 &&
                 breathMarks.map(function (pos, i) {
-                  var opacity = 0.12 + ((i + 1) / breathMarks.length) * 0.22;
+                  const opacity = 0.12 + ((i + 1) / breathMarks.length) * 0.22;
                   return (
                     <div
                       key={i}

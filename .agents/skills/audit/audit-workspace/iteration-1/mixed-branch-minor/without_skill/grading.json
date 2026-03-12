@@ -1,0 +1,28 @@
+{
+  "eval_name": "mixed-branch-minor",
+  "config": "without_skill",
+  "expectations": [
+    {
+      "text": "verdict-is-minor",
+      "passed": false,
+      "evidence": "None of ['**Minor**'] found in report"
+    },
+    {
+      "text": "detects-todo-comments",
+      "passed": true,
+      "evidence": "Found: TODO, FIXME"
+    },
+    {
+      "text": "detects-skipped-test",
+      "passed": true,
+      "evidence": "Found: skip, @pytest.mark.skip, skipped"
+    },
+    {
+      "text": "detects-fixup-commit",
+      "passed": true,
+      "evidence": "Found: fixup, squash"
+    }
+  ],
+  "pass_count": 3,
+  "total_count": 4
+}

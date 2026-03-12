@@ -15,6 +15,10 @@ export const audioState = signal({
 const SPEEDS = [0.75, 1, 1.25, 1.5, 1.75, 2];
 
 let audioEl = null;
+
+/** Ref-like variable to track current blob URL for cleanup */
+let currentBlobUrl = null;
+
 export function getAudio() {
   if (!audioEl) {
     audioEl = new Audio();
@@ -33,8 +37,16 @@ export function playAudio(articleId, title, domain, thumbnailKey) {
     visible: true,
   };
   document.body.classList.add('has-audio-player');
+
+  // Revoke previous blob URL before loading a new one
+  if (currentBlobUrl) {
+    URL.revokeObjectURL(currentBlobUrl);
+    currentBlobUrl = null;
+  }
+
   getAudioUrl(articleId)
     .then(function (blobUrl) {
+      currentBlobUrl = blobUrl;
       audio.src = blobUrl;
       audioState.value = { ...audioState.value, isPlaying: true };
       return audio.play();
@@ -82,8 +94,8 @@ export function AudioPlayer() {
       setIsPlaying(false);
     }
     function onError() {
-      var code = audio.error ? audio.error.code : 0;
-      var msg = audio.error ? audio.error.message : 'unknown';
+      const code = audio.error ? audio.error.code : 0;
+      const msg = audio.error ? audio.error.message : 'unknown';
       console.error('[Audio] playback error code=%d: %s', code, msg);
       addToast('Audio playback interrupted: ' + msg, 'error');
     }
@@ -99,7 +111,7 @@ export function AudioPlayer() {
     setDuration(audio.duration || 0);
 
     if ('mediaSession' in navigator) {
-      var artwork = state.articleThumbnail
+      const artwork = state.articleThumbnail
         ? [{ src: state.articleThumbnail, sizes: '512x512', type: 'image/webp' }]
         : [];
       navigator.mediaSession.metadata = new MediaMetadata({
@@ -132,6 +144,15 @@ export function AudioPlayer() {
       audio.removeEventListener('pause', onPause);
       audio.removeEventListener('ended', onEnded);
       audio.removeEventListener('error', onError);
+
+      // Issue 33: Clear MediaSession action handlers on cleanup
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.setActionHandler('play', null);
+        navigator.mediaSession.setActionHandler('pause', null);
+        navigator.mediaSession.setActionHandler('seekbackward', null);
+        navigator.mediaSession.setActionHandler('seekforward', null);
+        navigator.mediaSession.setActionHandler('seekto', null);
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.visible, state.articleId]);
@@ -163,8 +184,10 @@ export function AudioPlayer() {
   function stop() {
     const audio = getAudio();
     audio.pause();
-    if (audio.src && audio.src.startsWith('blob:')) {
-      URL.revokeObjectURL(audio.src);
+    // Revoke blob URL tracked by the module-level ref
+    if (currentBlobUrl) {
+      URL.revokeObjectURL(currentBlobUrl);
+      currentBlobUrl = null;
     }
     audio.src = '';
     audio.load();

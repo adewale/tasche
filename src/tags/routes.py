@@ -89,11 +89,24 @@ async def create_tag(
     tag_id = generate_id()
     now = now_iso()
 
-    await (
-        db.prepare("INSERT INTO tags (id, user_id, name, created_at) VALUES (?, ?, ?, ?)")
+    # Use INSERT OR IGNORE to gracefully handle the TOCTOU race where a
+    # concurrent request creates the same tag between our SELECT and INSERT.
+    # The UNIQUE constraint (user_id, name) causes the INSERT to be silently
+    # ignored rather than raising a 500 error.
+    result = await (
+        db.prepare(
+            "INSERT OR IGNORE INTO tags (id, user_id, name, created_at) VALUES (?, ?, ?, ?)"
+        )
         .bind(tag_id, user_id, name, now)
         .run()
     )
+
+    # If no row was inserted, a concurrent request created the tag first.
+    if result.get("meta", {}).get("changes", 0) == 0:
+        raise HTTPException(
+            status_code=409,
+            detail="Tag with this name already exists",
+        )
 
     return {"id": tag_id, "user_id": user_id, "name": name, "created_at": now}
 

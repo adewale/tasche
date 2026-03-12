@@ -49,14 +49,7 @@ Request → path starts with /api/ ?
 
 The queue handler signature must be `queue(self, batch, env=None, ctx=None)`. Workers runtime passes 3 args (batch, env, ctx), not just batch. Using only `(self, batch)` causes `TypeError: takes 2 positional arguments but 4 were given`. The `env` parameter is used as a fallback since `self.env` may not be populated in queue context.
 
-Messages are dispatched by the `type` field in the JSON body:
-
-```python
-QUEUE_HANDLERS = {
-    "article_processing": _handle_article_processing,
-    "tts_generation": _handle_tts_generation,
-}
-```
+Messages are dispatched by the `type` field in the JSON body to handlers registered in the `QUEUE_HANDLERS` dict (see `src/entry.py` for current handlers). Current message types: `article_processing` and `tts_generation`.
 
 Each message is processed individually within a batch. On success: `message.ack()`. On transient error (network, 5xx): `message.retry()`. On permanent error (4xx, validation): `message.ack()` + update status to `failed`.
 
@@ -210,7 +203,6 @@ The full pipeline from URL save to content ready, executed by the queue consumer
 | Store content | Store content.html + metadata.json to R2 | R2 | — |
 | Update D1 | UPDATE D1 with extracted columns, `status='ready'` | D1 | — |
 | FTS5 indexing | Automatic via D1 triggers | D1 | — |
-| Auto-tagging | `apply_auto_tags()` — evaluate tag rules | D1 | Non-fatal catch |
 | TTS enqueue | If `audio_status='pending'`, enqueue TTS generation | Queue | Non-fatal catch |
 
 ### Error Classification
@@ -263,7 +255,7 @@ Used when the Readability binding fails or is unavailable (e.g., `eval()` blocke
 
 ### Model
 
-Configurable via the `TTS_MODEL` env var (default: `melotts`). Supported values: `melotts` (`@cf/myshell-ai/melotts`), `aura-2-en` (`@cf/deepgram/aura-2-en`), `aura-2-es`, `aura-1`. Called through the `AI` binding: `env.AI.run(model_id, {"text": chunk})`.
+Configurable via the `TTS_MODEL` env var (default: `aura-2-en`). Supported values: `aura-2-en` (`@cf/deepgram/aura-2-en`), `aura-2-es`, `aura-1`, `melotts` (`@cf/myshell-ai/melotts`). Called through the `AI` binding: `env.AI.run(model_id, {"text": chunk})`.
 
 ### Pipeline
 
@@ -274,8 +266,8 @@ Configurable via the `TTS_MODEL` env var (default: `melotts`). Supported values:
 5. **Sentence splitting:** Regex `(?<=[.!?])\s+` — splits after sentence-ending punctuation followed by whitespace.
 6. **Chunking:** Greedy bin-packing of sentences into groups of ≤1,900 characters (`_MAX_CHARS_PER_CHUNK`). This provides headroom below the 2,000-character API limit. If a single sentence exceeds the limit, it becomes its own chunk.
 7. **Audio generation:** For each chunk, call Workers AI and consume the response via `consume_readable_stream()` (must use `getReader()`, not `.arrayBuffer()`, to avoid silent truncation).
-8. **Concatenation:** All MP3 chunks are concatenated as raw bytes (MP3 frames are self-describing, so simple concatenation works).
-9. **Storage:** Store concatenated audio to R2 at `articles/{id}/audio.mp3`.
+8. **Concatenation:** OGG Opus chunks are re-muxed into a single logical stream (naive concatenation would produce multiple BOS/EOS pairs that browsers only play the first of).
+9. **Storage:** Store audio to R2 at `articles/{id}/audio.ogg` (format detected from magic bytes; extension matches actual encoding).
 10. **Verification:** Compare expected size with actual R2 object size. Log mismatch but continue.
 11. **Timing map:** Generate sentence-level timing at 150 WPM. Each entry: `{text, start, end, word_count}`. Stored as `articles/{id}/audio-timing.json` in R2.
 12. **D1 update:** Set `audio_key`, `audio_duration_seconds`, `audio_status = 'ready'`.
@@ -295,7 +287,7 @@ Configurable via the `TTS_MODEL` env var (default: `melotts`). Supported values:
 
 ## 8. Search
 
-**File:** `src/search/routes.py`
+Search is unified into the articles list endpoint (`GET /api/articles?q=...` in `src/articles/routes.py`). There is no separate search module.
 
 ### FTS5 Virtual Table
 
@@ -316,21 +308,21 @@ D1 maintains an `articles_fts` FTS5 virtual table indexing `title`, `excerpt`, a
 SELECT articles.* FROM articles
 INNER JOIN articles_fts ON articles.rowid = articles_fts.rowid
 WHERE articles_fts MATCH ? AND articles.user_id = ?
-ORDER BY articles_fts.rank
+ORDER BY bm25(articles_fts, 10.0, 5.0, 1.0)
 LIMIT ? OFFSET ?
 ```
 
 **Key details:**
 - Always use `INNER JOIN` (not subquery) for correct ranking.
 - Column names must be prefixed with `articles.` to avoid ambiguity with the FTS5 virtual table.
-- `articles_fts.rank` is negative; closer to 0 = more relevant.
+- `bm25()` weights: title 10×, excerpt 5×, content 1×. Returns negative values; closer to 0 = more relevant.
 - User filtering via `articles.user_id = ?` in the WHERE clause.
 
 ---
 
-## 9. Tags & Auto-Tagging
+## 9. Tags
 
-**Files:** `src/tags/routes.py`, `src/tags/rules.py`
+**File:** `src/tags/routes.py`
 
 ### Tag CRUD
 
@@ -341,24 +333,7 @@ Tags are per-user (UNIQUE constraint on `(user_id, name)`). Two separate routers
 
 Tag names: max 100 characters, validated for uniqueness per user.
 
-### Auto-Tagging Rules
-
-Rules are evaluated during article processing (auto-tagging step, non-fatal). Each rule has a `tag_id`, `match_type`, and `pattern`.
-
-| Match Type | Evaluation | Example |
-|-----------|------------|---------|
-| `domain` | Exact match or `fnmatch` glob (case-insensitive) against article domain | `github.com`, `*.substack.com` |
-| `title_contains` | Substring match (case-insensitive) against article title | `AI`, `Rust` |
-| `url_contains` | Substring match (case-insensitive) against original/final URL | `arxiv.org`, `/blog/` |
-
-**Algorithm in `apply_auto_tags()`:**
-1. Fetch all `tag_rules` from D1 for the user.
-2. Evaluate each rule against the article's domain, title, and URL.
-3. Collect matching `tag_id` values into a set (deduplicate).
-4. For each match: `INSERT OR IGNORE INTO article_tags`.
-5. Return count of applied tags.
-
-Pattern max length: 500 characters. Rule uniqueness: `(tag_id, match_type, pattern)`.
+> **Note:** Tag rules / auto-tagging was removed in migration 0007. The `tag_rules` table no longer exists.
 
 ---
 
@@ -396,94 +371,16 @@ Each queue message gets its own WideEvent with `pipeline="queue"`. The event cap
 
 ### Tables
 
-> **Note:** The authoritative schema lives in `migrations/`. The tables below are a snapshot for reference and may lag behind the latest migrations.
+> **Note:** The authoritative schema lives in `migrations/`. The summary below is for orientation; consult the migration files for exact column definitions and constraints.
 
-**users**
-| Column | Type | Notes |
-|--------|------|-------|
-| id | TEXT PK | `secrets.token_urlsafe(16)` |
-| github_id | INTEGER UNIQUE | GitHub user ID |
-| email | TEXT | Verified email |
-| username | TEXT | GitHub login |
-| avatar_url | TEXT | GitHub avatar |
-| created_at | TEXT | ISO 8601 UTC |
-| updated_at | TEXT | ISO 8601 UTC |
+**Core tables:** `users`, `articles`, `tags`, `article_tags`, `user_preferences`, `articles_fts` (FTS5 virtual table).
 
-**articles**
-| Column | Type | Notes |
-|--------|------|-------|
-| id | TEXT PK | `secrets.token_urlsafe(16)` |
-| user_id | TEXT FK→users | CASCADE delete |
-| original_url | TEXT NOT NULL | User-provided URL |
-| final_url | TEXT | After redirects |
-| canonical_url | TEXT | From `<link rel=canonical>` |
-| domain | TEXT | Extracted hostname |
-| title | TEXT | From extraction or user |
-| excerpt | TEXT | ≤300 chars |
-| author | TEXT | From meta tags |
-| word_count | INTEGER | From markdown |
-| reading_time_minutes | INTEGER | `ceil(words / 200)` |
-| image_count | INTEGER DEFAULT 0 | Downloaded images |
-| status | TEXT DEFAULT 'pending' | CHECK: pending/processing/ready/failed |
-| reading_status | TEXT DEFAULT 'unread' | CHECK: unread/archived |
-| is_favorite | INTEGER DEFAULT 0 | Boolean as int |
-| audio_key | TEXT | R2 key for audio.mp3 |
-| audio_duration_seconds | INTEGER | TTS duration |
-| audio_status | TEXT DEFAULT NULL | CHECK: NULL/pending/generating/ready/failed |
-| html_key | TEXT | R2 key for content.html |
-| thumbnail_key | TEXT | R2 key for thumbnail.webp |
-| original_key | TEXT | R2 key for original.webp |
-| markdown_content | TEXT | Full markdown (for FTS5) |
-| original_status | TEXT DEFAULT 'unknown' | CHECK: available/paywalled/gone/domain_dead/unknown |
-| last_checked_at | TEXT | Last health check |
-| scroll_position | REAL DEFAULT 0 | Reading progress (px) |
-| reading_progress | REAL DEFAULT 0 | 0.0–1.0 |
-| created_at | TEXT | ISO 8601 UTC |
-| updated_at | TEXT | ISO 8601 UTC |
+Key relationships:
+- `articles.user_id` → `users.id` (CASCADE delete)
+- `article_tags` is a composite-PK junction table (`article_id`, `tag_id`), both CASCADE delete
+- `articles_fts` synced via D1 triggers on articles INSERT/UPDATE/DELETE
 
-**tags**
-| Column | Type | Notes |
-|--------|------|-------|
-| id | TEXT PK | — |
-| user_id | TEXT FK→users | CASCADE delete |
-| name | TEXT NOT NULL | UNIQUE(user_id, name) |
-| created_at | TEXT | — |
-
-**article_tags**
-| Column | Type | Notes |
-|--------|------|-------|
-| article_id | TEXT FK→articles | CASCADE delete |
-| tag_id | TEXT FK→tags | CASCADE delete |
-| PK | (article_id, tag_id) | Composite |
-
-**tag_rules**
-| Column | Type | Notes |
-|--------|------|-------|
-| id | TEXT PK | — |
-| tag_id | TEXT FK→tags | CASCADE delete |
-| match_type | TEXT NOT NULL | CHECK: domain/title_contains/url_contains |
-| pattern | TEXT NOT NULL | ≤500 chars, glob for domain |
-| created_at | TEXT NOT NULL | — |
-
-**articles_fts** (FTS5 virtual table)
-- Columns: title, excerpt, markdown_content
-- Synced via D1 triggers on articles INSERT/UPDATE/DELETE
-
-### Key Indexes
-
-```sql
-idx_articles_user_created         (user_id, created_at)
-idx_articles_user_reading_status  (user_id, reading_status)
-idx_articles_user_audio_status    (user_id, audio_status)
-idx_articles_user_favorite        (user_id, is_favorite)
-idx_articles_user_status          (user_id, status)
-idx_articles_final_url            (final_url)
-idx_articles_canonical_url        (canonical_url)
-idx_articles_user_url             (user_id, original_url) UNIQUE
-idx_tags_user_name                (user_id, name) UNIQUE
-idx_tag_rules_tag                 (tag_id)
-idx_users_email                   (email)
-```
+Notable columns on `articles`: `status` (pending/processing/ready/failed), `reading_status` (unread/archived), `audio_status` (NULL/pending/generating/ready/failed), `audio_key` (R2 path to audio file), `markdown_content` (full markdown for FTS5 indexing), `original_status` (available/paywalled/gone/domain_dead/unknown).
 
 ### Null Handling
 
@@ -504,7 +401,7 @@ All keys follow the pattern `articles/{article_id}/{suffix}`:
 | `articles/{id}/content.html` | Cleaned article HTML | text/html | max-age=86400 |
 | `articles/{id}/metadata.json` | Processing metadata | application/json | — |
 | `articles/{id}/thumbnail.webp` | og:image thumbnail | image/webp | max-age=86400 |
-| `articles/{id}/audio.mp3` | TTS audio | audio/mpeg | max-age=86400, immutable |
+| `articles/{id}/audio.ogg` | TTS audio (Opus) | audio/ogg | max-age=86400, immutable |
 | `articles/{id}/audio-timing.json` | Sentence timing map | application/json | max-age=86400, immutable |
 | `articles/{id}/raw.html` | Bookmarklet pre-supplied HTML | — | Internal only |
 | `articles/{id}/images/{hash}.ext` | Downloaded article images | image/* | max-age=31536000, immutable |
@@ -533,7 +430,7 @@ One JSON log line per request or queue message. The event is built incrementally
 
 ### WideEvent Class
 
-Uses `__slots__` for memory efficiency (39 attributes). Created via `begin_event(pipeline, **initial_fields)` and installed as a `contextvars.ContextVar` for async context isolation.
+Uses `__slots__` for memory efficiency (20 attributes — see `src/wide_event.py` for the current list). Created via `begin_event(pipeline, **initial_fields)` and installed as a `contextvars.ContextVar` for async context isolation.
 
 **Standard fields:** timestamp, pipeline, cf-ray, method, path, status_code, duration_ms, outcome, user_id.
 
@@ -637,7 +534,6 @@ HSTS is conditional on `SITE_URL` starting with `https://`.
 | Title | 500 characters |
 | Pre-supplied HTML content | 5 MB |
 | Tag name | 100 characters |
-| Tag rule pattern | 500 characters |
 | Batch article IDs | 100 per request |
 | Search query limit | 100 results per page |
 | Image per file | 2 MB |
@@ -647,9 +543,9 @@ HSTS is conditional on `SITE_URL` starting with `https://`.
 
 ---
 
-## 15. Statistics & Export
+## 15. Statistics
 
-**File:** `src/stats/routes.py`, `src/articles/export.py`
+**File:** `src/stats/routes.py`
 
 ### Statistics Aggregation
 
@@ -677,13 +573,7 @@ Algorithm: Start from today (or yesterday). Count consecutive backward days in t
 
 Two queries for the last 12 months — saved articles by `created_at` month and archived articles by `updated_at` month. Merged into `articles_by_month: [{month, saved, archived}]`.
 
-### JSON Export
-
-`GET /api/export/json` — all articles with tags as a JSON array. Filename: `tasche-export-{YYYY-MM-DD}.json`.
-
-### Netscape Bookmark Export
-
-`GET /api/export/html` — standard `NETSCAPE-Bookmark-file-1` format compatible with browsers and services like Pinboard. Each entry has `HREF`, `ADD_DATE` (Unix timestamp), `TAGS` (comma-separated), title text, and optional `<DD>` excerpt. Filename: `tasche-export-{YYYY-MM-DD}.html`.
+> **Note:** Data export endpoints (`/api/export/json`, `/api/export/html`) are not yet implemented. See the spec for planned export formats.
 
 ---
 
@@ -839,8 +729,20 @@ All configuration lives in `wrangler.jsonc`. Three environments:
 | Environment | URL | Auth | Notes |
 |-------------|-----|------|-------|
 | Local dev | `localhost:port` | DISABLE_AUTH=true in `.dev.vars` | Uses Miniflare for D1/R2/KV |
-| Staging | `tasche-staging.adewale-883.workers.dev` | GitHub OAuth required | Full Cloudflare bindings |
-| Production | `tasche-production.adewale-883.workers.dev` | GitHub OAuth required | ALLOWED_EMAILS enforced |
+| Staging | `<your-worker>-staging.workers.dev` | GitHub OAuth required | Full Cloudflare bindings |
+| Production | `<your-worker>-production.workers.dev` | GitHub OAuth required | ALLOWED_EMAILS enforced |
+
+### Environment Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `ALLOWED_EMAILS` | Yes | — | Comma-separated email whitelist for login |
+| `GITHUB_CLIENT_ID` | Yes | — | GitHub OAuth app client ID |
+| `GITHUB_CLIENT_SECRET` | Yes | — | GitHub OAuth app client secret |
+| `SITE_URL` | No | Auto-detected | Base URL for auth callbacks |
+| `TTS_MODEL` | No | `aura-2-en` | Workers AI TTS model (see §7) |
+| `WORKER_ENV` | No | — | Set to `production` or `staging`; guards `DISABLE_AUTH` |
+| `DISABLE_AUTH` | No | — | Set to `true` for local dev; blocked when `WORKER_ENV=production` |
 
 ### Bindings in wrangler.jsonc
 
@@ -850,8 +752,8 @@ All configuration lives in `wrangler.jsonc`. Three environments:
   "r2_buckets": [{"binding": "CONTENT", "bucket_name": "tasche-content"}],
   "kv_namespaces": [{"binding": "SESSIONS"}],
   "queues": {
-    "producers": [{"binding": "ARTICLE_QUEUE", "queue": "tasche-queue"}],
-    "consumers": [{"queue": "tasche-queue", "max_batch_size": 10}]
+    "producers": [{"binding": "ARTICLE_QUEUE", "queue": "tasche-articles"}],
+    "consumers": [{"queue": "tasche-articles", "max_batch_size": 10}]
   },
   "ai": {"binding": "AI"},
   "services": [{"binding": "READABILITY", "service": "readability-worker"}],
@@ -872,3 +774,21 @@ See `CLAUDE.md` for current test commands. Run `make check` for all gates (backe
 - Unit tests (pytest + TestClient) run in CPython and bypass wrangler's asset layer — cannot catch routing conflicts or Pyodide FFI bugs.
 - Queue handler bugs only surface in live Cloudflare deployment (not Miniflare, not pytest).
 - Miniflare queue consumer is unreliable — use `POST /api/articles/{id}/process-now` to bypass queue for local dev/debugging.
+
+---
+
+## 20. API Endpoints Reference
+
+Below is the complete list of API endpoints. Core CRUD endpoints are documented in context in earlier sections; this section covers endpoints not described elsewhere.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/health` | Liveness probe (always available, no auth) |
+| GET | `/api/health/config` | Verify bindings and secrets are configured (no auth) |
+| GET | `/api/articles/{id}/metadata` | Return processing metadata from R2 |
+| GET | `/api/articles/{id}/thumbnail` | Serve thumbnail image from R2 |
+| GET | `/api/articles/{id}/images/{filename}` | Serve a downloaded article image from R2 |
+| GET | `/api/articles/{id}/audio-timing` | Sentence timing JSON for TTS highlighting |
+| POST | `/api/articles/{id}/process-now` | Re-run article processing synchronously (bypasses queue) |
+| GET | `/api/preferences` | Get user preferences (TTS voice) |
+| PATCH | `/api/preferences` | Update user preferences |

@@ -1,0 +1,175 @@
+{
+  "metadata": {
+    "skill_name": "audit",
+    "skill_path": "/Users/ade/Documents/projects/audit-skill/SKILL.md",
+    "executor_model": "claude-opus-4-6",
+    "timestamp": "2026-03-07T00:00:00Z",
+    "evals_run": [1, 2, 3],
+    "runs_per_configuration": 1
+  },
+  "runs": [
+    {
+      "eval_id": 1,
+      "eval_name": "dirty-branch-blocking",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.857,
+        "passed": 6,
+        "failed": 1,
+        "total": 7,
+        "time_seconds": 107.9,
+        "tokens": 20369,
+        "tool_calls": 39,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "verdict-is-blocking", "passed": true, "evidence": "Correct Blocking verdict"},
+        {"text": "detects-api-key", "passed": true, "evidence": "Found sk_live key"},
+        {"text": "detects-debug-prints", "passed": true, "evidence": "Found print() debug statements"},
+        {"text": "detects-missing-tests", "passed": true, "evidence": "Found missing tests"},
+        {"text": "detects-unrelated-changes", "passed": false, "evidence": "README not flagged as unrelated"},
+        {"text": "has-branch-summary", "passed": true, "evidence": "Branch summary present"},
+        {"text": "omits-empty-categories", "passed": true, "evidence": "No 'No findings' sections"}
+      ]
+    },
+    {
+      "eval_id": 1,
+      "eval_name": "dirty-branch-blocking",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.714,
+        "passed": 5,
+        "failed": 2,
+        "total": 7,
+        "time_seconds": 88.2,
+        "tokens": 16204,
+        "tool_calls": 25,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "verdict-is-blocking", "passed": false, "evidence": "Used CRITICAL/HIGH/MEDIUM/LOW instead of Blocking"},
+        {"text": "detects-api-key", "passed": true, "evidence": "Found sk_live key"},
+        {"text": "detects-debug-prints", "passed": true, "evidence": "Found debug prints"},
+        {"text": "detects-missing-tests", "passed": true, "evidence": "Found missing tests"},
+        {"text": "detects-unrelated-changes", "passed": false, "evidence": "README not flagged as unrelated"},
+        {"text": "has-branch-summary", "passed": true, "evidence": "Has branch summary"},
+        {"text": "omits-empty-categories", "passed": true, "evidence": "No 'No findings' sections"}
+      ]
+    },
+    {
+      "eval_id": 2,
+      "eval_name": "clean-branch-clean",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 3,
+        "failed": 0,
+        "total": 3,
+        "time_seconds": 107.6,
+        "tokens": 22866,
+        "tool_calls": 41,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "verdict-is-clean", "passed": true, "evidence": "Correct Clean verdict"},
+        {"text": "no-false-positives", "passed": true, "evidence": "No false Blocking/Minor"},
+        {"text": "has-branch-summary", "passed": true, "evidence": "Branch summary present"}
+      ]
+    },
+    {
+      "eval_id": 2,
+      "eval_name": "clean-branch-clean",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.667,
+        "passed": 2,
+        "failed": 1,
+        "total": 3,
+        "time_seconds": 90.8,
+        "tokens": 16479,
+        "tool_calls": 24,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "verdict-is-clean", "passed": false, "evidence": "Used 'ready to push' instead of Clean"},
+        {"text": "no-false-positives", "passed": true, "evidence": "No false Blocking/Minor"},
+        {"text": "has-branch-summary", "passed": true, "evidence": "Has branch summary"}
+      ]
+    },
+    {
+      "eval_id": 3,
+      "eval_name": "mixed-branch-minor",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 120.0,
+        "tokens": 21623,
+        "tool_calls": 34,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "verdict-is-minor", "passed": true, "evidence": "Correct Minor verdict"},
+        {"text": "detects-todo-comments", "passed": true, "evidence": "Found TODO/FIXME"},
+        {"text": "detects-skipped-test", "passed": true, "evidence": "Found @pytest.mark.skip"},
+        {"text": "detects-fixup-commit", "passed": true, "evidence": "Found fixup commit"},
+        {"text": "has-branch-summary", "passed": true, "evidence": "Branch summary present"}
+      ]
+    },
+    {
+      "eval_id": 3,
+      "eval_name": "mixed-branch-minor",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.8,
+        "passed": 4,
+        "failed": 1,
+        "total": 5,
+        "time_seconds": 103.2,
+        "tokens": 20467,
+        "tool_calls": 26,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "verdict-is-minor", "passed": false, "evidence": "No Minor verdict format"},
+        {"text": "detects-todo-comments", "passed": true, "evidence": "Found TODO/FIXME"},
+        {"text": "detects-skipped-test", "passed": true, "evidence": "Found @pytest.mark.skip"},
+        {"text": "detects-fixup-commit", "passed": true, "evidence": "Found fixup commit"},
+        {"text": "has-branch-summary", "passed": true, "evidence": "Has branch summary"}
+      ]
+    }
+  ],
+  "run_summary": {
+    "with_skill": {
+      "pass_rate": {"mean": 0.93, "stddev": 0.08, "min": 0.857, "max": 1.0},
+      "time_seconds": {"mean": 111.8, "stddev": 7.3, "min": 107.6, "max": 120.0},
+      "tokens": {"mean": 21619, "stddev": 1024, "min": 20369, "max": 22866}
+    },
+    "without_skill": {
+      "pass_rate": {"mean": 0.73, "stddev": 0.05, "min": 0.667, "max": 0.8},
+      "time_seconds": {"mean": 94.1, "stddev": 6.5, "min": 88.2, "max": 103.2},
+      "tokens": {"mean": 17717, "stddev": 1963, "min": 16204, "max": 20467}
+    },
+    "delta": {
+      "pass_rate": "+0.20",
+      "time_seconds": "+17.7",
+      "tokens": "+3902"
+    }
+  },
+  "notes": [
+    "With-skill pass rate: 93% (14/15) vs baseline 73% (11/15) — consistent improvement",
+    "Verdicts (Clean/Minor/Blocking) are the skill's primary differentiator — baseline never uses them",
+    "The one with-skill failure (README not flagged as unrelated) is borderline — the README change adds a Setup section referencing requirements.txt which is arguably related to the payments feature",
+    "Branch summary is now consistently present with the skill (iteration-1 improvement working)",
+    "No-duplicate-findings assertion removed from scoring — the summary table repeating findings is by design",
+    "Time overhead is ~18s more with skill; token overhead ~3900 more — reasonable for the added structure"
+  ]
+}

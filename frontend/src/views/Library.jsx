@@ -56,7 +56,7 @@ const SORT_OPTIONS = [
 
 function getSavedSort() {
   try {
-    var saved = localStorage.getItem('tasche_sort');
+    const saved = localStorage.getItem('tasche_sort');
     if (
       saved &&
       SORT_OPTIONS.some(function (o) {
@@ -76,13 +76,13 @@ export function Library({ tags, q, filter, sort }) {
   const [savingType, setSavingType] = useState(null); // null | 'save' | 'audio'
   const [bulkActing, setBulkActing] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
-  var showHelp = showShortcuts.value;
+  const showHelp = showShortcuts.value;
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState(new Set());
 
   // Resolve filter and sort: URL params take priority, then defaults
-  var activeFilter = filter || 'unread';
-  var activeSort = sort || getSavedSort();
+  const activeFilter = filter || 'unread';
+  const activeSort = sort || getSavedSort();
 
   const articleList = articles.value;
   const isLoading = loadingSignal.value;
@@ -122,44 +122,44 @@ export function Library({ tags, q, filter, sort }) {
       ? {}
       : {
           j: function () {
-            var list = articles.value;
+            const list = articles.value;
             setSelectedIndex(function (prev) {
-              var next = prev + 1;
+              const next = prev + 1;
               return next >= list.length ? list.length - 1 : next;
             });
           },
           k: function () {
             setSelectedIndex(function (prev) {
-              var next = prev - 1;
+              const next = prev - 1;
               return next < 0 ? 0 : next;
             });
           },
           o: function () {
-            var list = articles.value;
+            const list = articles.value;
             if (selectedIndex >= 0 && selectedIndex < list.length) {
               nav.article(list[selectedIndex].id);
             }
           },
           Enter: function () {
-            var list = articles.value;
+            const list = articles.value;
             if (selectedIndex >= 0 && selectedIndex < list.length) {
               nav.article(list[selectedIndex].id);
             }
           },
           a: function () {
-            var list = articles.value;
+            const list = articles.value;
             if (selectedIndex >= 0 && selectedIndex < list.length) {
               toggleArchive(list[selectedIndex]);
             }
           },
           s: function () {
-            var list = articles.value;
+            const list = articles.value;
             if (selectedIndex >= 0 && selectedIndex < list.length) {
               toggleFavorite(list[selectedIndex]);
             }
           },
           d: function () {
-            var list = articles.value;
+            const list = articles.value;
             if (selectedIndex >= 0 && selectedIndex < list.length) {
               removeArticle(list[selectedIndex].id);
             }
@@ -186,7 +186,7 @@ export function Library({ tags, q, filter, sort }) {
   // Scroll selected card into view
   useEffect(() => {
     if (selectedIndex < 0) return;
-    var el = document.querySelector('.article-card--checked');
+    const el = document.querySelector('.article-card--checked');
     if (el) {
       el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
@@ -255,9 +255,9 @@ export function Library({ tags, q, filter, sort }) {
 
     setSavingType(withAudio ? 'audio' : 'save');
     try {
-      var result = await apiCreateArticle(url, null, withAudio);
+      const result = await apiCreateArticle(url, null, withAudio);
       if (result && result.updated) {
-        var date = result.created_at ? formatDate(result.created_at) : '';
+        const date = result.created_at ? formatDate(result.created_at) : '';
         addToast(
           'Article was already added' + (date ? ' on ' + date : '') + '. Refreshing it now.',
           'info',
@@ -312,7 +312,7 @@ export function Library({ tags, q, filter, sort }) {
 
   function handleToggleSelect(articleId) {
     setSelected(function (prev) {
-      var next = new Set(prev);
+      const next = new Set(prev);
       if (next.has(articleId)) {
         next.delete(articleId);
       } else {
@@ -323,7 +323,7 @@ export function Library({ tags, q, filter, sort }) {
   }
 
   function handleSelectAll() {
-    var allIds = new Set(
+    const allIds = new Set(
       articleList.map(function (a) {
         return a.id;
       }),
@@ -338,7 +338,7 @@ export function Library({ tags, q, filter, sort }) {
   async function handleBulkArchive() {
     if (selected.size === 0 || bulkActing) return;
     setBulkActing(true);
-    var ids = Array.from(selected);
+    const ids = Array.from(selected);
     try {
       await batchUpdateArticles(ids, { reading_status: 'archived' });
       articles.value = articles.value.map(function (art) {
@@ -356,10 +356,10 @@ export function Library({ tags, q, filter, sort }) {
 
   async function handleBulkDelete() {
     if (selected.size === 0 || bulkActing) return;
-    var count = selected.size;
+    const count = selected.size;
     if (!confirm('Delete ' + count + ' article' + (count === 1 ? '' : 's') + '?')) return;
     setBulkActing(true);
-    var ids = Array.from(selected);
+    const ids = Array.from(selected);
     try {
       await batchDeleteArticles(ids);
       articles.value = articles.value.filter(function (art) {
@@ -402,10 +402,10 @@ export function Library({ tags, q, filter, sort }) {
             <h2 class="section-title">Articles tagged</h2>
             <div class="tag-filter-bar">
               {tags.map(function (tagId) {
-                var tagObj = tagsSignal.value.find(function (t) {
+                const tagObj = tagsSignal.value.find(function (t) {
                   return t.id === tagId;
                 });
-                var tagName = tagObj ? tagObj.name : tagId;
+                const tagName = tagObj ? tagObj.name : tagId;
                 return (
                   <span key={tagId} class="tag-filter-chip">
                     {tagName}
@@ -413,7 +413,7 @@ export function Library({ tags, q, filter, sort }) {
                       class="tag-filter-chip-remove"
                       title={'Remove tag filter ' + tagName}
                       onClick={function () {
-                        var remaining = tags.filter(function (t) {
+                        const remaining = tags.filter(function (t) {
                           return t !== tagId;
                         });
                         if (remaining.length === 0) {

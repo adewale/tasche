@@ -1,0 +1,18 @@
+{
+  "eval_name": "clean-branch-clean",
+  "config": "without_skill",
+  "expectations": [
+    {
+      "text": "verdict-is-clean",
+      "passed": false,
+      "evidence": "None of ['**Clean**'] found in report"
+    },
+    {
+      "text": "no-false-positives",
+      "passed": true,
+      "evidence": "Correctly absent: none of ['**Blocking**', '**Minor**'] found"
+    }
+  ],
+  "pass_count": 1,
+  "total_count": 2
+}

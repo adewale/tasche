@@ -1,0 +1,13 @@
+{
+  "eval_id": 6,
+  "eval_name": "performance-audit",
+  "prompt": "do a performance audit on this project — we've been seeing slowdowns under load and i'm worried there are some bad patterns in the code. the project is in /Users/ade/Documents/projects/audit-skill/audit-workspace/test-repo-deepdive",
+  "assertions": [
+    {"name": "detects-n-plus-1", "type": "contains_any", "values": ["N+1", "one query per", "batch", "_fetch_item_details", "loop"]},
+    {"name": "detects-unbounded-cache", "type": "contains_any", "values": ["unbounded", "_cache", "eviction", "no limit", "grows without"]},
+    {"name": "detects-repeated-config-read", "type": "contains_any", "values": ["get_config", "re-read", "every request", "every call", "config"]},
+    {"name": "detects-string-concat-in-loop", "type": "contains_any", "values": ["concatenat", "string", "log_msg", "loop", "join"]},
+    {"name": "detects-regex-recompilation", "type": "contains_any", "values": ["re.compile", "regex", "compile", "every call"]},
+    {"name": "produces-report-file", "type": "file_exists", "values": ["audit_report.md"]}
+  ]
+}

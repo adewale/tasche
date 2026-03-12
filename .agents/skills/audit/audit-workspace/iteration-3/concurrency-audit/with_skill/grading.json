@@ -1,0 +1,43 @@
+{
+  "eval_name": "concurrency-audit",
+  "config": "with_skill",
+  "expectations": [
+    {
+      "text": "detects-shared-mutable-state",
+      "passed": true,
+      "evidence": "Found: active_jobs, job_counter, worker_stats, shared, global"
+    },
+    {
+      "text": "detects-race-condition",
+      "passed": true,
+      "evidence": "Found: race, TOCTOU, check-then-act, non-atomic, without lock"
+    },
+    {
+      "text": "detects-deadlock-risk",
+      "passed": true,
+      "evidence": "Found: deadlock, lock order, stats_lock, jobs_lock"
+    },
+    {
+      "text": "detects-thread-leak",
+      "passed": true,
+      "evidence": "Found: thread leak, never joined, scale-down, daemon"
+    },
+    {
+      "text": "detects-queue-race",
+      "passed": true,
+      "evidence": "Found: _queue, pop, IndexError, thread-safe"
+    },
+    {
+      "text": "has-severity-ratings",
+      "passed": true,
+      "evidence": "Found: Critical, High, Medium, Severity"
+    },
+    {
+      "text": "has-fix-recommendations",
+      "passed": true,
+      "evidence": "Found: Fix:, Replace, queue.Queue"
+    }
+  ],
+  "pass_count": 7,
+  "total_count": 7
+}

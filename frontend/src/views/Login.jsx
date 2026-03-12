@@ -7,8 +7,8 @@ function envFlag(env) {
 }
 
 function getHelpText(name, env) {
-  var flag = envFlag(env);
-  var texts = {
+  const flag = envFlag(env);
+  const texts = {
     DB: 'D1 database binding — check that your wrangler.jsonc has a [[d1_databases]] entry named "DB"',
     CONTENT:
       'R2 bucket binding — check that your wrangler.jsonc has a [[r2_buckets]] entry named "CONTENT"',
@@ -34,10 +34,10 @@ function getHelpText(name, env) {
 
 function getProgressSummary(status, checks) {
   if (status === 'error') {
-    var required = checks.filter(function (c) {
+    const required = checks.filter(function (c) {
       return c.required;
     });
-    var configuredCount = required.filter(function (c) {
+    const configuredCount = required.filter(function (c) {
       return c.status === 'ok';
     }).length;
     return configuredCount + ' of ' + required.length + ' required items configured.';
@@ -49,15 +49,15 @@ function getProgressSummary(status, checks) {
 }
 
 function SetupChecklist({ checks, status, environment }) {
-  var required = checks.filter(function (c) {
+  const required = checks.filter(function (c) {
     return c.required;
   });
-  var optional = checks.filter(function (c) {
+  const optional = checks.filter(function (c) {
     return !c.required;
   });
 
-  var heading = status === 'error' ? 'Setup Checklist' : 'Configuration';
-  var summary = getProgressSummary(status, checks);
+  const heading = status === 'error' ? 'Setup Checklist' : 'Configuration';
+  const summary = getProgressSummary(status, checks);
 
   return (
     <div class="setup-checklist">
@@ -69,11 +69,11 @@ function SetupChecklist({ checks, status, environment }) {
           <h3 class="setup-group-label">Required</h3>
           <ul class="setup-items">
             {required.map(function (check) {
-              var indicatorClass =
+              const indicatorClass =
                 check.status === 'ok'
                   ? 'setup-item-indicator setup-item-indicator--ok'
                   : 'setup-item-indicator setup-item-indicator--missing';
-              var helpText = getHelpText(check.name, environment);
+              const helpText = getHelpText(check.name, environment);
               return (
                 <li
                   key={check.name}
@@ -104,11 +104,11 @@ function SetupChecklist({ checks, status, environment }) {
           <h3 class="setup-group-label">Optional</h3>
           <ul class="setup-items">
             {optional.map(function (check) {
-              var indicatorClass =
+              const indicatorClass =
                 check.status === 'ok'
                   ? 'setup-item-indicator setup-item-indicator--ok'
                   : 'setup-item-indicator setup-item-indicator--optional';
-              var helpText = getHelpText(check.name, environment);
+              const helpText = getHelpText(check.name, environment);
               return (
                 <li
                   key={check.name}
@@ -138,10 +138,10 @@ function SetupChecklist({ checks, status, environment }) {
 }
 
 function getHashError() {
-  var hash = window.location.hash;
-  var qIndex = hash.indexOf('?');
+  const hash = window.location.hash;
+  const qIndex = hash.indexOf('?');
   if (qIndex === -1) return null;
-  var params = new URLSearchParams(hash.slice(qIndex));
+  const params = new URLSearchParams(hash.slice(qIndex));
   return params.get('error');
 }
 
@@ -176,9 +176,9 @@ export function Login() {
     );
   }
 
-  var isError = config && config.status === 'error';
-  var isUnreachable = config && config.status === 'unreachable';
-  var environment = (config && config.environment) || '';
+  const isError = config && config.status === 'error';
+  const isUnreachable = config && config.status === 'unreachable';
+  const environment = (config && config.environment) || '';
 
   function retryHealthCheck() {
     setLoading(true);

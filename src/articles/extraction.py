@@ -18,13 +18,33 @@ from bs4 import BeautifulSoup, Tag
 from markdownify import markdownify
 
 
-def extract_thumbnail_url(html: str) -> str | None:
+def parse_html(html: str) -> BeautifulSoup:
+    """Parse an HTML string into a BeautifulSoup object.
+
+    Use this to parse once at the top of a pipeline, then pass the
+    resulting soup into the extraction functions that accept
+    ``str | BeautifulSoup``.
+    """
+    return BeautifulSoup(html, "html.parser")
+
+
+def _ensure_soup(html_or_soup: str | BeautifulSoup) -> BeautifulSoup:
+    """Return a BeautifulSoup, parsing only if given a raw string."""
+    if isinstance(html_or_soup, BeautifulSoup):
+        return html_or_soup
+    return BeautifulSoup(html_or_soup, "html.parser")
+
+
+def extract_thumbnail_url(html: str | BeautifulSoup) -> str | None:
     """Extract a thumbnail URL from HTML meta tags.
 
     Checks og:image, twitter:image, and schema.org image in priority order.
     Returns the first valid URL found, or None.
+
+    Accepts a raw HTML string or a pre-parsed BeautifulSoup object to
+    avoid redundant parsing.
     """
-    soup = BeautifulSoup(html, "html.parser")
+    soup = _ensure_soup(html)
 
     for attr, value in [
         ("property", "og:image"),
@@ -40,7 +60,7 @@ def extract_thumbnail_url(html: str) -> str | None:
     return None
 
 
-def extract_canonical_url(html: str) -> str | None:
+def extract_canonical_url(html: str | BeautifulSoup) -> str | None:
     """Extract the canonical URL from an HTML document.
 
     Looks for ``<link rel="canonical" href="...">`` in the page head.
@@ -48,14 +68,14 @@ def extract_canonical_url(html: str) -> str | None:
     Parameters
     ----------
     html:
-        Raw HTML string.
+        Raw HTML string or pre-parsed BeautifulSoup object.
 
     Returns
     -------
     str or None
         The canonical URL if found, otherwise ``None``.
     """
-    soup = BeautifulSoup(html, "html.parser")
+    soup = _ensure_soup(html)
     link = soup.find("link", attrs={"rel": "canonical"})
     if link and link.get("href"):
         href = link["href"].strip()
@@ -113,14 +133,18 @@ def _text_length(tag: Tag) -> int:
     return len(tag.get_text(strip=True))
 
 
-def extract_article(html: str) -> dict:
+def extract_article(html: str | BeautifulSoup) -> dict:
     """Extract article content using BeautifulSoup heuristics.
 
     Identifies the largest content-bearing block element (``<article>``,
     ``<main>``, or highest-scoring ``<div>``/``<section>``) and returns
     its inner HTML.
+
+    Accepts a raw HTML string or a pre-parsed BeautifulSoup object.
+    Note: this function mutates the soup (decomposes junk tags), so
+    pass a copy if you need the original soup afterwards.
     """
-    soup = BeautifulSoup(html, "html.parser")
+    soup = _ensure_soup(html)
 
     # Extract fallback title from <title> tag
     fallback_title = ""
@@ -179,7 +203,9 @@ def extract_article(html: str) -> dict:
                 title = h1_text
 
     content_html = content_tag.decode_contents()
-    excerpt = _make_excerpt(content_html)
+    # Build excerpt directly from the already-parsed content tag to avoid
+    # re-parsing the HTML string.
+    excerpt = _make_excerpt_from_tag(content_tag)
 
     return {
         "title": title,
@@ -187,6 +213,20 @@ def extract_article(html: str) -> dict:
         "excerpt": excerpt,
         "byline": byline,
     }
+
+
+def _make_excerpt_from_tag(tag: Tag, max_length: int = 300) -> str:
+    """Create a plain-text excerpt from a parsed tag.
+
+    Extracts visible text and truncates to *max_length* characters at a
+    word boundary, appending an ellipsis if truncated.  Avoids an extra
+    BeautifulSoup parse by operating on the already-parsed tag.
+    """
+    text = tag.get_text(separator=" ", strip=True)
+    if len(text) <= max_length:
+        return text
+    truncated = text[:max_length].rsplit(" ", 1)[0]
+    return truncated + "..."
 
 
 def _make_excerpt(html: str, max_length: int = 300) -> str:
@@ -253,20 +293,21 @@ def _get_code_language(el: Tag) -> str:
     return ""
 
 
-def html_to_markdown(html: str) -> str:
+def html_to_markdown(html: str | BeautifulSoup) -> str:
     """Convert clean HTML to Markdown using markdownify.
 
     Parameters
     ----------
     html:
-        Clean article HTML (typically from ``extract_article``).
+        Clean article HTML string or pre-parsed BeautifulSoup object
+        (typically from ``extract_article``).
 
     Returns
     -------
     str
         Markdown representation of the HTML content.
     """
-    soup = BeautifulSoup(html, "html.parser")
+    soup = _ensure_soup(html)
     for tag in soup(["script", "style"]):
         tag.decompose()
     _unwrap_layout_tables(soup)
@@ -322,13 +363,14 @@ def calculate_reading_time(word_count: int, wpm: int = 200) -> int:
     return max(1, math.ceil(word_count / wpm))
 
 
-def rewrite_image_paths(html: str, image_map: dict[str, str]) -> str:
+def rewrite_image_paths(html: str | BeautifulSoup, image_map: dict[str, str]) -> str:
     """Replace original image URLs with local R2 paths in HTML.
 
     Parameters
     ----------
     html:
-        HTML string containing ``<img>`` tags with original URLs.
+        HTML string or pre-parsed BeautifulSoup object containing
+        ``<img>`` tags with original URLs.
     image_map:
         Mapping of original URL -> R2 key (e.g. ``articles/{id}/images/{hash}.webp``).
 
@@ -338,9 +380,9 @@ def rewrite_image_paths(html: str, image_map: dict[str, str]) -> str:
         HTML with image ``src`` attributes replaced by local R2 paths.
     """
     if not image_map:
-        return html
+        return str(html) if isinstance(html, BeautifulSoup) else html
 
-    soup = BeautifulSoup(html, "html.parser")
+    soup = _ensure_soup(html)
     for img in soup.find_all("img"):
         src = img.get("src", "")
         if src in image_map:

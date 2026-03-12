@@ -1,0 +1,43 @@
+{
+  "eval_name": "test-quality-audit",
+  "config": "without_skill",
+  "expectations": [
+    {
+      "text": "detects-weak-assertions",
+      "passed": true,
+      "evidence": "Found: no assertion, trivial, isinstance, meaningless, weak"
+    },
+    {
+      "text": "detects-flaky-patterns",
+      "passed": true,
+      "evidence": "Found: sleep, flaky, timing, time.sleep"
+    },
+    {
+      "text": "detects-test-isolation",
+      "passed": true,
+      "evidence": "Found: shared, test_jobs, isolation, mutable state, module-level"
+    },
+    {
+      "text": "detects-missing-negative-tests",
+      "passed": true,
+      "evidence": "Found: negative, error path, invalid, missing test"
+    },
+    {
+      "text": "detects-missing-endpoint-tests",
+      "passed": true,
+      "evidence": "Found: DELETE, scale, untested"
+    },
+    {
+      "text": "detects-tautological-tests",
+      "passed": true,
+      "evidence": "Found: tautol, enshrines, confirms a bug, false confidence"
+    },
+    {
+      "text": "has-bug-inventory",
+      "passed": true,
+      "evidence": "Found: bugs, caught, zero"
+    }
+  ],
+  "pass_count": 7,
+  "total_count": 7
+}

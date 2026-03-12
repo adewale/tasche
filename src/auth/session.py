@@ -32,6 +32,8 @@ async def create_session(kv: Any, user_data: dict[str, Any]) -> str:
     str
         The generated session ID (URL-safe token).
     """
+    # Session IDs use 32 bytes (43 chars) for higher entropy than entity IDs
+    # (16 bytes / 22 chars) because session tokens are security-sensitive.
     session_id = secrets.token_urlsafe(32)
     key = f"{SESSION_PREFIX}{session_id}"
     await kv.put(key, json.dumps(user_data), expirationTtl=SESSION_TTL)
@@ -77,9 +79,11 @@ async def refresh_session(kv: Any, session_id: str, user_data: dict[str, Any]) -
     if now - last_refreshed < _REFRESH_INTERVAL:
         return
 
-    user_data["refreshed_at"] = now
+    # Create a copy to avoid mutating the caller's dict (which may be
+    # reused across middleware/handlers in the same request).
+    updated = {**user_data, "refreshed_at": now}
     key = f"{SESSION_PREFIX}{session_id}"
-    await kv.put(key, json.dumps(user_data), expirationTtl=SESSION_TTL)
+    await kv.put(key, json.dumps(updated), expirationTtl=SESSION_TTL)
 
 
 async def delete_session(kv: Any, session_id: str) -> None:

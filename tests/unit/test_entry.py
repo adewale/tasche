@@ -419,6 +419,9 @@ class TestConfigCheck:
 
         from entry import app
 
+        # Enable dev auth so the config endpoint is accessible
+        env.DISABLE_AUTH = "true"
+
         # Clone the app's routes into a test app with env injection
         test_app = FastAPI()
 

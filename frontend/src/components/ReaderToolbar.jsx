@@ -2,7 +2,7 @@ import { readerPrefs, updatePref } from '../readerPrefs.js';
 import { audioState } from './AudioPlayer.jsx';
 
 function SegmentedControl({ label, prefKey, options }) {
-  var current = readerPrefs.value[prefKey];
+  const current = readerPrefs.value[prefKey];
   return (
     <div class="reader-toolbar-group">
       <span class="reader-toolbar-label">{label}</span>
