@@ -16,34 +16,42 @@ On desktop, the hamburger is fine — cursor travel is cheap and screen real est
 
 ## Research: What Similar Apps Do
 
-### Pocket
+### Pocket (shut down July 2025)
 
-Bottom tab bar with a creative twist: tapping the active Home tab reveals a secondary menu that lets users switch scope (e.g., Home → Archive). The tab icon updates to reflect the current scope. This packs multiple views into fewer tabs without visual clutter.
+Bottom tab bar with a creative twist: tapping the active Home tab a second time revealed a secondary menu that let users switch scope (e.g., Home → Archive). The tab icon updated to reflect the current scope. This packed multiple views into fewer tabs without visual clutter.
 
-**Tabs:** Home (with scope switcher), Search, Save (FAB-style), Discover, Profile
+**Tabs (post-2023 redesign):** Home (with scope switcher), Saves. Reduced from earlier designs that included Recommended, Notifications, Profile. **Tab count: 2–3.**
 
 ### Readwise Reader
 
-Bottom nav bar with **Views**, **Search**, and **Account** tabs. In "long-form reading view," the bottom bar hides entirely to maximize reading space — a pattern directly relevant to Tasche's reader mode.
+Bottom nav bar with **Home**, **Views**, **Search**, and **Account** tabs. In "long-form reading view," the bottom bar hides entirely to maximize reading space — a pattern directly relevant to Tasche's reader mode. **Tab count: 4.**
 
 ### Instapaper
 
-Minimal bottom tab bar: **Home**, **Liked**, **Archive**, **Search**, **Settings**. Five tabs, all flat. No clever tricks — just straightforward section switching.
+Does **not** use bottom tabs. Uses a **sidebar/drawer** navigation pattern instead — a slide-out panel containing Unread, Archive, Folders, Liked, Notes. Minimalist, reading-focused philosophy with fewer chrome elements on screen.
+
+### Matter
+
+Bottom tab bar: **Queue** (primary, ~80% of user time), **Subscriptions** (newsletters, RSS), **Discover** (curated picks). Double-tapping a tab icon switches between sub-views within that tab. **Tab count: 3.**
+
+### Omnivore (deprecated Nov 2024)
+
+No bottom tab bar. Centered on a **single Library view with filters** (Read Later, Highlights, Today, Newsletters) plus Labels. Essentially a single-screen app with filtering rather than section switching — similar to Tasche's current approach.
 
 ### Wallabag (self-hosted)
 
-Web UI has no bottom nav. The Android app uses a standard hamburger/drawer pattern. UX is generally described as "rough around the edges." Wallabag demonstrates the cost of not investing in mobile navigation — it works, but doesn't feel native.
+No bottom nav on web or mobile. Uses a **sidebar/drawer** pattern. UX is generally described as "rough around the edges." Wallabag demonstrates the cost of not investing in mobile navigation — it works, but doesn't feel native.
 
 ### Common Patterns
 
-| Pattern | Pocket | Readwise | Instapaper |
-|---------|--------|----------|------------|
-| Bottom nav? | Yes | Yes | Yes |
-| Tab count | 5 | 3–4 | 5 |
-| Hides in reader? | Yes | Yes | Yes |
-| Search as tab? | Yes | Yes | Yes |
+| Pattern | Pocket | Readwise | Matter | Instapaper | Omnivore | Wallabag |
+|---------|--------|----------|--------|------------|----------|----------|
+| Bottom nav? | Yes | Yes | Yes | No (drawer) | No (filters) | No (drawer) |
+| Tab count | 2–3 | 4 | 3 | — | — | — |
+| Hides in reader? | Yes | Yes | Yes | — | — | — |
+| Search as tab? | No | Yes | No | — | — | — |
 
-**Universal:** Every modern read-it-later app with a native-feel mobile experience uses bottom navigation. Every one hides it during immersive reading.
+**Takeaway:** The apps split between bottom tabs (Pocket, Readwise, Matter) and drawer/filter patterns (Instapaper, Omnivore, Wallabag). The more polished, native-feeling apps use bottom tabs. The apps that feel dated or "rough" use drawers. All apps that use bottom tabs hide them during immersive reading.
 
 ---
 
@@ -63,7 +71,7 @@ Web UI has no bottom nav. The Android app uses a standard hamburger/drawer patte
 
 | Concern | Mitigation |
 |---------|------------|
-| Screen real estate is precious for reading | Hide bottom nav in reader view (same as Pocket, Readwise, Instapaper) |
+| Screen real estate is precious for reading | Hide bottom nav in reader view (same as Pocket, Readwise Reader, Matter) |
 | Conflicts with AudioPlayer fixed at bottom | AudioPlayer renders above the nav bar; both are fixed-position |
 | Adds visual weight to minimal aesthetic | Use the existing data-ink design language: no gradients, 1px top border, muted icons, small text labels |
 | Desktop doesn't need it | Only render below 640px breakpoint; desktop keeps the hamburger |
