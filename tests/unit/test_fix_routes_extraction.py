@@ -244,13 +244,6 @@ class TestProcessNowErrorMessage:
 
         client, _ = await _authenticated_client(env)
 
-        # Mock process_article to raise with a sensitive message
-        with patch(
-            "src.articles.routes.process_now.__module__",
-            new="src.articles.routes",
-        ):
-            pass  # Just need the import to work
-
         secret_message = "Database password is hunter2"
 
         async def _boom(*args: Any, **kwargs: Any) -> None:
@@ -265,10 +258,11 @@ class TestProcessNowErrorMessage:
                 resp = client.post("/api/articles/art_pn/process-now")
 
         assert resp.status_code == 200
-        data = resp.json()
-        if data.get("result") == "error":
-            assert secret_message not in data.get("error", "")
-            assert data["error"] == "An internal error occurred during processing"
+        # The secret message must never appear in the response, regardless of result
+        response_text = resp.text
+        assert secret_message not in response_text, (
+            "Internal exception details leaked in response"
+        )
 
 
 # =========================================================================

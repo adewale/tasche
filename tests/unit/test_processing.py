@@ -46,7 +46,7 @@ class TestProcessArticleHappyPath:
         ready_updates = [
             (sql, params)
             for sql, params in db.executed
-            if "status" in sql and "'ready'" not in sql and "ready" in str(params)
+            if "status" in sql and "'ready'" not in sql and "ready" in params
         ]
         assert len(ready_updates) >= 1
         last_sql, last_params = ready_updates[-1]

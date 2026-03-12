@@ -7,6 +7,7 @@ body.to_py() conversion) and SPA fallback routing logic.
 from __future__ import annotations
 
 import json
+import sys
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -268,10 +269,8 @@ class TestQueueBodyConversion:
 
 
 class TestSPAFallbackRouting:
-    async def test_api_routes_go_to_fastapi(self) -> None:
+    async def test_api_routes_go_to_fastapi(self, monkeypatch) -> None:
         """Requests to /api/* are handled by the FastAPI ASGI app."""
-        import sys
-
         from entry import Default
 
         worker = Default()
@@ -294,26 +293,17 @@ class TestSPAFallbackRouting:
 
         mock_js = MagicMock(URL=mock_URL_cls, Request=mock_Request_cls)
 
-        # Temporarily inject the mock js module so `from js import URL` works
-        old_js = sys.modules.get("js")
-        sys.modules["js"] = mock_js
-        try:
-            with patch("entry.asgi") as mock_asgi:
-                mock_asgi.fetch = AsyncMock(return_value=mock_response)
-                result = await worker.fetch(mock_request)
+        monkeypatch.setitem(sys.modules, "js", mock_js)
 
-            mock_asgi.fetch.assert_called_once()
-            assert result == mock_response
-        finally:
-            if old_js is None:
-                sys.modules.pop("js", None)
-            else:
-                sys.modules["js"] = old_js
+        with patch("entry.asgi") as mock_asgi:
+            mock_asgi.fetch = AsyncMock(return_value=mock_response)
+            result = await worker.fetch(mock_request)
 
-    async def test_non_api_routes_go_to_assets(self) -> None:
+        mock_asgi.fetch.assert_called_once()
+        assert result == mock_response
+
+    async def test_non_api_routes_go_to_assets(self, monkeypatch) -> None:
         """Non-/api/ requests are served from the ASSETS binding."""
-        import sys
-
         from entry import Default
 
         worker = Default()
@@ -339,23 +329,15 @@ class TestSPAFallbackRouting:
 
         mock_js = MagicMock(URL=mock_URL_cls, Request=mock_Request_cls)
 
-        old_js = sys.modules.get("js")
-        sys.modules["js"] = mock_js
-        try:
-            result = await worker.fetch(mock_request)
-        finally:
-            if old_js is None:
-                sys.modules.pop("js", None)
-            else:
-                sys.modules["js"] = old_js
+        monkeypatch.setitem(sys.modules, "js", mock_js)
+
+        result = await worker.fetch(mock_request)
 
         mock_assets.fetch.assert_called_once_with(mock_request.js_object)
         assert result == asset_response
 
-    async def test_404_falls_back_to_index_html(self) -> None:
+    async def test_404_falls_back_to_index_html(self, monkeypatch) -> None:
         """When ASSETS returns 404, the SPA fallback serves /index.html."""
-        import sys
-
         from entry import Default
 
         worker = Default()
@@ -390,15 +372,9 @@ class TestSPAFallbackRouting:
 
         mock_js = MagicMock(URL=mock_URL_cls, Request=mock_Request_cls)
 
-        old_js = sys.modules.get("js")
-        sys.modules["js"] = mock_js
-        try:
-            result = await worker.fetch(mock_request)
-        finally:
-            if old_js is None:
-                sys.modules.pop("js", None)
-            else:
-                sys.modules["js"] = old_js
+        monkeypatch.setitem(sys.modules, "js", mock_js)
+
+        result = await worker.fetch(mock_request)
 
         # Second call should be the index.html fallback
         assert mock_assets.fetch.call_count == 2

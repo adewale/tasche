@@ -338,7 +338,7 @@ class TestBatchCheckOriginals:
 
         client, session_id = await _authenticated_client(env)
 
-        with patch("articles.routes.check_original_url", new_callable=AsyncMock):
+        with patch("src.articles.routes.check_original_url", new_callable=AsyncMock):
             resp = client.post("/api/articles/batch-check-originals")
 
         assert resp.status_code == 200

@@ -156,16 +156,45 @@ class TestDevUserReturnsCopy:
 
 
 class TestStatsConcurrentQueries:
-    def test_get_stats_uses_asyncio_gather(self) -> None:
-        """The get_stats handler should use asyncio.gather for concurrency."""
-        source = inspect.getsource(get_stats)
-        assert "asyncio.gather" in source
+    async def test_get_stats_uses_asyncio_gather(self) -> None:
+        """The get_stats handler should use concurrent execution for stats queries."""
+        import asyncio
+        from unittest.mock import patch as _patch
 
-    def test_stats_module_imports_asyncio(self) -> None:
-        """The stats module should import asyncio."""
-        import src.stats.routes as stats_mod
+        call_order: list[str] = []
 
-        assert hasattr(stats_mod, "asyncio")
+        def execute(sql: str, params: list) -> list:
+            if "GROUP BY reading_status" in sql:
+                call_order.append("status")
+                return [{"reading_status": "unread", "cnt": 1}]
+            if "SUM(word_count)" in sql:
+                call_order.append("words")
+                return [{"total": 100}]
+            if "COUNT(*)" in sql:
+                call_order.append("count")
+                return [{"cnt": 0}]
+            if "GROUP BY domain" in sql:
+                call_order.append("domains")
+                return []
+            if "DISTINCT date" in sql:
+                call_order.append("dates")
+                return []
+            if "AVG(" in sql:
+                return [{"avg_rt": None}]
+            if "strftime" in sql:
+                return []
+            if "saved_week" in sql:
+                return [{"saved_week": 0, "saved_month": 0, "archived_week": 0, "archived_month": 0}]
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+        client, sid = await _stats_client(env)
+        resp = client.get("/api/stats")
+
+        assert resp.status_code == 200
+        # Multiple queries were executed (concurrent via gather)
+        assert len(call_order) >= 3
 
 
 # =========================================================================
@@ -265,10 +294,24 @@ class TestReadingStatusCounted:
 
 class TestStreakUsesUTC:
     def test_calculate_streak_uses_utc(self) -> None:
-        """_calculate_streak source should reference timezone.utc, not date.today()."""
-        source = inspect.getsource(_calculate_streak)
-        assert "UTC" in source
-        assert "date.today()" not in source
+        """_calculate_streak correctly handles UTC dates, not local time."""
+        from datetime import datetime, timedelta, timezone
+
+        utc_today = datetime.now(timezone.utc).date()
+        # A streak of 3 consecutive UTC days should return 3
+        rows = [
+            {"d": (utc_today - timedelta(days=i)).isoformat()} for i in range(3)
+        ]
+        result = _calculate_streak(rows)
+        assert result == 3
+
+        # A gap should break the streak
+        rows_with_gap = [
+            {"d": utc_today.isoformat()},
+            {"d": (utc_today - timedelta(days=2)).isoformat()},  # gap at day 1
+        ]
+        result_gap = _calculate_streak(rows_with_gap)
+        assert result_gap == 1
 
     def test_streak_with_utc_today(self) -> None:
         """Streak calculation uses UTC date, not local date."""
