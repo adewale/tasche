@@ -71,7 +71,9 @@ class TestWideEvent:
         evt = WideEvent("test")
         data = evt.finalize()
 
-        assert "T" in data["timestamp"]
+        from datetime import datetime
+
+        datetime.fromisoformat(data["timestamp"])
 
 
 # =========================================================================

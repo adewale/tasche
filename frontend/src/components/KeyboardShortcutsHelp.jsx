@@ -1,7 +1,7 @@
 import { useEffect } from 'preact/hooks';
 import { IconX } from './Icons.jsx';
 
-var LIBRARY_SHORTCUTS = [
+const LIBRARY_SHORTCUTS = [
   { keys: ['j'], description: 'Move selection down' },
   { keys: ['k'], description: 'Move selection up' },
   { keys: ['o', 'Enter'], description: 'Open selected article' },
@@ -13,7 +13,7 @@ var LIBRARY_SHORTCUTS = [
   { keys: ['?'], description: 'Show / hide this help' },
 ];
 
-var READER_SHORTCUTS = [
+const READER_SHORTCUTS = [
   { keys: ['Esc', 'h'], description: 'Back to library' },
   { keys: ['a'], description: 'Archive / unarchive article' },
   { keys: ['s'], description: 'Toggle favourite' },

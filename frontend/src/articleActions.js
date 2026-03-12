@@ -22,7 +22,7 @@ export async function optimisticUpdate(articleId, updates, successMsg) {
 }
 
 export function toggleArchive(article) {
-  var newStatus = article.reading_status === 'archived' ? 'unread' : 'archived';
+  const newStatus = article.reading_status === 'archived' ? 'unread' : 'archived';
   return optimisticUpdate(
     article.id,
     { reading_status: newStatus },
@@ -31,7 +31,7 @@ export function toggleArchive(article) {
 }
 
 export function toggleFavorite(article) {
-  var newFav = !article.is_favorite;
+  const newFav = !article.is_favorite;
   return optimisticUpdate(article.id, { is_favorite: newFav ? 1 : 0 });
 }
 

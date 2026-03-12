@@ -71,7 +71,7 @@ class ObservabilityMiddleware:
             event.set("status_code", 500)
             event.set("outcome", "error")
             event.set("error.type", type(exc).__name__)
-            event.set("error.message", str(exc))
+            event.set("error.message", str(exc)[:1000])
             raise
         finally:
             # Extract user ID from request state (set by get_current_user dependency)

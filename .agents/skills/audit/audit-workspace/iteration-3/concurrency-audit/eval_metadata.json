@@ -1,0 +1,13 @@
+{
+  "eval_id": 4,
+  "eval_name": "concurrency-audit",
+  "prompt": "run a concurrency audit on this project — we've been seeing intermittent failures in production and i suspect there are threading bugs. the project is in /Users/ade/Documents/projects/audit-skill/audit-workspace/test-repo-deepdive",
+  "assertions": [
+    {"name": "detects-shared-mutable-state", "type": "contains_any", "values": ["active_jobs", "job_counter", "worker_stats", "shared", "global"]},
+    {"name": "detects-race-condition", "type": "contains_any", "values": ["race", "TOCTOU", "check-then-act", "non-atomic", "without lock"]},
+    {"name": "detects-deadlock-risk", "type": "contains_any", "values": ["deadlock", "lock order", "stats_lock", "jobs_lock"]},
+    {"name": "detects-thread-leak", "type": "contains_any", "values": ["join", "leak", "never stopped", "fire-and-forget", "daemon"]},
+    {"name": "detects-queue-race", "type": "contains_any", "values": ["_queue", "pop", "append", "list", "thread-safe"]},
+    {"name": "produces-report-file", "type": "file_exists", "values": ["audit_report.md"]}
+  ]
+}

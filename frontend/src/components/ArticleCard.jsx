@@ -28,6 +28,7 @@ import {
 import { InkFavicon } from './InkFavicon.jsx';
 import { InkWashThumbnail } from './InkWashThumbnail.jsx';
 import { useSWMessage } from '../hooks/useSWMessage.js';
+import { getAudioStatusFlags } from '../utils/audioStatus.js';
 
 const tagCache = new Map();
 
@@ -190,19 +191,15 @@ export function ArticleCard({ article, selectMode, selected, onToggleSelect, act
     nav.tagFilter(tagId);
   }
 
-  var audioStatus = a.audio_status;
-  var hasAudio = audioStatus === 'ready';
-  var audioPending = audioStatus === 'pending';
-  var audioStuck = audioStatus === 'generating';
-  var audioFailed = audioStatus === 'failed';
-  var canRequestAudio = !hasAudio && !audioPending && !audioStuck && !audioFailed;
-  var isArchived = a.reading_status === 'archived';
-  var isThisPlaying = audioState.value.articleId === a.id && audioState.value.isPlaying;
+  const { hasAudio, audioPending, audioStuck, audioFailed, canRequestAudio } =
+    getAudioStatusFlags(a);
+  const isArchived = a.reading_status === 'archived';
+  const isThisPlaying = audioState.value.articleId === a.id && audioState.value.isPlaying;
 
-  var thumbnailSrc = a.thumbnail_key ? '/api/articles/' + a.id + '/thumbnail' : null;
-  var hasThumbnail = !!thumbnailSrc;
+  const thumbnailSrc = a.thumbnail_key ? '/api/articles/' + a.id + '/thumbnail' : null;
+  const hasThumbnail = !!thumbnailSrc;
 
-  var cardClass = 'article-card';
+  let cardClass = 'article-card';
   if (!hasThumbnail) cardClass += ' article-card--compact';
   if (isProcessing) cardClass += ' article-card--processing';
   if (selectMode) cardClass += ' article-card--selectable';
@@ -253,11 +250,11 @@ export function ArticleCard({ article, selectMode, selected, onToggleSelect, act
               })
               .slice(0, 3)
               .map(function (tag) {
-                var chipClass = 'tag-chip';
+                let chipClass = 'tag-chip';
                 if (activeTagIds && activeTagIds.has(tag.id)) chipClass += ' tag-chip--highlighted';
-                var currentP = parseLibraryParams(window.location.hash);
-                var currentTags = currentP.tags;
-                var chipHref =
+                const currentP = parseLibraryParams(window.location.hash);
+                const currentTags = currentP.tags;
+                const chipHref =
                   currentTags.indexOf(tag.id) >= 0
                     ? buildLibraryHash({
                         tags: currentTags.filter(function (t) {

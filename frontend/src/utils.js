@@ -40,7 +40,7 @@ export function formatTime(seconds) {
 }
 
 export function getBookmarkletCode() {
-  var origin = window.location.origin;
+  const origin = window.location.origin;
   return (
     "javascript:void(open('" +
     origin +

@@ -254,6 +254,9 @@ class TestBatchDeleteCleanup:
         delete_sqls: list[str] = []
 
         def execute(sql: str, params: list) -> list:
+            if "SELECT id FROM articles" in sql and "IN" in sql:
+                # Batch ownership check
+                return [{"id": p} for p in params if p == "del_test"]
             if "SELECT id FROM articles WHERE id = ?" in sql:
                 if params[0] == "del_test":
                     return [{"id": "del_test"}]

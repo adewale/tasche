@@ -479,3 +479,40 @@ class TestSanitizeFts5Query:
 
     def test_mixed_case_preserved(self) -> None:
         assert _sanitize_fts5_query("CloudFlare") == '"CloudFlare"'
+
+
+# ---------------------------------------------------------------------------
+# Negative test cases — SQL injection via search query
+# ---------------------------------------------------------------------------
+
+
+class TestSearchSqlInjection:
+    async def test_sql_injection_in_query_does_not_crash(self) -> None:
+        """GET /api/articles?q=<sql injection> returns 200 without error."""
+        db = TrackingD1(result_fn=lambda sql, params: [])
+        env = MockEnv(db=db)
+        client, _ = await _authenticated_client(env)
+
+        # Attempt SQL injection via the search query parameter
+        resp = client.get("/api/articles?q='; DROP TABLE articles; --")
+
+        assert resp.status_code == 200
+
+    async def test_fts5_special_chars_injection(self) -> None:
+        """GET /api/articles?q=<fts5 operators> does not cause FTS5 syntax error."""
+        db = TrackingD1(result_fn=lambda sql, params: [])
+        env = MockEnv(db=db)
+        client, _ = await _authenticated_client(env)
+
+        # FTS5 special characters that could cause syntax errors
+        resp = client.get("/api/articles?q=* OR 1=1 --")
+
+        assert resp.status_code == 200
+
+    async def test_sanitizer_neutralizes_sql_injection(self) -> None:
+        """_sanitize_fts5_query wraps injection attempts in quotes."""
+        result = _sanitize_fts5_query("'; DROP TABLE articles; --")
+        # Dangerous keywords should be quoted, not left as bare FTS5 operators
+        assert "DROP" not in result or '"DROP"' in result
+        # The result should not contain unquoted SQL operators
+        assert "TABLE" not in result or '"TABLE"' in result

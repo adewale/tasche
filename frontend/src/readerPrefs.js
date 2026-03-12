@@ -9,9 +9,9 @@
 
 import { signal, effect } from '@preact/signals';
 
-var STORAGE_KEY = 'tasche-reader-prefs';
+const STORAGE_KEY = 'tasche-reader-prefs';
 
-var DEFAULTS = {
+const DEFAULTS = {
   fontSize: 'medium',
   lineHeight: 'comfortable',
   contentWidth: 'medium',
@@ -23,9 +23,9 @@ var DEFAULTS = {
 
 function loadPrefs() {
   try {
-    var stored = localStorage.getItem(STORAGE_KEY);
+    const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
-      var parsed = JSON.parse(stored);
+      const parsed = JSON.parse(stored);
       return Object.assign({}, DEFAULTS, parsed);
     }
   } catch (_e) {
@@ -34,7 +34,7 @@ function loadPrefs() {
   return Object.assign({}, DEFAULTS);
 }
 
-export var readerPrefs = signal(loadPrefs());
+export const readerPrefs = signal(loadPrefs());
 
 // Auto-persist on change
 effect(function () {
@@ -46,13 +46,13 @@ effect(function () {
 });
 
 export function updatePref(key, value) {
-  var next = Object.assign({}, readerPrefs.value);
+  const next = Object.assign({}, readerPrefs.value);
   next[key] = value;
   readerPrefs.value = next;
 }
 
 // Maps preference values to CSS custom property values
-var PREF_VALUES = {
+const PREF_VALUES = {
   fontSize: {
     small: { '--reader-font-size': '1.0625rem', '--reader-font-size-desktop': '1.125rem' },
     medium: { '--reader-font-size': '1.1875rem', '--reader-font-size-desktop': '1.25rem' },
@@ -78,9 +78,9 @@ var PREF_VALUES = {
 };
 
 export function getReaderStyle(prefs) {
-  var style = {};
-  for (var key in prefs) {
-    var mapping = PREF_VALUES[key];
+  const style = {};
+  for (const key in prefs) {
+    const mapping = PREF_VALUES[key];
     if (mapping && mapping[prefs[key]]) {
       Object.assign(style, mapping[prefs[key]]);
     }

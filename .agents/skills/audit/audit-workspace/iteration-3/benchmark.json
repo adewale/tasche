@@ -1,0 +1,189 @@
+{
+  "metadata": {
+    "skill_name": "audit",
+    "skill_path": "/Users/ade/Documents/projects/audit-skill/SKILL.md",
+    "executor_model": "claude-opus-4-6",
+    "timestamp": "2026-03-08T00:00:00Z",
+    "evals_run": [4, 5, 6],
+    "runs_per_configuration": 1
+  },
+  "runs": [
+    {
+      "eval_id": 4,
+      "eval_name": "concurrency-audit",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 7,
+        "failed": 0,
+        "total": 7,
+        "time_seconds": 140.2,
+        "tokens": 32060,
+        "tool_calls": 16,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "detects-shared-mutable-state", "passed": true, "evidence": "Found: active_jobs, job_counter, worker_stats, shared, global"},
+        {"text": "detects-race-condition", "passed": true, "evidence": "Found: race, TOCTOU, check-then-act, non-atomic, without lock"},
+        {"text": "detects-deadlock-risk", "passed": true, "evidence": "Found: deadlock, lock order, stats_lock, jobs_lock"},
+        {"text": "detects-thread-leak", "passed": true, "evidence": "Found: thread leak, never joined, scale-down, daemon"},
+        {"text": "detects-queue-race", "passed": true, "evidence": "Found: _queue, pop, IndexError, thread-safe"},
+        {"text": "has-severity-ratings", "passed": true, "evidence": "Found: Critical, High, Medium, Severity"},
+        {"text": "has-fix-recommendations", "passed": true, "evidence": "Found: Fix:, Replace, queue.Queue"}
+      ]
+    },
+    {
+      "eval_id": 4,
+      "eval_name": "concurrency-audit",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 7,
+        "failed": 0,
+        "total": 7,
+        "time_seconds": 146.2,
+        "tokens": 23936,
+        "tool_calls": 15,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "detects-shared-mutable-state", "passed": true, "evidence": "Found: active_jobs, job_counter, worker_stats, shared, global"},
+        {"text": "detects-race-condition", "passed": true, "evidence": "Found: race, TOCTOU, check-then-act, non-atomic, without lock"},
+        {"text": "detects-deadlock-risk", "passed": true, "evidence": "Found: deadlock, lock order, stats_lock, jobs_lock"},
+        {"text": "detects-thread-leak", "passed": true, "evidence": "Found: thread leak, scale-down, daemon"},
+        {"text": "detects-queue-race", "passed": true, "evidence": "Found: _queue, pop, IndexError, thread-safe"},
+        {"text": "has-severity-ratings", "passed": true, "evidence": "Found: Critical, High, Medium, Severity"},
+        {"text": "has-fix-recommendations", "passed": true, "evidence": "Found: Fix:, Replace, queue.Queue"}
+      ]
+    },
+    {
+      "eval_id": 5,
+      "eval_name": "test-quality-audit",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 7,
+        "failed": 0,
+        "total": 7,
+        "time_seconds": 129.2,
+        "tokens": 30983,
+        "tool_calls": 16,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "detects-weak-assertions", "passed": true, "evidence": "Found: no assertion, trivial, isinstance, meaningless, weak"},
+        {"text": "detects-flaky-patterns", "passed": true, "evidence": "Found: sleep, flaky, timing, time.sleep"},
+        {"text": "detects-test-isolation", "passed": true, "evidence": "Found: shared, test_jobs, isolation, mutable state, module-level"},
+        {"text": "detects-missing-negative-tests", "passed": true, "evidence": "Found: negative, error path, invalid"},
+        {"text": "detects-missing-endpoint-tests", "passed": true, "evidence": "Found: DELETE, scale, untested"},
+        {"text": "detects-tautological-tests", "passed": true, "evidence": "Found: tautol, both outcomes, false confidence"},
+        {"text": "has-bug-inventory", "passed": true, "evidence": "Found: bugs, caught, 0 caught, zero"}
+      ]
+    },
+    {
+      "eval_id": 5,
+      "eval_name": "test-quality-audit",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 7,
+        "failed": 0,
+        "total": 7,
+        "time_seconds": 129.7,
+        "tokens": 24295,
+        "tool_calls": 15,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "detects-weak-assertions", "passed": true, "evidence": "Found: no assertion, trivial, isinstance, meaningless, weak"},
+        {"text": "detects-flaky-patterns", "passed": true, "evidence": "Found: sleep, flaky, timing, time.sleep"},
+        {"text": "detects-test-isolation", "passed": true, "evidence": "Found: shared, test_jobs, isolation, mutable state, module-level"},
+        {"text": "detects-missing-negative-tests", "passed": true, "evidence": "Found: negative, error path, invalid, missing test"},
+        {"text": "detects-missing-endpoint-tests", "passed": true, "evidence": "Found: DELETE, scale, untested"},
+        {"text": "detects-tautological-tests", "passed": true, "evidence": "Found: tautol, enshrines, confirms a bug, false confidence"},
+        {"text": "has-bug-inventory", "passed": true, "evidence": "Found: bugs, caught, zero"}
+      ]
+    },
+    {
+      "eval_id": 6,
+      "eval_name": "performance-audit",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 7,
+        "failed": 0,
+        "total": 7,
+        "time_seconds": 122.7,
+        "tokens": 31106,
+        "tool_calls": 15,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "detects-n-plus-1", "passed": true, "evidence": "Found: N+1, per-item, batch, _fetch_item_details"},
+        {"text": "detects-unbounded-cache", "passed": true, "evidence": "Found: unbounded, _cache, eviction, OOM"},
+        {"text": "detects-repeated-config-read", "passed": true, "evidence": "Found: get_config, re-read, every request, every call, config"},
+        {"text": "detects-string-concat-in-loop", "passed": true, "evidence": "Found: concatenat, quadratic, log_msg, O(n"},
+        {"text": "detects-regex-recompilation", "passed": true, "evidence": "Found: re.compile, regex, compiled, every call"},
+        {"text": "detects-file-handle-leak", "passed": true, "evidence": "Found: file handle, file descriptor, never closed, open("},
+        {"text": "has-impact-analysis", "passed": true, "evidence": "Found: Impact:, Latency, Memory, Throughput"}
+      ]
+    },
+    {
+      "eval_id": 6,
+      "eval_name": "performance-audit",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 7,
+        "failed": 0,
+        "total": 7,
+        "time_seconds": 123.6,
+        "tokens": 24426,
+        "tool_calls": 14,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "detects-n-plus-1", "passed": true, "evidence": "Found: N+1, per-item, batch, _fetch_item_details"},
+        {"text": "detects-unbounded-cache", "passed": true, "evidence": "Found: unbounded, _cache, eviction, OOM"},
+        {"text": "detects-repeated-config-read", "passed": true, "evidence": "Found: get_config, re-read, every request, every call, config"},
+        {"text": "detects-string-concat-in-loop", "passed": true, "evidence": "Found: concatenat, quadratic, log_msg, O(n"},
+        {"text": "detects-regex-recompilation", "passed": true, "evidence": "Found: re.compile, regex, compiled, every call"},
+        {"text": "detects-file-handle-leak", "passed": true, "evidence": "Found: file handle, file descriptor, never closed, open("},
+        {"text": "has-impact-analysis", "passed": true, "evidence": "Found: Impact:, Latency, Memory"}
+      ]
+    }
+  ],
+  "run_summary": {
+    "with_skill": {
+      "pass_rate": {"mean": 1.0, "stddev": 0.0, "min": 1.0, "max": 1.0},
+      "time_seconds": {"mean": 130.7, "stddev": 7.2, "min": 122.7, "max": 140.2},
+      "tokens": {"mean": 31383, "stddev": 497, "min": 30983, "max": 32060}
+    },
+    "without_skill": {
+      "pass_rate": {"mean": 1.0, "stddev": 0.0, "min": 1.0, "max": 1.0},
+      "time_seconds": {"mean": 133.2, "stddev": 9.8, "min": 123.6, "max": 146.2},
+      "tokens": {"mean": 24219, "stddev": 200, "min": 23936, "max": 24426}
+    },
+    "delta": {
+      "pass_rate": "+0.00",
+      "time_seconds": "-2.5",
+      "tokens": "+7164"
+    }
+  },
+  "notes": [
+    "All assertions pass 100% for BOTH configurations — the assertions are non-discriminating for deep-dive audits",
+    "Claude detects all planted issues equally well with or without the skill — detection is not the differentiator",
+    "With-skill reports use ~7K more tokens (31K vs 24K) — the skill encourages more thorough, structured output",
+    "With-skill runs were slightly faster (-2.5s) despite more tokens — within noise for single runs",
+    "The skill's value for deep-dive audits is qualitative: consistent report structure, severity ratings, organized findings, and actionable recommendations",
+    "Both configurations exceeded expectations — all planted issues were detected by both",
+    "The with-skill concurrency report had 12 findings with a summary table; without-skill had 7 critical + 5 high + 4 medium + 3 low (19 total) — different organization but similar coverage",
+    "Key qualitative difference: with-skill reports tend to follow the checklist structure from SKILL.md more consistently"
+  ]
+}

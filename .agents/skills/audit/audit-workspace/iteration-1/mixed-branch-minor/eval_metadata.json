@@ -1,0 +1,11 @@
+{
+  "eval_id": 3,
+  "eval_name": "mixed-branch-minor",
+  "prompt": "can you check what I'm about to push? want to make sure nothing weird is in there",
+  "assertions": [
+    {"name": "verdict-is-minor", "description": "Report gives a Minor verdict"},
+    {"name": "detects-todo-comments", "description": "Report flags TODO/FIXME comments"},
+    {"name": "detects-skipped-test", "description": "Report flags the skipped pytest test"},
+    {"name": "detects-fixup-commit", "description": "Report flags the fixup commit that should be squashed"}
+  ]
+}

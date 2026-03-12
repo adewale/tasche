@@ -164,7 +164,7 @@ def get_r2_size(r2_obj: Any) -> int | None:
     ``undefined`` / ``null``.
     """
     size = getattr(r2_obj, "size", None)
-    if size is None or _is_js_null_or_undefined(size):
+    if size is None or is_js_null(size):
         return None
     return int(size)
 
@@ -225,7 +225,7 @@ def _to_py_safe(value: Any, depth: int = 0) -> Any:
         return value
 
     # Check for JS null and undefined
-    if _is_js_null_or_undefined(value):
+    if is_js_null(value):
         return None
 
     # JsProxy objects need conversion
@@ -296,8 +296,12 @@ def to_py_bytes(value: Any) -> bytes:
 # ---------------------------------------------------------------------------
 
 
-def _is_js_null_or_undefined(value: Any) -> bool:
+def is_js_null(value: Any) -> bool:
     """Return ``True`` if *value* represents JavaScript ``null`` or ``undefined``.
+
+    This is the **single canonical check** for JS nullish values.  All code
+    that needs to detect JS ``null`` / ``undefined`` should call this function
+    rather than checking ``type(value).__name__`` or other ad-hoc patterns.
 
     In Pyodide, ``undefined`` is a singleton on the ``js`` module, and
     ``null`` is a ``JsNull`` type that is **not** Python ``None``.
@@ -318,6 +322,10 @@ def _is_js_null_or_undefined(value: Any) -> bool:
         return True
 
     return False
+
+
+# Backward-compatible alias for code that imported the private name.
+_is_js_null_or_undefined = is_js_null
 
 
 def _is_js_undefined(value: Any) -> bool:
@@ -475,7 +483,7 @@ class SafeR2:
         t0 = time.monotonic()
         try:
             result = await self._r2.get(key)
-            if result is None or _is_js_null_or_undefined(result):
+            if result is None or is_js_null(result):
                 return None
             return result
         finally:
@@ -512,7 +520,7 @@ class SafeKV:
         t0 = time.monotonic()
         try:
             result = await self._kv.get(key, **kwargs)
-            if result is None or _is_js_null_or_undefined(result):
+            if result is None or is_js_null(result):
                 return None
             return result
         finally:
@@ -565,7 +573,7 @@ class SafeAI:
             if isinstance(inputs, dict):
                 inputs = _to_js_value(inputs)
             result = await self._ai.run(model, inputs, **kwargs)
-            if result is None or _is_js_null_or_undefined(result):
+            if result is None or is_js_null(result):
                 return None
             return result
         finally:
@@ -684,7 +692,7 @@ def d1_rows(results: Any) -> list[dict[str, Any]]:
     Outside Pyodide (in tests), *results* is expected to be a dict-like object
     with a ``"results"`` key containing a list of dicts already.
     """
-    if results is None or _is_js_null_or_undefined(results):
+    if results is None or is_js_null(results):
         return []
 
     if HAS_PYODIDE:
@@ -718,7 +726,7 @@ def d1_first(results: Any) -> dict[str, Any] | None:
     Outside Pyodide (in tests), *results* is expected to already be a dict
     or ``None``.
     """
-    if results is None or _is_js_null_or_undefined(results):
+    if results is None or is_js_null(results):
         return None
 
     if HAS_PYODIDE:
@@ -848,6 +856,8 @@ async def http_fetch(
             all_headers.setdefault("Content-Type", "application/x-www-form-urlencoded")
 
         if HAS_PYODIDE:
+            import asyncio
+
             opts: dict[str, Any] = {"method": method, "headers": all_headers}
             if body is not None:
                 opts["body"] = body
@@ -856,7 +866,11 @@ async def http_fetch(
             js_opts = _to_js_value(opts)
 
             try:
-                response = await js.fetch(url, js_opts)
+                response = await asyncio.wait_for(
+                    js.fetch(url, js_opts), timeout=timeout
+                )
+            except TimeoutError as exc:
+                raise TimeoutError(f"Request timed out after {timeout}s") from exc
             except Exception as exc:
                 msg = str(exc)
                 if "timeout" in msg.lower():

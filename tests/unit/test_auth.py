@@ -145,23 +145,22 @@ class TestRefreshSession:
         # KV should NOT have been updated
         assert kv._store[key] == original_json
 
-    async def test_updates_user_data_in_place(self) -> None:
-        """refresh_session mutates user_data dict with new refreshed_at."""
-        import time
-
+    async def test_does_not_mutate_caller_dict(self) -> None:
+        """refresh_session should NOT mutate the caller's user_data dict (issue 22 fix)."""
         kv = MockKV()
         user_data = {"user_id": "u1", "email": "test@example.com"}
         session_id = "test_session_mut"
         key = f"{SESSION_PREFIX}{session_id}"
         kv._store[key] = json.dumps(user_data)
 
-        before = time.time()
         await refresh_session(kv, session_id, user_data)
-        after = time.time()
 
-        # user_data dict should have been mutated
-        assert "refreshed_at" in user_data
-        assert before <= user_data["refreshed_at"] <= after
+        # The original dict must NOT have been mutated
+        assert "refreshed_at" not in user_data
+
+        # But KV should have the refreshed data
+        stored = json.loads(kv._store[key])
+        assert "refreshed_at" in stored
 
 
 # =========================================================================
@@ -234,67 +233,66 @@ class TestGetCurrentUser:
 
 
 class TestDisableAuth:
-    def setup_method(self) -> None:
-        """Reset the module-level dev user cache before each test."""
-        import src.auth.dependencies as deps
-
-        deps._dev_user = None
-
     def test_returns_dev_user_without_cookie(self) -> None:
         """DISABLE_AUTH=true returns a dev user with no session cookie."""
-        env = MockEnv(disable_auth="true", site_url="http://localhost:8787")
-        app = _make_app_with_env(env)
-        client = TestClient(app)
-        resp = client.get("/me")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["user_id"] == "dev"
-        assert data["email"] == "dev@localhost"
-        assert data["username"] == "dev"
+        with patch("src.auth.dependencies._dev_user", None):
+            env = MockEnv(disable_auth="true", site_url="http://localhost:8787")
+            app = _make_app_with_env(env)
+            client = TestClient(app)
+            resp = client.get("/me")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["user_id"] == "dev"
+            assert data["email"] == "dev@localhost"
+            assert data["username"] == "dev"
 
     def test_does_not_bypass_when_flag_is_absent(self) -> None:
         """Without DISABLE_AUTH, normal auth is enforced."""
-        env = MockEnv()
-        app = _make_app_with_env(env)
-        client = TestClient(app)
-        resp = client.get("/me")
-        assert resp.status_code == 401
+        with patch("src.auth.dependencies._dev_user", None):
+            env = MockEnv()
+            app = _make_app_with_env(env)
+            client = TestClient(app)
+            resp = client.get("/me")
+            assert resp.status_code == 401
 
     def test_does_not_bypass_when_flag_is_false(self) -> None:
         """DISABLE_AUTH=false does not bypass auth."""
-        env = MockEnv(disable_auth="false")
-        app = _make_app_with_env(env)
-        client = TestClient(app)
-        resp = client.get("/me")
-        assert resp.status_code == 401
+        with patch("src.auth.dependencies._dev_user", None):
+            env = MockEnv(disable_auth="false")
+            app = _make_app_with_env(env)
+            client = TestClient(app)
+            resp = client.get("/me")
+            assert resp.status_code == 401
 
     def test_ignores_allowed_emails(self) -> None:
         """DISABLE_AUTH=true skips ALLOWED_EMAILS check."""
-        env = MockEnv(disable_auth="true", allowed_emails="", site_url="http://localhost:8787")
-        app = _make_app_with_env(env)
-        client = TestClient(app)
-        resp = client.get("/me")
-        assert resp.status_code == 200
+        with patch("src.auth.dependencies._dev_user", None):
+            env = MockEnv(disable_auth="true", allowed_emails="", site_url="http://localhost:8787")
+            app = _make_app_with_env(env)
+            client = TestClient(app)
+            resp = client.get("/me")
+            assert resp.status_code == 200
 
     def test_dev_user_is_cached(self) -> None:
         """Second request uses cached dev user (no extra D1 insert)."""
-        import src.auth.dependencies as deps
+        with patch("src.auth.dependencies._dev_user", None):
+            import src.auth.dependencies as deps
 
-        db = MockD1()
-        env = MockEnv(disable_auth="true", db=db, site_url="http://localhost:8787")
-        app = _make_app_with_env(env)
-        client = TestClient(app)
+            db = MockD1()
+            env = MockEnv(disable_auth="true", db=db, site_url="http://localhost:8787")
+            app = _make_app_with_env(env)
+            client = TestClient(app)
 
-        resp1 = client.get("/me")
-        assert resp1.status_code == 200
+            resp1 = client.get("/me")
+            assert resp1.status_code == 200
 
-        # Cache should now be populated
-        assert deps._dev_user is not None
-        assert deps._dev_user["user_id"] == "dev"
+            # Cache should now be populated
+            assert deps._dev_user is not None
+            assert deps._dev_user["user_id"] == "dev"
 
-        resp2 = client.get("/me")
-        assert resp2.status_code == 200
-        assert resp2.json()["user_id"] == "dev"
+            resp2 = client.get("/me")
+            assert resp2.status_code == 200
+            assert resp2.json()["user_id"] == "dev"
 
 
 # =========================================================================
@@ -1104,3 +1102,36 @@ class TestMissingGitHubClientId:
         resp = client.get("/api/auth/login", follow_redirects=False)
         assert resp.status_code == 500
         assert "GITHUB_CLIENT_ID" in resp.json()["detail"]
+
+
+# =========================================================================
+# Negative test cases
+# =========================================================================
+
+
+class TestExpiredSessionHandling:
+    async def test_expired_session_returns_401(self) -> None:
+        """Session that has expired via KV TTL returns 401."""
+        env = MockEnv()
+        user_data = {
+            "user_id": "u1",
+            "email": "test@example.com",
+            "username": "tester",
+            "avatar_url": "https://avatar.url",
+            "created_at": "2025-01-01T00:00:00",
+        }
+        session_id = await create_session(env.SESSIONS, user_data)
+
+        # Verify session works initially
+        app = _make_app_with_env(env)
+        client = TestClient(app)
+        client.cookies.set(COOKIE_NAME, session_id)
+        resp = client.get("/me")
+        assert resp.status_code == 200
+
+        # Advance time past the session TTL (sessions use expirationTtl)
+        env.SESSIONS.advance_time(7 * 24 * 3600 + 1)  # 7 days + 1 second
+
+        # Session should now be expired
+        resp = client.get("/me")
+        assert resp.status_code == 401

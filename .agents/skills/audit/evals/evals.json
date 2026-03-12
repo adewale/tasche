@@ -1,0 +1,40 @@
+{
+  "skill_name": "audit",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "audit",
+      "expected_output": "Blocking verdict — should find leaked Stripe API key, debug print statements, unrelated README changes, and missing tests for the payments module",
+      "files": [],
+      "assertions": [
+        {"name": "verdict-is-blocking", "type": "contains_any", "values": ["**Blocking**", "Blocking"]},
+        {"name": "detects-api-key", "type": "contains_any", "values": ["sk_live", "API key", "secret key", "credential", "Stripe"]},
+        {"name": "detects-debug-prints", "type": "contains_any", "values": ["print(", "debug", "DEBUG"]},
+        {"name": "detects-missing-tests", "type": "contains_any", "values": ["test", "coverage", "no corresponding test", "missing test", "untested"]},
+        {"name": "detects-unrelated-changes", "type": "contains_any", "values": ["README", "unrelated", "unintended"]}
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "review my changes before I push",
+      "expected_output": "Clean verdict — focused diff with validators, corresponding tests, good commit message",
+      "files": [],
+      "assertions": [
+        {"name": "verdict-is-clean", "type": "contains_any", "values": ["**Clean**", "Clean"]},
+        {"name": "no-false-positives", "type": "not_contains_any", "values": ["**Blocking**", "**Minor**"]}
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "can you check what I'm about to push? want to make sure nothing weird is in there",
+      "expected_output": "Minor verdict — should find TODO/FIXME comments, skipped test, fixup commit that should be squashed, but nothing blocking",
+      "files": [],
+      "assertions": [
+        {"name": "verdict-is-minor", "type": "contains_any", "values": ["**Minor**", "Minor"]},
+        {"name": "detects-todo-comments", "type": "contains_any", "values": ["TODO", "FIXME"]},
+        {"name": "detects-skipped-test", "type": "contains_any", "values": ["skip", "@pytest.mark.skip", "skipped"]},
+        {"name": "detects-fixup-commit", "type": "contains_any", "values": ["fixup", "squash"]}
+      ]
+    }
+  ]
+}

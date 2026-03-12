@@ -543,10 +543,11 @@ class TestTTSProcessing:
         # First statement is the idempotency check (SELECT), second sets 'generating'
         assert len(db.executed) >= 2
         first_sql, _ = db.executed[0]
-        assert "SELECT" in first_sql and "audio_status" in first_sql
+        assert first_sql.strip().startswith("SELECT"), f"Expected SELECT, got: {first_sql}"
+        assert "audio_status" in first_sql, f"Expected audio_status in: {first_sql}"
         second_sql, second_params = db.executed[1]
-        assert "UPDATE" in second_sql
-        assert "generating" in second_params
+        assert second_sql.strip().startswith("UPDATE"), f"Expected UPDATE, got: {second_sql}"
+        assert "generating" in second_params, f"Expected 'generating' in params: {second_params}"
 
 
 # ---------------------------------------------------------------------------
@@ -1616,9 +1617,10 @@ class TestBuildTimingManifest:
         audio_parts = [_make_ogg_opus_data(3.0), _make_ogg_opus_data(1.0)]
         manifest = _build_timing_manifest(chunks, audio_parts)
 
+        assert len(manifest["sentences"]) == 4
         for s in manifest["sentences"]:
             assert "text" in s
-            assert len(s["text"]) > 0
+            assert isinstance(s["text"], str) and s["text"].strip()
             assert "start_ms" in s
             assert "end_ms" in s
             assert s["end_ms"] > s["start_ms"]
@@ -1901,7 +1903,7 @@ class TestProcessTTSTimingIntegration:
         assert timing["version"] == 1
         assert timing["total_duration_ms"] > 0
         assert isinstance(timing["sentences"], list)
-        assert len(timing["sentences"]) > 0
+        assert len(timing["sentences"]) >= 1
 
         # Each sentence should have the required fields
         for s in timing["sentences"]:
@@ -1909,7 +1911,7 @@ class TestProcessTTSTimingIntegration:
             assert "start_ms" in s
             assert "end_ms" in s
             assert s["end_ms"] > s["start_ms"]
-            assert len(s["text"]) > 0
+            assert isinstance(s["text"], str) and s["text"].strip()
 
     async def test_process_tts_uses_measured_duration(self) -> None:
         """process_tts uses OGG-measured duration instead of word-count estimate."""
@@ -3102,3 +3104,65 @@ class TestFormatIndependentAudioCompleteness:
             f"MeloTTS output ({result['total_bytes']}) != "
             f"{result['chunks']} × {len(fake_wav)} = {expected}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Negative test cases
+# ---------------------------------------------------------------------------
+
+
+class TestNonexistentArticleAudio:
+    async def test_audio_for_nonexistent_article_returns_404(self) -> None:
+        """GET /api/articles/{id}/audio returns 404 for nonexistent article."""
+        db = MockD1(execute=lambda sql, params: [])
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get("/api/articles/nonexistent_article/audio")
+
+        assert resp.status_code == 404
+
+    async def test_audio_for_article_without_audio_returns_404(self) -> None:
+        """GET /api/articles/{id}/audio returns 404 when article has no audio."""
+        article = ArticleFactory.create(
+            id="art_no_audio",
+            user_id="user_001",
+            audio_status=None,
+            audio_key=None,
+        )
+
+        def execute(sql: str, params: list) -> list:
+            if "id = ?" in sql:
+                return [article]
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get("/api/articles/art_no_audio/audio")
+
+        assert resp.status_code == 404
+
+    async def test_audio_for_article_still_generating_returns_409(self) -> None:
+        """GET /api/articles/{id}/audio returns 409 when audio is still generating."""
+        article = ArticleFactory.create(
+            id="art_gen_audio",
+            user_id="user_001",
+            audio_status="generating",
+            audio_key=None,
+        )
+
+        def execute(sql: str, params: list) -> list:
+            if "id = ?" in sql:
+                return [article]
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.get("/api/articles/art_gen_audio/audio")
+
+        assert resp.status_code == 409
+        assert "still being generated" in resp.json()["detail"]

@@ -116,8 +116,10 @@ class TestWideEventRequiredFields:
         events = _capture_events(capsys, client, "get", "/ok")
 
         event = events[-1]
-        # ISO 8601 timestamps contain 'T' and end with timezone info
-        assert "T" in event["timestamp"]
+        # Validate ISO 8601 format by parsing
+        from datetime import datetime
+
+        datetime.fromisoformat(event["timestamp"])
 
     def test_request_id_from_cf_ray_header(self, capsys) -> None:
         """request_id should come from cf-ray header when present."""
@@ -135,8 +137,9 @@ class TestWideEventRequiredFields:
         events = _capture_events(capsys, client, "get", "/ok")
 
         event = events[-1]
-        # Should be a non-empty string (UUID format)
-        assert len(event["request_id"]) > 0
+        # Should be a non-empty string (UUID format, typically 36 chars)
+        assert isinstance(event["request_id"], str)
+        assert len(event["request_id"]) >= 8
 
     def test_method_and_path(self, capsys) -> None:
         """method and path should reflect the actual request."""

@@ -28,6 +28,20 @@ def _is_private_hostname(hostname: str) -> bool:
 
     Blocks: localhost, loopback, private RFC1918 ranges (10.*, 172.16-31.*,
     192.168.*), link-local (169.254.*), and cloud metadata endpoints.
+
+    **DNS rebinding limitation:** This function validates the *hostname string*
+    against known private patterns and IP ranges, but it cannot prevent DNS
+    rebinding attacks where a public hostname initially resolves to a public IP
+    (passing validation) and then re-resolves to a private IP at fetch time.
+    Full mitigation would require resolving the hostname and checking the IP
+    *after* DNS resolution but *before* connecting — which is not possible in
+    the Cloudflare Workers runtime because ``fetch()`` is the only networking
+    primitive and it does not expose resolved IPs.
+
+    Cloudflare Workers already mitigate this at the platform level: the Workers
+    runtime runs on Cloudflare's edge network, which does not have access to
+    internal cloud metadata services or RFC1918 networks.  The checks here are
+    defence-in-depth for any future runtime changes.
     """
     hostname = hostname.lower().strip("[]")
 
@@ -90,6 +104,9 @@ def validate_url(url: str) -> str:
     Ensures the URL uses an ``http`` or ``https`` scheme, has a valid
     network location (hostname), and does not point to a private network
     address (SSRF protection).  Returns the normalised URL string.
+
+    See ``_is_private_hostname`` for a discussion of DNS rebinding
+    limitations in the Workers runtime.
 
     Raises
     ------
