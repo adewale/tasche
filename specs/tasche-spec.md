@@ -37,7 +37,7 @@ When you save an article, Tasche creates a **complete, self-contained archive**:
 - Reader loads from R2, not the live web
 - If you click the original URL and it 404s: "Original is gone. Good thing you saved it."
 
-This is the entire point of the app. Tasche captures everything needed for a complete reading experience at save time—clean HTML, all images downloaded locally, and a full-page screenshot as fallback.
+This is the entire point of the app. Tasche captures everything needed for a complete reading experience at save time—clean HTML and all images downloaded locally.
 
 ### 1.2 What Gets Archived
 
@@ -49,8 +49,7 @@ When you save a URL, Tasche creates a complete, self-contained archive:
 | `final_url` | After redirects (t.co → real URL) | D1 |
 | `canonical_url` | What the page declares as canonical | D1 |
 | `content.html` | Clean HTML with localized image paths | R2 |
-| `thumbnail.webp` | Above-the-fold screenshot for article cards | R2 |
-| `original.webp` | Full-page scrolling screenshot for archival | R2 |
+| `thumbnail.*` | OG image thumbnail for article cards | R2 |
 | `images/*.webp` | All article images, converted to WebP | R2 |
 | `metadata.json` | Archive timestamp, image count, provenance | R2 |
 | `audio.ogg` | TTS audio (Opus) version (only if Listen Later enabled) | R2 |
@@ -66,10 +65,6 @@ When you save a URL, Tasche creates a complete, self-contained archive:
 - WebP conversion saves ~30% storage vs. original formats
 - Limits: 2MB per image, 10MB total per article (configurable)
 
-**Why full-page screenshot?**
-- Fallback when Readability extraction fails (infographics, complex layouts)
-- Visual proof of what the page looked like when saved
-- Archival value—the web changes and disappears
 
 ### 1.3 Configuration
 
@@ -443,11 +438,6 @@ This section explains the architectural decisions behind Tasche and why each Clo
 - Rewritten to local paths in `content.html` for reliable rendering
 - WebP format: 30% smaller than JPEG at same quality
 
-**Why full-page screenshot?**
-- Some content doesn't extract well (infographics, complex layouts)
-- Visual proof of original appearance
-- "View original" fallback when reader mode fails
-- Archive value—web pages change and disappear
 
 ---
 
@@ -592,11 +582,11 @@ User saves URL → POST /api/articles
 │      │             │             │             │                │        │
 │      ▼             ▼             ▼             ▼                ▼        │
 │  ┌───────┐    ┌────────┐   ┌─────────┐   ┌─────────┐    ┌────────────┐  │
-│  │  D1   │    │   R2   │   │   KV    │   │ Queues  │    │  Browser   │  │
-│  │       │    │        │   │         │   │         │    │  Rendering │  │
-│  │Users  │    │Article │   │Sessions │   │Process  │    │  REST API  │  │
-│  │Articles│   │Content │   │         │   │Jobs     │───▶│ Screenshot │  │
-│  │Tags   │    │Thumbnails  │         │   │         │    │ Scrape     │  │
+│  │  D1   │    │   R2   │   │   KV    │   │ Queues  │    │ Readability│  │
+│  │       │    │        │   │         │   │         │    │  Service   │  │
+│  │Users  │    │Article │   │Sessions │   │Process  │    │  Binding   │  │
+│  │Articles│   │Content │   │         │   │Jobs     │───▶│ (content   │  │
+│  │Tags   │    │Thumbnails  │         │   │         │    │ extraction)│  │
 │  └───────┘    └────────┘   └─────────┘   └────┬────┘    └────────────┘  │
 │                                               │                          │
 │                                               ▼                          │
@@ -781,7 +771,6 @@ flowchart TB
 | `audio_status` | TEXT | — | 'pending', 'generating', 'ready', 'failed' |
 | `html_key` | TEXT | — | R2 path to content.html |
 | `thumbnail_key` | TEXT | — | R2 path to thumbnail.webp |
-| `original_key` | TEXT | — | R2 path to original.webp (full-page screenshot) |
 | `markdown_content` | TEXT | — | Full Markdown for FTS5 indexing and TTS source |
 | `scroll_position` | REAL | — | Reading scroll position (0–1 percentage), default 0 |
 | `reading_progress` | REAL | — | Reading progress (0–1 percentage), default 0 |

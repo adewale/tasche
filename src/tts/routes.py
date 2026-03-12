@@ -39,13 +39,29 @@ async def listen_later(
     r2 = env.CONTENT
     user_id = user["user_id"]
 
-    # Verify article exists and belongs to user
-    await _get_user_article(
+    # Verify article exists and belongs to user; fetch fields needed for
+    # the idempotency check (audio_status, updated_at, audio_generated_at).
+    article = await _get_user_article(
         db,
         article_id,
         user_id,
-        fields="id",
+        fields="id, audio_status, audio_key, audio_duration_seconds, updated_at, audio_generated_at",
     )
+
+    # Idempotency: if audio is already ready and content hasn't changed
+    # since the last generation, return the existing audio info.
+    audio_status = article.get("audio_status")
+    if audio_status == "ready":
+        updated_at = article.get("updated_at") or ""
+        audio_generated_at = article.get("audio_generated_at") or ""
+        if audio_generated_at and updated_at <= audio_generated_at:
+            return {
+                "id": article_id,
+                "audio_status": "ready",
+                "audio_key": article.get("audio_key"),
+                "audio_duration_seconds": article.get("audio_duration_seconds"),
+                "skipped": True,
+            }
 
     # Delete any existing audio files (list-based, format-independent)
     from articles.storage import delete_audio_content
