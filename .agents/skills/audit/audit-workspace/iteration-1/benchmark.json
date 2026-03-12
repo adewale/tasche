@@ -1,0 +1,165 @@
+{
+  "metadata": {
+    "skill_name": "audit",
+    "skill_path": "/Users/ade/Documents/projects/audit-skill/SKILL.md",
+    "executor_model": "claude-opus-4-6",
+    "timestamp": "2026-03-07T00:00:00Z",
+    "evals_run": [1, 2, 3],
+    "runs_per_configuration": 1
+  },
+  "runs": [
+    {
+      "eval_id": 1,
+      "eval_name": "dirty-branch-blocking",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 107.8,
+        "tokens": 18902,
+        "tool_calls": 33,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "verdict-is-blocking", "passed": true, "evidence": "Found: Blocking"},
+        {"text": "detects-api-key", "passed": true, "evidence": "Found: sk_live, secret key, credential, Stripe"},
+        {"text": "detects-debug-prints", "passed": true, "evidence": "Found: print(, debug, DEBUG"},
+        {"text": "detects-missing-tests", "passed": true, "evidence": "Found: No tests, untested, test coverage"},
+        {"text": "detects-unrelated-changes", "passed": true, "evidence": "Found: README, unintended"}
+      ]
+    },
+    {
+      "eval_id": 1,
+      "eval_name": "dirty-branch-blocking",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.6,
+        "passed": 3,
+        "failed": 2,
+        "total": 5,
+        "time_seconds": 96.9,
+        "tokens": 16269,
+        "tool_calls": 24,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "verdict-is-blocking", "passed": false, "evidence": "Used CRITICAL/HIGH/MEDIUM/LOW instead of Blocking"},
+        {"text": "detects-api-key", "passed": true, "evidence": "Found: sk_live, API key, secret key, Stripe"},
+        {"text": "detects-debug-prints", "passed": true, "evidence": "Found: print(, debug, DEBUG"},
+        {"text": "detects-missing-tests", "passed": true, "evidence": "Found: No tests, test coverage"},
+        {"text": "detects-unrelated-changes", "passed": false, "evidence": "Did not flag README changes as unrelated"}
+      ]
+    },
+    {
+      "eval_id": 2,
+      "eval_name": "clean-branch-clean",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 2,
+        "failed": 0,
+        "total": 2,
+        "time_seconds": 96.1,
+        "tokens": 18130,
+        "tool_calls": 31,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "verdict-is-clean", "passed": true, "evidence": "Found: **Clean**"},
+        {"text": "no-false-positives", "passed": true, "evidence": "Correctly absent: no **Blocking** or **Minor** in report"}
+      ]
+    },
+    {
+      "eval_id": 2,
+      "eval_name": "clean-branch-clean",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.5,
+        "passed": 1,
+        "failed": 1,
+        "total": 2,
+        "time_seconds": 91.0,
+        "tokens": 17133,
+        "tool_calls": 25,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "verdict-is-clean", "passed": false, "evidence": "Used 'Ready to push with minor considerations' instead of Clean"},
+        {"text": "no-false-positives", "passed": true, "evidence": "Correctly absent: no **Blocking** or **Minor** in report"}
+      ]
+    },
+    {
+      "eval_id": 3,
+      "eval_name": "mixed-branch-minor",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 4,
+        "failed": 0,
+        "total": 4,
+        "time_seconds": 97.4,
+        "tokens": 19534,
+        "tool_calls": 29,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "verdict-is-minor", "passed": true, "evidence": "Found: **Minor**"},
+        {"text": "detects-todo-comments", "passed": true, "evidence": "Found: TODO, FIXME"},
+        {"text": "detects-skipped-test", "passed": true, "evidence": "Found: skip, @pytest.mark.skip, skipped"},
+        {"text": "detects-fixup-commit", "passed": true, "evidence": "Found: fixup, squash"}
+      ]
+    },
+    {
+      "eval_id": 3,
+      "eval_name": "mixed-branch-minor",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.75,
+        "passed": 3,
+        "failed": 1,
+        "total": 4,
+        "time_seconds": 94.3,
+        "tokens": 20768,
+        "tool_calls": 26,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "verdict-is-minor", "passed": false, "evidence": "Used per-finding 'Minor' severity labels but no overall Minor verdict"},
+        {"text": "detects-todo-comments", "passed": true, "evidence": "Found: TODO, FIXME"},
+        {"text": "detects-skipped-test", "passed": true, "evidence": "Found: skip, @pytest.mark.skip, skipped"},
+        {"text": "detects-fixup-commit", "passed": true, "evidence": "Found: fixup, squash"}
+      ]
+    }
+  ],
+  "run_summary": {
+    "with_skill": {
+      "pass_rate": {"mean": 1.0, "stddev": 0.0, "min": 1.0, "max": 1.0},
+      "time_seconds": {"mean": 100.4, "stddev": 5.5, "min": 96.1, "max": 107.8},
+      "tokens": {"mean": 18855, "stddev": 577, "min": 18130, "max": 19534}
+    },
+    "without_skill": {
+      "pass_rate": {"mean": 0.62, "stddev": 0.10, "min": 0.5, "max": 0.75},
+      "time_seconds": {"mean": 94.1, "stddev": 2.5, "min": 91.0, "max": 96.9},
+      "tokens": {"mean": 18057, "stddev": 1945, "min": 16269, "max": 20768}
+    },
+    "delta": {
+      "pass_rate": "+0.38",
+      "time_seconds": "+6.3",
+      "tokens": "+798"
+    }
+  },
+  "notes": [
+    "Skill achieves 100% pass rate vs 62% baseline — primary value is structured output format (Clean/Minor/Blocking verdicts)",
+    "Detection assertions (api-key, debug-prints, todo-comments, skipped-test, fixup-commit) pass in both configs — Claude is already good at finding issues",
+    "The skill's unique value is: (1) consistent verdict format, (2) detecting unrelated changes, (3) structured category-based reporting",
+    "Time and token cost is similar between configs (~6s and ~800 tokens more with skill) — minimal overhead"
+  ]
+}

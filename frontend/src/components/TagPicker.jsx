@@ -32,20 +32,20 @@ export function TagPicker({ articleId }) {
   }, [showPicker]);
 
   // Build filtered suggestions
-  var allTags = tagsSignal.value;
-  var appliedIds = new Set(articleTags.map((t) => t.id));
-  var available = allTags.filter((t) => !appliedIds.has(t.id));
-  var trimmed = filterText.trim();
-  var filtered = trimmed
+  const allTags = tagsSignal.value;
+  const appliedIds = new Set(articleTags.map((t) => t.id));
+  const available = allTags.filter((t) => !appliedIds.has(t.id));
+  const trimmed = filterText.trim();
+  const filtered = trimmed
     ? available.filter((t) => t.name.toLowerCase().includes(trimmed.toLowerCase()))
     : available;
 
   // Should we show "Create" option?
-  var exactMatch = trimmed
+  const exactMatch = trimmed
     ? allTags.some((t) => t.name.toLowerCase() === trimmed.toLowerCase())
     : true;
-  var showCreate = trimmed && !exactMatch;
-  var totalOptions = filtered.length + (showCreate ? 1 : 0);
+  const showCreate = trimmed && !exactMatch;
+  const totalOptions = filtered.length + (showCreate ? 1 : 0);
 
   // Clamp highlight when list changes
   useEffect(() => {
@@ -74,9 +74,9 @@ export function TagPicker({ articleId }) {
     if (addingTag) return;
     setAddingTag(true);
     try {
-      var tag = await apiCreateTag(name);
+      const tag = await apiCreateTag(name);
       // Update global tags signal
-      var newTags = [...tagsSignal.value, tag];
+      const newTags = [...tagsSignal.value, tag];
       newTags.sort((a, b) => a.name.localeCompare(b.name));
       tagsSignal.value = newTags;
       // Apply to article
@@ -136,7 +136,7 @@ export function TagPicker({ articleId }) {
       e.preventDefault();
       if (totalOptions === 0) return;
       if (highlightIndex < filtered.length) {
-        var tag = filtered[highlightIndex];
+        const tag = filtered[highlightIndex];
         selectTag(tag.id, tag.name);
       } else if (showCreate) {
         createAndApply(trimmed);
@@ -148,7 +148,7 @@ export function TagPicker({ articleId }) {
 
   function highlightMatch(name) {
     if (!trimmed) return name;
-    var idx = name.toLowerCase().indexOf(trimmed.toLowerCase());
+    const idx = name.toLowerCase().indexOf(trimmed.toLowerCase());
     if (idx === -1) return name;
     return (
       <>

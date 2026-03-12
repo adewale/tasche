@@ -1,0 +1,43 @@
+{
+  "eval_name": "dirty-branch-blocking",
+  "config": "with_skill",
+  "expectations": [
+    {
+      "text": "verdict-is-blocking",
+      "passed": true,
+      "evidence": "Found: **Blocking**, Verdict: Blocking"
+    },
+    {
+      "text": "detects-api-key",
+      "passed": true,
+      "evidence": "Found: sk_live, secret key, Stripe"
+    },
+    {
+      "text": "detects-debug-prints",
+      "passed": true,
+      "evidence": "Found: print(, DEBUG"
+    },
+    {
+      "text": "detects-missing-tests",
+      "passed": true,
+      "evidence": "Found: No tests, no test, no corresponding test"
+    },
+    {
+      "text": "detects-unrelated-changes",
+      "passed": false,
+      "evidence": "README not flagged as unrelated change"
+    },
+    {
+      "text": "has-branch-summary",
+      "passed": true,
+      "evidence": "Found: Branch Summary, ## Branch"
+    },
+    {
+      "text": "omits-empty-categories",
+      "passed": true,
+      "evidence": "Correctly absent"
+    }
+  ],
+  "pass_count": 6,
+  "total_count": 7
+}

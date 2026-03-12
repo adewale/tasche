@@ -16,7 +16,7 @@ import {
   IconX,
 } from './Icons.jsx';
 
-var READER_THEME_OPTIONS = [
+const READER_THEME_OPTIONS = [
   { value: 'auto', label: 'Auto' },
   { value: 'light', label: 'Light' },
   { value: 'sepia', label: 'Sepia' },
@@ -24,7 +24,7 @@ var READER_THEME_OPTIONS = [
 ];
 
 function isLibraryRoute(hash) {
-  var path = hash.slice(1) || '/';
+  const path = hash.slice(1) || '/';
   return path === '/' || path === '' || (path.charAt(0) === '/' && path.charAt(1) === '?');
 }
 
@@ -36,7 +36,7 @@ export function Header({ readerMode }) {
     return isLibraryRoute(window.location.hash);
   });
   const [searchInput, setSearchInput] = useState(function () {
-    var p = parseLibraryParams(window.location.hash);
+    const p = parseLibraryParams(window.location.hash);
     return p.q || '';
   });
   const [searchOpen, setSearchOpen] = useState(function () {
@@ -49,9 +49,9 @@ export function Header({ readerMode }) {
   // Track route changes to enable/disable search and sync input
   useEffect(function () {
     function onHashChange() {
-      var hash = window.location.hash;
+      const hash = window.location.hash;
       setSearchEnabled(isLibraryRoute(hash));
-      var p = parseLibraryParams(hash);
+      const p = parseLibraryParams(hash);
       setSearchInput(p.q || '');
       if (!isLibraryRoute(hash)) {
         setSearchOpen(false);
@@ -67,7 +67,7 @@ export function Header({ readerMode }) {
   useEffect(function () {
     function handleSlash(e) {
       if (!isLibraryRoute(window.location.hash)) return;
-      var tag = document.activeElement ? document.activeElement.tagName : '';
+      const tag = document.activeElement ? document.activeElement.tagName : '';
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (e.key === '/' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
@@ -115,8 +115,8 @@ export function Header({ readerMode }) {
   );
 
   function toggleTheme() {
-    var current = theme.value;
-    var isDark =
+    const current = theme.value;
+    const isDark =
       current === 'dark' ||
       (current === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
     applyTheme(isDark ? 'light' : 'dark');
@@ -128,16 +128,16 @@ export function Header({ readerMode }) {
   }
 
   function handleSearchInput(e) {
-    var val = e.target.value;
+    const val = e.target.value;
     setSearchInput(val);
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-    var trimmed = val.trim();
+    const trimmed = val.trim();
     if (trimmed) {
       searchDebounceRef.current = setTimeout(function () {
         nav.search(trimmed);
       }, 300);
     } else if (!val) {
-      var p = parseLibraryParams(window.location.hash);
+      const p = parseLibraryParams(window.location.hash);
       if (p.q) nav.clearSearch();
     }
   }
@@ -145,14 +145,14 @@ export function Header({ readerMode }) {
   function handleSearchKeyDown(e) {
     if (e.key === 'Enter') {
       if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-      var trimmed = searchInput.trim();
+      const trimmed = searchInput.trim();
       if (trimmed) {
         nav.search(trimmed);
       }
     }
     if (e.key === 'Escape') {
       setSearchInput('');
-      var p = parseLibraryParams(window.location.hash);
+      const p = parseLibraryParams(window.location.hash);
       if (p.q) nav.clearSearch();
       if (searchInputRef.current) searchInputRef.current.blur();
       setSearchOpen(false);
@@ -165,11 +165,11 @@ export function Header({ readerMode }) {
     setSearchOpen(false);
   }
 
-  var isDark =
+  const isDark =
     theme.value === 'dark' ||
     (theme.value === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
 
-  var hasActiveQuery = parseLibraryParams(window.location.hash).q;
+  const hasActiveQuery = parseLibraryParams(window.location.hash).q;
 
   return (
     <>

@@ -4,19 +4,19 @@
  *   → { tags: ['abc', 'def'], q: 'hello', filter: 'unread', sort: 'oldest' }
  */
 export function parseLibraryParams(hash) {
-  var idx = hash.indexOf('?');
+  const idx = hash.indexOf('?');
   if (idx < 0) return { tags: [], q: null, filter: null, sort: null };
-  var qs = hash.slice(idx + 1);
-  var tags = [];
-  var q = null;
-  var filter = null;
-  var sort = null;
-  var parts = qs.split('&');
-  for (var i = 0; i < parts.length; i++) {
-    var eqIdx = parts[i].indexOf('=');
+  const qs = hash.slice(idx + 1);
+  const tags = [];
+  let q = null;
+  let filter = null;
+  let sort = null;
+  const parts = qs.split('&');
+  for (let i = 0; i < parts.length; i++) {
+    const eqIdx = parts[i].indexOf('=');
     if (eqIdx < 0) continue;
-    var key = parts[i].slice(0, eqIdx);
-    var val = decodeURIComponent(parts[i].slice(eqIdx + 1));
+    const key = parts[i].slice(0, eqIdx);
+    const val = decodeURIComponent(parts[i].slice(eqIdx + 1));
     if (key === 'tag') {
       tags.push(val);
     } else if (key === 'q') {
@@ -31,23 +31,15 @@ export function parseLibraryParams(hash) {
 }
 
 /**
- * Parse all tag= params from a hash string into an array.
- * Thin wrapper around parseLibraryParams for backward compatibility.
- */
-export function parseTagsFromHash(hash) {
-  return parseLibraryParams(hash).tags;
-}
-
-/**
  * Build a hash string from library params.
  * e.g. buildLibraryHash({ tags: ['abc'], q: 'hello', filter: 'unread' })
  *   → '#/?tag=abc&q=hello&filter=unread'
  * Omits null/empty values. Returns '#/' when all params are empty.
  */
 export function buildLibraryHash(params) {
-  var parts = [];
-  var tags = params.tags || [];
-  for (var i = 0; i < tags.length; i++) {
+  const parts = [];
+  const tags = params.tags || [];
+  for (let i = 0; i < tags.length; i++) {
     parts.push('tag=' + encodeURIComponent(tags[i]));
   }
   if (params.q) {
@@ -64,26 +56,13 @@ export function buildLibraryHash(params) {
 }
 
 /**
- * Backward-compatible alias for buildLibraryHash.
- */
-export function buildTagHash(tags, otherParams) {
-  var params = { tags: tags };
-  if (otherParams) {
-    if (otherParams.q) params.q = otherParams.q;
-    if (otherParams.filter) params.filter = otherParams.filter;
-    if (otherParams.sort) params.sort = otherParams.sort;
-  }
-  return buildLibraryHash(params);
-}
-
-/**
  * Read the current library params from window.location.hash.
  */
 function currentParams() {
   return parseLibraryParams(window.location.hash);
 }
 
-export var nav = {
+export const nav = {
   library: function () {
     window.location.hash = '#/';
   },
@@ -94,22 +73,22 @@ export var nav = {
     window.location.hash = '#/article/' + id + '/markdown';
   },
   search: function (q) {
-    var p = currentParams();
+    const p = currentParams();
     p.q = q || null;
     window.location.hash = buildLibraryHash(p);
   },
   clearSearch: function () {
-    var p = currentParams();
+    const p = currentParams();
     p.q = null;
     window.location.hash = buildLibraryHash(p);
   },
   setFilter: function (filterKey) {
-    var p = currentParams();
+    const p = currentParams();
     p.filter = filterKey || null;
     window.location.hash = buildLibraryHash(p);
   },
   setSort: function (sortKey) {
-    var p = currentParams();
+    const p = currentParams();
     p.sort = sortKey || null;
     window.location.hash = buildLibraryHash(p);
     try {
@@ -122,8 +101,8 @@ export var nav = {
     window.location.hash = '#/tags';
   },
   tagFilter: function (tagId) {
-    var p = currentParams();
-    var idx = p.tags.indexOf(tagId);
+    const p = currentParams();
+    const idx = p.tags.indexOf(tagId);
     if (idx >= 0) {
       p.tags.splice(idx, 1);
     } else {
@@ -133,7 +112,7 @@ export var nav = {
     window.location.hash = buildLibraryHash(p);
   },
   clearTagFilter: function () {
-    var p = currentParams();
+    const p = currentParams();
     p.tags = [];
     window.location.hash = buildLibraryHash(p);
   },

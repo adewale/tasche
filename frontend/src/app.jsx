@@ -64,7 +64,7 @@ export function App() {
   // Tags, Stats, Settings), not just Library.
   useEffect(function () {
     function handleGlobalKeyDown(e) {
-      var tagName = document.activeElement ? document.activeElement.tagName : '';
+      const tagName = document.activeElement ? document.activeElement.tagName : '';
       if (tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT') {
         return;
       }
@@ -165,7 +165,7 @@ export function App() {
       // Schedule auto-precache after a short delay to avoid competing with
       // initial page load. Only runs when online and the preference is enabled.
       if (navigator.onLine) {
-        var autoCacheEnabled = localStorage.getItem('tasche-auto-cache');
+        const autoCacheEnabled = localStorage.getItem('tasche-auto-cache');
         // Default is enabled (null means not yet set, treat as enabled)
         if (autoCacheEnabled === null || autoCacheEnabled === 'true') {
           setTimeout(function () {

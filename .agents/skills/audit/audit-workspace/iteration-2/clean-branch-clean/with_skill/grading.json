@@ -1,0 +1,23 @@
+{
+  "eval_name": "clean-branch-clean",
+  "config": "with_skill",
+  "expectations": [
+    {
+      "text": "verdict-is-clean",
+      "passed": true,
+      "evidence": "Found: **Clean**"
+    },
+    {
+      "text": "no-false-positives",
+      "passed": true,
+      "evidence": "Correctly absent"
+    },
+    {
+      "text": "has-branch-summary",
+      "passed": true,
+      "evidence": "Found: Branch Summary, ## Branch"
+    }
+  ],
+  "pass_count": 3,
+  "total_count": 3
+}

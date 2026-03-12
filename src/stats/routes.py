@@ -6,6 +6,8 @@ All queries are scoped to the authenticated user.
 
 from __future__ import annotations
 
+import asyncio
+from datetime import UTC
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
@@ -25,46 +27,45 @@ async def get_stats(
     Computes totals, breakdowns by status, weekly/monthly activity,
     top domains, reading streak, average reading time, and monthly trends
     from the articles table in D1.
+
+    Independent queries are run concurrently via asyncio.gather.
     """
     env = request.scope["env"]
     db = env.DB
     user_id = user["user_id"]
 
-    # 1. Total articles
-    total_row = await (
-        db.prepare("SELECT COUNT(*) AS cnt FROM articles WHERE user_id = ?").bind(user_id).first()
-    )
-    total_articles = (total_row or {}).get("cnt", 0)
-
-    # 2. Total words read (archived articles only)
-    words_row = await (
+    # --- Fire all independent queries concurrently ---
+    (
+        total_row,
+        words_row,
+        status_rows,
+        activity_row,
+        domain_rows,
+        streak_rows,
+        avg_row,
+        monthly_saved_rows,
+        monthly_archived_rows,
+    ) = await asyncio.gather(
+        # 1. Total articles
+        db.prepare("SELECT COUNT(*) AS cnt FROM articles WHERE user_id = ?")
+        .bind(user_id)
+        .first(),
+        # 2. Total words read (archived articles only)
         db.prepare(
             "SELECT COALESCE(SUM(word_count), 0) AS total "
             "FROM articles WHERE user_id = ? AND reading_status = 'archived'"
         )
         .bind(user_id)
-        .first()
-    )
-    total_words_read = (words_row or {}).get("total", 0)
-
-    # 3. Articles by reading status
-    status_rows = await (
+        .first(),
+        # 3. Articles by reading status
         db.prepare(
             "SELECT reading_status, COUNT(*) AS cnt "
             "FROM articles WHERE user_id = ? "
             "GROUP BY reading_status"
         )
         .bind(user_id)
-        .all()
-    )
-    articles_by_status = {"unread": 0, "archived": 0}
-    for row in status_rows:
-        status = row.get("reading_status", "")
-        if status in articles_by_status:
-            articles_by_status[status] = row.get("cnt", 0)
-
-    # 4-7. Weekly/monthly activity (saved + archived) in a single query
-    activity_row = await (
+        .all(),
+        # 4-7. Weekly/monthly activity (saved + archived) in a single query
         db.prepare(
             "SELECT "
             "COUNT(CASE WHEN created_at >= datetime('now', '-7 days') THEN 1 END) AS saved_week, "
@@ -76,30 +77,16 @@ async def get_stats(
             "FROM articles WHERE user_id = ?"
         )
         .bind(user_id)
-        .first()
-    )
-    activity = activity_row or {}
-    articles_this_week = activity.get("saved_week", 0)
-    articles_this_month = activity.get("saved_month", 0)
-    archived_this_week = activity.get("archived_week", 0)
-    archived_this_month = activity.get("archived_month", 0)
-
-    # 8. Top domains (top 10)
-    domain_rows = await (
+        .first(),
+        # 8. Top domains (top 10)
         db.prepare(
             "SELECT domain, COUNT(*) AS cnt "
             "FROM articles WHERE user_id = ? AND domain IS NOT NULL "
             "GROUP BY domain ORDER BY cnt DESC LIMIT 10"
         )
         .bind(user_id)
-        .all()
-    )
-    top_domains = [
-        {"domain": row.get("domain", ""), "count": row.get("cnt", 0)} for row in domain_rows
-    ]
-
-    # 9. Reading streak (consecutive days with at least one archived article)
-    streak_rows = await (
+        .all(),
+        # 9. Reading streak (consecutive days with at least one archived article)
         db.prepare(
             "SELECT DISTINCT date(updated_at) AS d "
             "FROM articles "
@@ -107,25 +94,16 @@ async def get_stats(
             "ORDER BY d DESC"
         )
         .bind(user_id)
-        .all()
-    )
-    reading_streak_days = _calculate_streak(streak_rows)
-
-    # 10. Average reading time
-    avg_row = await (
+        .all(),
+        # 10. Average reading time
         db.prepare(
             "SELECT AVG(reading_time_minutes) AS avg_rt "
             "FROM articles "
             "WHERE user_id = ? AND reading_time_minutes IS NOT NULL"
         )
         .bind(user_id)
-        .first()
-    )
-    avg_val = (avg_row or {}).get("avg_rt")
-    avg_reading_time_minutes = round(avg_val, 1) if avg_val is not None else 0
-
-    # 11. Articles by month (last 12 months)
-    monthly_saved_rows = await (
+        .first(),
+        # 11a. Articles saved by month (last 12 months)
         db.prepare(
             "SELECT strftime('%Y-%m', created_at) AS month, COUNT(*) AS cnt "
             "FROM articles WHERE user_id = ? "
@@ -133,9 +111,8 @@ async def get_stats(
             "GROUP BY month ORDER BY month"
         )
         .bind(user_id)
-        .all()
-    )
-    monthly_archived_rows = await (
+        .all(),
+        # 11b. Articles archived by month (last 12 months)
         db.prepare(
             "SELECT strftime('%Y-%m', updated_at) AS month, COUNT(*) AS cnt "
             "FROM articles WHERE user_id = ? AND reading_status = 'archived' "
@@ -143,8 +120,38 @@ async def get_stats(
             "GROUP BY month ORDER BY month"
         )
         .bind(user_id)
-        .all()
+        .all(),
     )
+
+    # --- Process results ---
+
+    total_articles = (total_row or {}).get("cnt", 0)
+    total_words_read = (words_row or {}).get("total", 0)
+
+    # Include legacy 'reading' status articles folded into 'unread'
+    articles_by_status = {"unread": 0, "archived": 0}
+    for row in status_rows:
+        status = row.get("reading_status", "")
+        if status in articles_by_status:
+            articles_by_status[status] = row.get("cnt", 0)
+        elif status == "reading":
+            # Fold legacy 'reading' status into 'unread'
+            articles_by_status["unread"] += row.get("cnt", 0)
+
+    activity = activity_row or {}
+    articles_this_week = activity.get("saved_week", 0)
+    articles_this_month = activity.get("saved_month", 0)
+    archived_this_week = activity.get("archived_week", 0)
+    archived_this_month = activity.get("archived_month", 0)
+
+    top_domains = [
+        {"domain": row.get("domain", ""), "count": row.get("cnt", 0)} for row in domain_rows
+    ]
+
+    reading_streak_days = _calculate_streak(streak_rows)
+
+    avg_val = (avg_row or {}).get("avg_rt")
+    avg_reading_time_minutes = round(avg_val, 1) if avg_val is not None else 0
 
     # Merge saved and archived into a single list
     saved_map: dict[str, int] = {}
@@ -200,7 +207,7 @@ def _calculate_streak(rows: list[dict[str, Any]]) -> int:
         The number of consecutive days (ending today or yesterday) where the
         user archived at least one article.
     """
-    from datetime import date, timedelta
+    from datetime import date, datetime, timedelta
 
     if not rows:
         return 0
@@ -217,7 +224,8 @@ def _calculate_streak(rows: list[dict[str, Any]]) -> int:
     if not dates:
         return 0
 
-    today = date.today()
+    # Use UTC date to be consistent with UTC timestamps stored in D1
+    today = datetime.now(UTC).date()
     streak = 0
     # Allow the streak to start from today or yesterday
     check = today

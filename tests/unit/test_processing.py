@@ -46,7 +46,7 @@ class TestProcessArticleHappyPath:
         ready_updates = [
             (sql, params)
             for sql, params in db.executed
-            if "status" in sql and "'ready'" not in sql and "ready" in str(params)
+            if "status" in sql and "'ready'" not in sql and "ready" in params
         ]
         assert len(ready_updates) >= 1
         last_sql, last_params = ready_updates[-1]
@@ -70,8 +70,8 @@ class TestProcessArticleHappyPath:
 
         assert "articles/art_002/content.html" in r2._store
 
-    async def test_does_not_store_content_md_in_r2(self) -> None:
-        """Markdown is stored only in D1, not in R2."""
+    async def test_stores_content_md_in_r2(self) -> None:
+        """Markdown is stored in both D1 and R2 (dual-format storage)."""
         db = TrackingD1()
         r2 = MockR2()
         env = MockEnv(db=db, content=r2)
@@ -86,7 +86,10 @@ class TestProcessArticleHappyPath:
 
             await process_article("art_003", "https://example.com/article", env)
 
-        assert "articles/art_003/content.md" not in r2._store
+        assert "articles/art_003/content.md" in r2._store
+        md_content = r2._store["articles/art_003/content.md"]
+        assert isinstance(md_content, (str, bytes))
+        assert len(md_content) > 0
 
     async def test_stores_metadata_json_in_r2(self) -> None:
         """metadata.json is stored in R2 with correct article metadata."""
@@ -238,8 +241,8 @@ class TestProcessArticleD1Updates:
         # First executed statement should set status to 'processing'
         assert len(db.executed) >= 1
         first_sql, first_params = db.executed[0]
-        assert "UPDATE" in first_sql
-        assert "processing" in first_params
+        assert first_sql.strip().startswith("UPDATE"), f"Expected UPDATE, got: {first_sql}"
+        assert "processing" in first_params, f"Expected 'processing' in params: {first_params}"
 
 
 # =========================================================================
@@ -1346,8 +1349,8 @@ class TestOgImageThumbnail:
 
             await process_article("art_og", "https://example.com/article", env)
 
-        # Verify thumbnail was stored in R2
-        thumbnail_key = "articles/art_og/thumbnail.webp"
+        # Verify thumbnail was stored in R2 (format detected from content-type)
+        thumbnail_key = "articles/art_og/thumbnail.jpg"
         assert thumbnail_key in r2._store
         assert r2._store[thumbnail_key] == b"FAKE_THUMBNAIL_IMAGE"
 

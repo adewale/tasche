@@ -14,24 +14,21 @@ import json
 import re
 
 from wide_event import begin_event, current_event, emit_event
-from wrappers import SafeEnv, _to_py_safe
+from wrappers import SafeEnv, _to_py_safe, is_js_null
 
 # Audio path pattern — matched before ASGI routing so large R2 objects
 # are streamed directly without loading into Python memory.
 _AUDIO_PATH_RE = re.compile(r"^/api/articles/([A-Za-z0-9_-]+)/audio$")
 
 # ---------------------------------------------------------------------------
-# HAS_PYODIDE guard — allows this module to be imported during tests even
-# when the ``workers`` and ``asgi`` packages are not available.
+# Pyodide guard — HAS_PYODIDE is the single source of truth defined in
+# wrappers.py (the FFI boundary layer).  We import it above and use it to
+# conditionally load Workers-only packages.
 # ---------------------------------------------------------------------------
-
-HAS_PYODIDE = False
 
 try:
     import asgi  # type: ignore[import-not-found]
     from workers import WorkerEntrypoint  # type: ignore[import-not-found]
-
-    HAS_PYODIDE = True
 except ImportError:
 
     class WorkerEntrypoint:  # type: ignore[no-redef]
@@ -41,20 +38,30 @@ except ImportError:
 
     asgi = None  # type: ignore[assignment]
 
+# ---------------------------------------------------------------------------
+# FastAPI application
+# ---------------------------------------------------------------------------
+import os as _os
+
 from fastapi import FastAPI, Request  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
 from observability import ObservabilityMiddleware  # noqa: E402
 from security import SecurityHeadersMiddleware  # noqa: E402
 
-# ---------------------------------------------------------------------------
-# FastAPI application
-# ---------------------------------------------------------------------------
+# Disable interactive docs (/docs, /redoc, /openapi.json) outside dev mode.
+# In the Workers runtime WORKER_ENV is set via wrangler.jsonc; in local dev
+# or tests it is typically absent or set to "development".
+_worker_env = _os.environ.get("WORKER_ENV", "")
+_is_production = _worker_env == "production"
 
 app = FastAPI(
     title="Tasche",
     description="A self-hosted read-it-later service on Cloudflare Workers",
     version="0.1.0",
+    docs_url=None if _is_production else "/docs",
+    redoc_url=None if _is_production else "/redoc",
+    openapi_url=None if _is_production else "/openapi.json",
 )
 
 # ---------------------------------------------------------------------------
@@ -101,10 +108,21 @@ async def health() -> dict[str, str]:
 async def health_config(request: Request) -> dict:
     """Verify that all required bindings and secrets are configured.
 
-    Returns a list of checks with their status (ok/missing) and an overall
-    status: ``ok`` (everything present), ``degraded`` (optional items missing),
-    or ``error`` (required items missing).
+    Authenticated callers receive a detailed list of checks with their status
+    (ok/missing) and an overall status.  Unauthenticated callers receive only
+    the overall status without binding names, descriptions, or environment
+    details -- preventing information leakage about the deployment.
     """
+    from auth.dependencies import get_current_user
+
+    # Try to authenticate -- if it fails, return a minimal response.
+    is_authenticated = False
+    try:
+        await get_current_user(request)
+        is_authenticated = True
+    except Exception:
+        pass
+
     env = request.scope.get("env")
 
     # (name, required, description)
@@ -154,9 +172,11 @@ async def health_config(request: Request) -> dict:
     else:
         overall = "ok"
 
-    worker_env = (getattr(env, "WORKER_ENV", None) or "") if env else ""
+    # Unauthenticated: return only the overall status (no binding details).
+    if not is_authenticated:
+        return {"status": overall}
 
-    return {"status": overall, "checks": checks, "environment": worker_env}
+    return {"status": overall, "checks": checks}
 
 
 # ---------------------------------------------------------------------------
@@ -321,6 +341,44 @@ class Default(WorkerEntrypoint):
         index_request = JsRequest.new(index_url, request.js_object)
         return await self.env.ASSETS.fetch(index_request)
 
+    async def _authenticate_raw_request(
+        self, request: object, env: SafeEnv
+    ) -> tuple[str | None, str | None]:
+        """Authenticate a raw JS request outside the ASGI boundary.
+
+        Reuses ``auth.session`` logic (same as ``auth.dependencies.get_current_user``)
+        but operates on raw JS request headers instead of a FastAPI ``Request``.
+
+        Returns
+        -------
+        tuple[str | None, str | None]
+            ``(user_id, None)`` on success, or ``(None, error_detail)`` on failure.
+        """
+        from auth.session import COOKIE_NAME, get_session
+
+        disable_auth = getattr(self.env, "DISABLE_AUTH", None)
+        raw_worker_env = getattr(self.env, "WORKER_ENV", None)
+        if str(disable_auth) == "true" and str(raw_worker_env) != "production":
+            return ("dev", None)
+
+        cookie_raw = request.headers.get("cookie")
+        cookie_header = str(cookie_raw) if cookie_raw else ""
+        session_id = None
+        for part in cookie_header.split(";"):
+            part = part.strip()
+            if part.startswith(COOKIE_NAME + "="):
+                session_id = part[len(COOKIE_NAME) + 1 :]
+                break
+
+        if not session_id:
+            return (None, "Not authenticated")
+
+        user_data = await get_session(env.SESSIONS, session_id)
+        if user_data is None:
+            return (None, "Invalid or expired session")
+
+        return (user_data.get("user_id"), None)
+
     async def _serve_audio(self, request: object, article_id: str) -> object:
         """Stream audio from R2, bypassing ASGI.
 
@@ -330,14 +388,12 @@ class Default(WorkerEntrypoint):
         crashes the Worker.  This handler passes the R2 ReadableStream
         directly to a JS Response — the audio data never enters Python.
 
-        Auth is checked via session cookie (same logic as
-        ``auth.dependencies.get_current_user``).  The FastAPI handler in
-        ``tts.routes`` still exists for unit tests (which run in CPython
-        via TestClient and never hit this code path).
+        Auth is delegated to ``_authenticate_raw_request`` which shares
+        the same session logic as ``auth.dependencies.get_current_user``.
+        The FastAPI handler in ``tts.routes`` still exists for unit tests
+        (which run in CPython via TestClient and never hit this code path).
         """
         import js  # type: ignore[import-not-found]
-
-        from auth.session import COOKIE_NAME, get_session
 
         env = SafeEnv(self.env)
 
@@ -349,29 +405,11 @@ class Default(WorkerEntrypoint):
             init.headers = h
             return js.Response.new(json.dumps({"detail": detail}), init)
 
-        # --- Auth ---
-        disable_auth = getattr(self.env, "DISABLE_AUTH", None)
-        worker_env = getattr(self.env, "WORKER_ENV", None)
-        if str(disable_auth) == "true" and str(worker_env) != "production":
-            user_id = "dev"
-        else:
-            cookie_raw = request.headers.get("cookie")
-            cookie_header = str(cookie_raw) if cookie_raw else ""
-            session_id = None
-            for part in cookie_header.split(";"):
-                part = part.strip()
-                if part.startswith(COOKIE_NAME + "="):
-                    session_id = part[len(COOKIE_NAME) + 1 :]
-                    break
-
-            if not session_id:
-                return _json_resp("Not authenticated", 401)
-
-            user_data = await get_session(env.SESSIONS, session_id)
-            if user_data is None:
-                return _json_resp("Invalid or expired session", 401)
-
-            user_id = user_data.get("user_id")
+        # --- Auth (shared helper) ---
+        user_id, auth_error = await self._authenticate_raw_request(request, env)
+        if auth_error:
+            status = 401
+            return _json_resp(auth_error, status)
 
         # --- Article lookup ---
         article = await (
@@ -396,8 +434,12 @@ class Default(WorkerEntrypoint):
             return _json_resp("No audio available for this article", 404)
 
         # --- R2 stream (raw binding — preserves JS ReadableStream) ---
+        # We use the raw R2 binding here intentionally: SafeR2.get() would
+        # pull the body into Python memory, but audio files can be 49 MB+.
+        # The raw binding lets us pass the R2 ReadableStream directly to a
+        # JS Response without the data ever entering Python.
         r2_obj = await self.env.CONTENT.get(audio_key)
-        if r2_obj is None or type(r2_obj).__name__ in ("JsNull", "JsUndefined"):
+        if r2_obj is None or is_js_null(r2_obj):
             return _json_resp("Audio file not found", 404)
 
         if audio_key.endswith(".ogg"):
@@ -411,10 +453,7 @@ class Default(WorkerEntrypoint):
         h.set("Content-Type", media_type)
         h.set("Cache-Control", "public, max-age=86400, immutable")
         r2_size = getattr(r2_obj, "size", None)
-        if r2_size is not None and type(r2_size).__name__ not in (
-            "JsNull",
-            "JsUndefined",
-        ):
+        if r2_size is not None and not is_js_null(r2_size):
             h.set("Content-Length", str(int(r2_size)))
 
         init = js.Object.new()

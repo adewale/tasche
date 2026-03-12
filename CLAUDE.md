@@ -15,9 +15,9 @@ make test               # Backend unit tests only
 make deploy-staging     # Quality gates + deploy to staging
 make deploy-production  # Quality gates + deploy to production
 
-# Run a single test file or test
+# Run a single test file or test (example patterns)
 uv run pytest tests/unit/test_articles.py -x -q
-uv run pytest tests/unit/test_articles.py::TestCreateArticle::test_creates_article -x -q
+uv run pytest tests/unit/test_articles.py::TestClassName::test_method_name -x -q
 ```
 
 **Important:** Use `pywrangler` (not regular `wrangler`) — regular wrangler cannot deploy Python Workers with packages. Packages are defined in `pyproject.toml`, not `requirements.txt`. Always deploy via `make deploy-*` targets so D1 migrations are applied automatically before code goes out.
@@ -70,7 +70,7 @@ Wide events pattern: emit one JSON log line per request (not many small lines). 
 - **Status enums:** `reading_status`: unread/archived (D1 CHECK also allows 'reading' as a historical artifact, but the app enforces only unread/archived). `audio_status`: pending/generating/ready/failed. `article.status`: pending/processing/ready/failed. These match D1 CHECK constraints exactly.
 - **IDs:** `secrets.token_urlsafe(16)` for article/tag IDs, `secrets.token_urlsafe(32)` for session IDs.
 - **Timestamps:** `now_iso()` from `utils.py` everywhere.
-- **R2 keys:** `articles/{article_id}/{suffix}` (e.g., `content.html`, `metadata.json`, `audio.mp3`, `thumbnail.webp`). Helper: `articles.storage.article_key()`.
+- **R2 keys:** `articles/{article_id}/{suffix}` (e.g., `content.html`, `metadata.json`, `audio.ogg`, `thumbnail.webp`). Helper: `articles.storage.article_key()`.
 - **Duplicate URL detection:** Checks `original_url`, `final_url`, AND `canonical_url`.
 - **Two tag routers:** `tags.routes.router` (CRUD at `/api/tags`) and `tags.routes.article_tags_router` (associations at `/api/articles/{id}/tags`).
 - **FTS5 search:** Unified into `GET /api/articles?q=...`. When `q` is present, uses `INNER JOIN articles_fts` with `ORDER BY bm25(articles_fts, 10.0, 5.0, 1.0)` (title 10×, excerpt 5×, content 1×) unless `sort` is explicit. All filters (`tag`, `reading_status`, etc.) compose with search. No separate search endpoint.

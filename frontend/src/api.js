@@ -32,7 +32,7 @@ export async function request(method, path, body) {
   if (resp.status === 204) return null;
   if (!resp.ok) {
     const text = await resp.text().catch(() => '');
-    var detail = resp.statusText;
+    let detail = resp.statusText;
     try {
       detail = JSON.parse(text).detail || detail;
     } catch (_e) {
@@ -46,7 +46,7 @@ export async function request(method, path, body) {
   if (resp.headers.get('content-type')?.includes('application/json')) {
     const data = await resp.json();
     // Attach cache provenance when served from SW cache
-    var cacheSource = resp.headers.get('X-Tasche-Source');
+    const cacheSource = resp.headers.get('X-Tasche-Source');
     if (cacheSource === 'cache' && data && typeof data === 'object' && !Array.isArray(data)) {
       data._cachedAt = resp.headers.get('X-Tasche-Cached-At') || new Date().toISOString();
     }
@@ -58,8 +58,8 @@ export async function request(method, path, body) {
 // Health (unauthenticated — uses plain fetch, not request())
 // Retries with backoff to handle Python Worker cold starts after deploy
 export function getHealthConfig() {
-  var maxAttempts = 3;
-  var baseDelay = 1500;
+  const maxAttempts = 3;
+  const baseDelay = 1500;
 
   function attempt(n) {
     return fetch('/api/health/config')
@@ -237,11 +237,11 @@ export function listenLater(articleId) {
 
 // Audio (fetches via fetch() so HTTP errors are visible in JS)
 export function getAudioUrl(articleId) {
-  var path = '/api/articles/' + articleId + '/audio';
+  const path = '/api/articles/' + articleId + '/audio';
   return authenticatedFetch(path).then(function (resp) {
     if (!resp.ok) {
       return resp.text().then(function (body) {
-        var detail = resp.statusText;
+        let detail = resp.statusText;
         try {
           detail = JSON.parse(body).detail || detail;
         } catch (_e) {
@@ -336,7 +336,7 @@ function swQuery(sendMsg, responseType, fallback, extract, match, timeoutMs) {
       return;
     }
 
-    var timeout = setTimeout(function () {
+    const timeout = setTimeout(function () {
       navigator.serviceWorker.removeEventListener('message', handler);
       resolve(fallback);
     }, timeoutMs || 5000);

@@ -1,0 +1,43 @@
+{
+  "eval_name": "performance-audit",
+  "config": "with_skill",
+  "expectations": [
+    {
+      "text": "detects-n-plus-1",
+      "passed": true,
+      "evidence": "Found: N+1, per-item, batch, _fetch_item_details"
+    },
+    {
+      "text": "detects-unbounded-cache",
+      "passed": true,
+      "evidence": "Found: unbounded, _cache, eviction, OOM"
+    },
+    {
+      "text": "detects-repeated-config-read",
+      "passed": true,
+      "evidence": "Found: get_config, re-read, every request, every call, config"
+    },
+    {
+      "text": "detects-string-concat-in-loop",
+      "passed": true,
+      "evidence": "Found: concatenat, quadratic, log_msg, O(n"
+    },
+    {
+      "text": "detects-regex-recompilation",
+      "passed": true,
+      "evidence": "Found: re.compile, regex, compiled, every call"
+    },
+    {
+      "text": "detects-file-handle-leak",
+      "passed": true,
+      "evidence": "Found: file handle, file descriptor, never closed, open("
+    },
+    {
+      "text": "has-impact-analysis",
+      "passed": true,
+      "evidence": "Found: Impact:, Latency, Memory, Throughput"
+    }
+  ],
+  "pass_count": 7,
+  "total_count": 7
+}

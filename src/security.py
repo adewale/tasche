@@ -9,6 +9,13 @@ _SECURITY_HEADERS = [
     (b"x-frame-options", b"DENY"),
     (b"referrer-policy", b"strict-origin-when-cross-origin"),
     (b"permissions-policy", b"camera=(), microphone=(), geolocation=()"),
+    # NOTE: 'unsafe-inline' is required for style-src because the frontend
+    # framework (and many UI component libraries) inject inline styles for
+    # dynamic theming, layout calculations, and component styling.  Removing
+    # it would break the reader view and settings UI.  A nonce-based approach
+    # would require server-side rendering support to inject the nonce into
+    # every <style> tag, which is not feasible with a static SPA frontend
+    # served from Workers Assets.
     (
         b"content-security-policy",
         b"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';"

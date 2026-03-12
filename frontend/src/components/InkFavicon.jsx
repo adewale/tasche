@@ -6,10 +6,10 @@ import { useState, useEffect, useRef } from 'preact/hooks';
  * ink-stamp effect. Falls back to a serif initial letter.
  */
 export function InkFavicon({ domain, size = 16 }) {
-  var canvasSize = size * 2; // render at 2x for sharpness
-  var [src, setSrc] = useState(null);
-  var [failed, setFailed] = useState(false);
-  var canvasRef = useRef(null);
+  const canvasSize = size * 2; // render at 2x for sharpness
+  const [src, setSrc] = useState(null);
+  const [failed, setFailed] = useState(false);
+  const canvasRef = useRef(null);
 
   useEffect(
     function () {
@@ -18,38 +18,38 @@ export function InkFavicon({ domain, size = 16 }) {
         return;
       }
 
-      var img = new Image();
+      const img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = function () {
         try {
-          var canvas = canvasRef.current;
+          const canvas = canvasRef.current;
           if (!canvas) return;
           canvas.width = canvasSize;
           canvas.height = canvasSize;
-          var ctx = canvas.getContext('2d');
+          const ctx = canvas.getContext('2d');
 
           // Draw favicon to canvas
           ctx.drawImage(img, 0, 0, canvasSize, canvasSize);
-          var imageData = ctx.getImageData(0, 0, canvasSize, canvasSize);
-          var data = imageData.data;
+          const imageData = ctx.getImageData(0, 0, canvasSize, canvasSize);
+          const data = imageData.data;
 
           // Convert to greyscale
-          for (var i = 0; i < data.length; i += 4) {
-            var grey = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+          for (let i = 0; i < data.length; i += 4) {
+            const grey = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
             data[i] = grey;
             data[i + 1] = grey;
             data[i + 2] = grey;
           }
 
           // Floyd-Steinberg dithering to 1-bit
-          var w = canvasSize;
-          var h = canvasSize;
-          for (var y = 0; y < h; y++) {
-            for (var x = 0; x < w; x++) {
-              var idx = (y * w + x) * 4;
-              var old = data[idx];
-              var val = old < 128 ? 0 : 255;
-              var err = old - val;
+          const w = canvasSize;
+          const h = canvasSize;
+          for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+              const idx = (y * w + x) * 4;
+              const old = data[idx];
+              const val = old < 128 ? 0 : 255;
+              const err = old - val;
               data[idx] = val;
               data[idx + 1] = val;
               data[idx + 2] = val;
@@ -82,7 +82,7 @@ export function InkFavicon({ domain, size = 16 }) {
 
   if (failed || !domain) {
     // Fallback: serif initial letter
-    var letter = domain ? domain.charAt(0).toUpperCase() : '?';
+    const letter = domain ? domain.charAt(0).toUpperCase() : '?';
     return (
       <span class="ink-favicon ink-favicon--letter" aria-hidden="true">
         {letter}

@@ -23,11 +23,36 @@ import { IconBookmark } from '../components/Icons.jsx';
 
 function formatBytes(bytes) {
   if (bytes === 0) return '0 B';
-  var units = ['B', 'KB', 'MB', 'GB'];
-  var i = Math.floor(Math.log(bytes) / Math.log(1024));
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let i = Math.floor(Math.log(bytes) / Math.log(1024));
   if (i >= units.length) i = units.length - 1;
-  var value = bytes / Math.pow(1024, i);
+  const value = bytes / Math.pow(1024, i);
   return value.toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
+}
+
+function VoiceButton({ voiceKey, label, ttsVoice, voiceLoading }) {
+  return (
+    <button
+      class={'btn ' + (ttsVoice.value === voiceKey ? 'btn-primary' : 'btn-secondary')}
+      disabled={voiceLoading.value}
+      onClick={function () {
+        if (ttsVoice.value === voiceKey) return;
+        voiceLoading.value = true;
+        updatePreferences({ tts_voice: voiceKey })
+          .then(function () {
+            ttsVoice.value = voiceKey;
+          })
+          .catch(function () {
+            addToast('Could not save voice preference. Check your connection.', 'error');
+          })
+          .finally(function () {
+            voiceLoading.value = false;
+          });
+      }}
+    >
+      {label}
+    </button>
+  );
 }
 
 export function Settings() {
@@ -70,7 +95,7 @@ export function Settings() {
   }
 
   function handleToggleAutoCache() {
-    var newValue = !autoCacheEnabled.value;
+    const newValue = !autoCacheEnabled.value;
     autoCacheEnabled.value = newValue;
     localStorage.setItem('tasche-auto-cache', String(newValue));
   }
@@ -186,46 +211,18 @@ export function Settings() {
           <h3 class="section-title">Listen Later Voice</h3>
           <p class="settings-detail">Choose the voice for text-to-speech audio generation.</p>
           <div class="voice-picker">
-            <button
-              class={'btn ' + (ttsVoice.value === 'athena' ? 'btn-primary' : 'btn-secondary')}
-              disabled={voiceLoading.value}
-              onClick={function () {
-                if (ttsVoice.value === 'athena') return;
-                voiceLoading.value = true;
-                updatePreferences({ tts_voice: 'athena' })
-                  .then(function () {
-                    ttsVoice.value = 'athena';
-                  })
-                  .catch(function () {
-                    addToast('Could not save voice preference. Check your connection.', 'error');
-                  })
-                  .finally(function () {
-                    voiceLoading.value = false;
-                  });
-              }}
-            >
-              Athena (female)
-            </button>
-            <button
-              class={'btn ' + (ttsVoice.value === 'orion' ? 'btn-primary' : 'btn-secondary')}
-              disabled={voiceLoading.value}
-              onClick={function () {
-                if (ttsVoice.value === 'orion') return;
-                voiceLoading.value = true;
-                updatePreferences({ tts_voice: 'orion' })
-                  .then(function () {
-                    ttsVoice.value = 'orion';
-                  })
-                  .catch(function () {
-                    addToast('Could not save voice preference. Check your connection.', 'error');
-                  })
-                  .finally(function () {
-                    voiceLoading.value = false;
-                  });
-              }}
-            >
-              Orion (male)
-            </button>
+            <VoiceButton
+              voiceKey="athena"
+              label="Athena (female)"
+              ttsVoice={ttsVoice}
+              voiceLoading={voiceLoading}
+            />
+            <VoiceButton
+              voiceKey="orion"
+              label="Orion (male)"
+              ttsVoice={ttsVoice}
+              voiceLoading={voiceLoading}
+            />
           </div>
         </div>
 

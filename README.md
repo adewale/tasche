@@ -77,7 +77,7 @@ That's it. `make dev` will:
 
 Auth is disabled by default for local development (`DISABLE_AUTH=true` in `.dev.vars`). This creates a "dev" user automatically so you can use the app without setting up GitHub OAuth. The `.dev.vars` file is gitignored and never deployed.
 
-**Safety guard:** `DISABLE_AUTH` is blocked when `SITE_URL` is HTTPS, so it cannot accidentally run in production.
+**Safety guard:** `DISABLE_AUTH` is blocked when `WORKER_ENV` is `production`, so it cannot accidentally run in production.
 
 To test with real GitHub OAuth locally, edit `.dev.vars`: uncomment the OAuth lines, fill in credentials from a [GitHub OAuth App](https://github.com/settings/developers), and remove `DISABLE_AUTH=true`.
 
@@ -107,7 +107,7 @@ Tasche runs entirely on the Cloudflare Developer Platform:
 | **R2** | `CONTENT` | Archived HTML, markdown, images, audio |
 | **KV** | `SESSIONS` | Auth sessions with 7-day TTL |
 | **Queues** | `ARTICLE_QUEUE` | Async article processing and TTS |
-| **Workers AI** | -- | Text-to-speech (configurable via `TTS_MODEL`, default: MeloTTS) |
+| **Workers AI** | -- | Text-to-speech (configurable via `TTS_MODEL`, default: `aura-2-en` / Deepgram) |
 
 **Data flow:** Save URL > API creates article (pending) > Queue consumer fetches page > Readability extracts content > Images converted to WebP > HTML + Markdown stored in R2 > FTS5 indexed in D1.
 

@@ -30,7 +30,7 @@ export const syncStatus = signal(null);
 
 // Theme: 'light' | 'dark' | 'system'
 function getInitialTheme() {
-  var saved = localStorage.getItem('tasche-theme');
+  const saved = localStorage.getItem('tasche-theme');
   return saved === 'light' || saved === 'dark' ? saved : 'system';
 }
 export const theme = signal(getInitialTheme());
@@ -74,10 +74,10 @@ export function removeToast(id) {
 
 // Generic status polling — used for both article processing and audio generation
 function createPoller(intervalMs, field, toasts) {
-  var timers = new Map();
+  const timers = new Map();
 
   function stop(articleId) {
-    var timerId = timers.get(articleId);
+    const timerId = timers.get(articleId);
     if (timerId) {
       clearInterval(timerId);
       timers.delete(articleId);
@@ -86,8 +86,8 @@ function createPoller(intervalMs, field, toasts) {
 
   function start(articleId, fetchArticle) {
     if (timers.has(articleId)) return;
-    var startTime = Date.now();
-    var intervalId = setInterval(async function () {
+    const startTime = Date.now();
+    const intervalId = setInterval(async function () {
       if (Date.now() - startTime > 600000) {
         stop(articleId);
         if (toasts.timeout) {
@@ -96,8 +96,8 @@ function createPoller(intervalMs, field, toasts) {
         return;
       }
       try {
-        var article = await fetchArticle(articleId);
-        var value = article[field];
+        const article = await fetchArticle(articleId);
+        const value = article[field];
         if (value === 'ready' || value === 'failed') {
           articles.value = articles.value.map(function (a) {
             return a.id === articleId ? { ...a, ...article } : a;
@@ -117,19 +117,19 @@ function createPoller(intervalMs, field, toasts) {
   return { start: start, stop: stop };
 }
 
-var audioPoller = createPoller(10000, 'audio_status', {
+const audioPoller = createPoller(10000, 'audio_status', {
   ready: ['Audio is ready!', 'success'],
   failed: ['Audio generation failed', 'error'],
   timeout: ['Audio generation is taking longer than expected. Check back later.', 'info'],
 });
 
-var articlePoller = createPoller(5000, 'status', {
+const articlePoller = createPoller(5000, 'status', {
   ready: ['Article is ready!', 'success'],
   failed: ['Article processing failed', 'error'],
   timeout: ['Article processing is taking longer than expected. Check back later.', 'info'],
 });
 
-export var pollAudioStatus = audioPoller.start;
-export var stopAudioPoll = audioPoller.stop;
-export var pollArticleStatus = articlePoller.start;
-export var stopArticlePoll = articlePoller.stop;
+export const pollAudioStatus = audioPoller.start;
+export const stopAudioPoll = audioPoller.stop;
+export const pollArticleStatus = articlePoller.start;
+export const stopArticlePoll = articlePoller.stop;

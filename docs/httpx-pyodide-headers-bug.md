@@ -94,7 +94,6 @@ The `http_fetch()` wrapper in `src/wrappers.py` bypasses httpx in Pyodide for al
 
 - **Auth flows** (`src/auth/routes.py`) -- GitHub API calls that require `User-Agent`
 - **Article fetching** (`src/articles/processing.py`) -- `_fetch_page()` sets a `User-Agent`
-- **Browser Rendering** (`src/articles/browser_rendering.py`) -- `Authorization` header (not affected by this bug, but also migrated)
 - **Health checks** (`src/articles/health.py`) -- HEAD requests with `User-Agent` that some servers enforce
 - **Image downloads** (`src/articles/images.py`) -- no custom headers, least affected
 
