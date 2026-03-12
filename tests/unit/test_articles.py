@@ -84,8 +84,9 @@ class TestCreateArticle:
                 return []
             return []
 
+        queue = MockQueue()
         db = MockD1(execute=execute)
-        env = MockEnv(db=db)
+        env = MockEnv(db=db, article_queue=queue)
 
         client, session_id = await _authenticated_client(env)
         resp = client.post(
@@ -98,6 +99,10 @@ class TestCreateArticle:
         assert data["updated"] is True
         assert data["id"] == existing["id"]
         assert len(updates) == 1
+
+        # Verify a queue message was sent for reprocessing
+        assert len(queue.messages) >= 1, "Expected a queue message for reprocessing"
+        assert queue.messages[-1]["type"] == "article_processing"
 
     async def test_reprocess_cleans_up_all_r2_content(self) -> None:
         """POST /api/articles re-processing cleans up ALL old R2 content including audio."""

@@ -75,7 +75,8 @@ def _capture_events(capsys, client: TestClient, method: str, path: str, **kwargs
             try:
                 events.append(json.loads(line))
             except json.JSONDecodeError:
-                pass
+                import warnings
+                warnings.warn(f"Non-JSON output from middleware: {line!r}", stacklevel=2)
     return events
 
 

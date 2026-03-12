@@ -7,11 +7,12 @@ parsing, callback CSRF state verification, and error handling.
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from src.auth.dependencies import get_current_user
@@ -106,8 +107,6 @@ class TestRefreshSession:
 
     async def test_refreshes_when_interval_exceeded(self) -> None:
         """refresh_session writes to KV when last refresh was over 1 hour ago."""
-        import time
-
         kv = MockKV()
         old_time = time.time() - _REFRESH_INTERVAL - 100  # well past the threshold
         user_data = {
@@ -126,8 +125,6 @@ class TestRefreshSession:
 
     async def test_skips_when_recently_refreshed(self) -> None:
         """refresh_session does NOT write to KV when refreshed less than 1 hour ago."""
-        import time
-
         kv = MockKV()
         recent_time = time.time() - 60  # only 60 seconds ago
         user_data = {
@@ -181,7 +178,7 @@ def _make_app_with_env(env: Any) -> FastAPI:
         return await call_next(request)
 
     @test_app.get("/me")
-    async def me(user: dict = pytest.importorskip("fastapi").Depends(get_current_user)):
+    async def me(user: dict = Depends(get_current_user)):
         return user
 
     return test_app
