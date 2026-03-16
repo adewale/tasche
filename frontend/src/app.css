@@ -201,6 +201,11 @@ textarea {
   background: var(--bg);
   border-bottom: 2px solid var(--text);
   padding: 0 16px;
+  transition: transform 300ms ease;
+}
+
+.header--hidden {
+  transform: translateY(-100%);
 }
 
 .header-inner {
@@ -208,6 +213,7 @@ textarea {
   margin: 0 auto;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   height: 56px;
 }
 
