@@ -1,4 +1,4 @@
-import { defineConfig } from '@playwright/test';
+import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -14,5 +14,12 @@ export default defineConfig({
   },
   projects: [
     { name: 'chromium', use: { browserName: 'chromium' } },
+    {
+      name: 'mobile-safari',
+      use: {
+        ...devices['iPhone 15 Pro Max'],
+      },
+      testMatch: 'mobile.spec.js',
+    },
   ],
 });

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'preact/hooks';
 import { isOffline, syncStatus, theme, applyTheme, showShortcuts } from '../state.js';
 import { readerPrefs, updatePref } from '../readerPrefs.js';
 import { parseLibraryParams, nav } from '../nav.js';
+import { useScrollDirection } from '../hooks/useScrollDirection.js';
 import {
   IconLogo,
   IconSearch,
@@ -29,6 +30,7 @@ function isLibraryRoute(hash) {
 }
 
 export function Header({ readerMode }) {
+  const headerHidden = useScrollDirection();
   const offline = isOffline.value;
   const syncing = syncStatus.value;
   const [menuOpen, setMenuOpen] = useState(false);
@@ -173,7 +175,7 @@ export function Header({ readerMode }) {
 
   return (
     <>
-      <header class="header">
+      <header class={'header' + (headerHidden ? ' header--hidden' : '')}>
         <div class={'header-inner' + (searchOpen ? ' header-inner--search-open' : '')}>
           <a href="#/" class="header-logo">
             <IconLogo size={28} />
