@@ -2758,7 +2758,8 @@ class TestSsrfProtection:
         )
 
         assert resp.status_code == 422
-        assert "private" in resp.json()["detail"].lower() or "internal" in resp.json()["detail"].lower()
+        detail = resp.json()["detail"].lower()
+        assert "private" in detail or "internal" in detail
 
     async def test_rejects_localhost_url(self) -> None:
         """POST /api/articles rejects URLs pointing to localhost."""

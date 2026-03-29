@@ -25,6 +25,22 @@ Implemented: MediaMetadata with title, domain (artist), album, and thumbnail art
 
 Implemented: "Save for offline" and "Download audio" buttons in Reader, offline indicator (checkmark) on article cards, cache stats in Settings, auto-precache toggle, offline bar in Header, background sync, LRU eviction (100 articles max).
 
+## FFI / Observability Patterns from planet_cf
+
+Patterns observed in [adewale/planet_cf](https://github.com/adewale/planet_cf) that are worth adopting.
+
+1. **`create_pyproxies=False` in `to_js()` calls** — raises `ConversionError` instead of silently creating leaking PyProxy objects when non-primitive types (custom classes, functions, bytes, datetime) slip into data passed to bindings. All binding data should be primitives/lists/dicts, so this is a cheap safety net.
+
+2. **Type assertions at the FFI boundary** — `SafeD1.first()` asserts result is `dict|None`, `SafeAI.run()` asserts result is `dict`, etc. Violations emit a structured log event (`boundary_type_violation`) instead of crashing. Catches conversion bugs before they propagate to business logic.
+
+3. **Pyodide FFI fakes for testing** — monkeypatch `HAS_PYODIDE=True` in CPython tests and inject fake JsNull/JsUndefined/FakeJsProxy classes. This catches the `JsNull is not None` class of bugs that regular mock-based testing misses. Tasche documents this gotcha in MEMORY.md but has no regression tests for it.
+
+4. **D1 query counting** — increment a counter in `SafeD1.prepare()` and include it in the wide event. Makes N+1 query patterns visible in production logs without profiling.
+
+5. **Queue backpressure visibility** — include `enqueued_at` timestamp in queue message payloads. The consumer computes `time_in_queue_ms` and logs it. Surfaces queue latency without external monitoring.
+
+6. **`dict_converter=Object.fromEntries` always in `to_js()`** — without this, `to_js()` creates a JS `LiteralMap` instead of a plain `Object`. Bindings that use property access (Vectorize, Workers AI, R2 put options) see `undefined` for every field. planet_cf's latest commit (2026-03-28) fixes a production bug caused by this. Note: Pyodide 0.29.0 will default to Object conversion, making `dict_converter` redundant.
+
 ## Kindle Integration
 
 Ideas for getting articles onto Kindle devices and into the Kindle reading experience.

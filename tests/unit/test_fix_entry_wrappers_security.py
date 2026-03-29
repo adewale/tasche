@@ -16,16 +16,13 @@ from __future__ import annotations
 
 import importlib
 import inspect
-import textwrap
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from tests.conftest import MockD1, MockEnv, MockKV, MockQueue, make_test_helpers
-
+from tests.conftest import MockEnv
 
 # =========================================================================
 # Issue 66: HAS_PYODIDE is imported from wrappers, not redefined in entry
@@ -47,6 +44,7 @@ class TestHasPyodideDedup:
         source = inspect.getsource(importlib.import_module("src.entry"))
         # Should not have a local assignment like "HAS_PYODIDE = False" or "HAS_PYODIDE = True"
         import re
+
         local_assignments = re.findall(r"^HAS_PYODIDE\s*=", source, re.MULTILINE)
         assert len(local_assignments) == 0, (
             "entry.py should not assign HAS_PYODIDE — it should import it from wrappers"
@@ -280,8 +278,6 @@ class TestExceptionTruncation:
         """A long exception message should be truncated in the emitted event."""
         from src.observability import ObservabilityMiddleware
 
-        captured_events: list[dict] = []
-
         async def failing_app(scope, receive, send):
             raise RuntimeError("x" * 2000)
 
@@ -328,9 +324,7 @@ class TestFetchTimeout:
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.request = AsyncMock(
-            side_effect=httpx.TimeoutException("timed out")
-        )
+        mock_client.request = AsyncMock(side_effect=httpx.TimeoutException("timed out"))
 
         with patch("httpx.AsyncClient", return_value=mock_client):
             with pytest.raises(TimeoutError):

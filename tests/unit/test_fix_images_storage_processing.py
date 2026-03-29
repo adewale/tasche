@@ -33,13 +33,10 @@ from tests.conftest import (
     MockEnv,
     MockQueue,
     MockR2,
-    MockReadability,
     TrackingD1,
     _make_mock_http_fetch,
     _make_mock_response,
-    parse_update_params,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -127,9 +124,7 @@ class TestConcurrentImageDownloads:
                 "https://cdn.example.com/c.jpg",
             ]
         )
-        mock_fetch = AsyncMock(
-            return_value=_make_image_response(content=b"x" * 400)
-        )
+        mock_fetch = AsyncMock(return_value=_make_image_response(content=b"x" * 400))
 
         with patch("articles.images.http_fetch", mock_fetch):
             # 3 images * 400 bytes = 1200, limit 800 -> at most 2
@@ -174,7 +169,11 @@ class TestConcurrentImageUploads:
         """store_images uploads all images concurrently via asyncio.gather."""
         r2 = MockR2()
         images = [
-            {"url": f"https://cdn.example.com/img{i}.jpg", "data": b"data", "content_type": "image/jpeg"}
+            {
+                "url": f"https://cdn.example.com/img{i}.jpg",
+                "data": b"data",
+                "content_type": "image/jpeg",
+            }
             for i in range(5)
         ]
 
@@ -502,7 +501,9 @@ class TestTTSEnqueueGuard:
         generating_updates = [
             (sql, params)
             for sql, params in db.executed
-            if "audio_status = ?" in sql and "generating" in str(params) and "AND audio_status = ?" in sql
+            if "audio_status = ?" in sql
+            and "generating" in str(params)
+            and "AND audio_status = ?" in sql
         ]
         assert len(generating_updates) >= 1
 

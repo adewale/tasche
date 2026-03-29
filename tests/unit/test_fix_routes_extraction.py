@@ -19,7 +19,6 @@ import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from bs4 import BeautifulSoup
 
 from src.articles.extraction import (
@@ -260,9 +259,7 @@ class TestProcessNowErrorMessage:
         assert resp.status_code == 200
         # The secret message must never appear in the response, regardless of result
         response_text = resp.text
-        assert secret_message not in response_text, (
-            "Internal exception details leaked in response"
-        )
+        assert secret_message not in response_text, "Internal exception details leaked in response"
 
 
 # =========================================================================
@@ -362,9 +359,7 @@ class TestParseHtmlOnce:
 class TestBatchUpdateConcurrent:
     async def test_batch_update_updates_multiple_articles(self) -> None:
         """batch-update applies updates to all provided article IDs."""
-        articles = [
-            ArticleFactory.create(id=f"art_{i}", user_id="user_001") for i in range(3)
-        ]
+        [ArticleFactory.create(id=f"art_{i}", user_id="user_001") for i in range(3)]
 
         def execute(sql: str, params: list) -> list:
             if "UPDATE" in sql:
@@ -421,9 +416,7 @@ class TestBatchUpdateConcurrent:
 class TestBatchDeleteBatched:
     async def test_batch_delete_uses_single_ownership_query(self) -> None:
         """batch-delete verifies ownership with one SELECT IN query."""
-        articles = [
-            ArticleFactory.create(id=f"del_{i}", user_id="user_001") for i in range(3)
-        ]
+        [ArticleFactory.create(id=f"del_{i}", user_id="user_001") for i in range(3)]
 
         def execute(sql: str, params: list) -> list:
             if "SELECT id FROM articles WHERE id IN" in sql:

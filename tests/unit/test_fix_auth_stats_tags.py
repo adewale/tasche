@@ -14,23 +14,20 @@ Covers:
 
 from __future__ import annotations
 
-import asyncio
 import inspect
 import json
 import time
+from datetime import UTC
 from typing import Any
-from unittest.mock import patch
-
-import pytest
-from fastapi.testclient import TestClient
 
 from src.auth.session import (
     SESSION_PREFIX,
-    _REFRESH_INTERVAL,
     refresh_session,
 )
-from src.stats.routes import _calculate_streak, get_stats, router as stats_router
-from src.tags.routes import article_tags_router, router as tags_router
+from src.stats.routes import _calculate_streak
+from src.stats.routes import router as stats_router
+from src.tags.routes import article_tags_router
+from src.tags.routes import router as tags_router
 from tests.conftest import (
     MockD1,
     MockEnv,
@@ -120,7 +117,6 @@ class TestDevUserReturnsCopy:
 
     async def test_returns_different_dict_objects(self) -> None:
         """Each call to _get_or_create_dev_user returns a distinct dict (copy)."""
-        import src.auth.dependencies as deps
         from src.auth.dependencies import _get_or_create_dev_user
         from src.wrappers import SafeEnv
 
@@ -136,7 +132,6 @@ class TestDevUserReturnsCopy:
 
     async def test_mutation_does_not_affect_cache(self) -> None:
         """Mutating the returned dev user dict does not affect the cached version."""
-        import src.auth.dependencies as deps
         from src.auth.dependencies import _get_or_create_dev_user
         from src.wrappers import SafeEnv
 
@@ -158,8 +153,6 @@ class TestDevUserReturnsCopy:
 class TestStatsConcurrentQueries:
     async def test_get_stats_uses_asyncio_gather(self) -> None:
         """The get_stats handler should use concurrent execution for stats queries."""
-        import asyncio
-        from unittest.mock import patch as _patch
 
         call_order: list[str] = []
 
@@ -184,7 +177,9 @@ class TestStatsConcurrentQueries:
             if "strftime" in sql:
                 return []
             if "saved_week" in sql:
-                return [{"saved_week": 0, "saved_month": 0, "archived_week": 0, "archived_month": 0}]
+                return [
+                    {"saved_week": 0, "saved_month": 0, "archived_week": 0, "archived_month": 0}
+                ]
             return []
 
         db = MockD1(execute=execute)
@@ -295,13 +290,11 @@ class TestReadingStatusCounted:
 class TestStreakUsesUTC:
     def test_calculate_streak_uses_utc(self) -> None:
         """_calculate_streak correctly handles UTC dates, not local time."""
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
-        utc_today = datetime.now(timezone.utc).date()
+        utc_today = datetime.now(UTC).date()
         # A streak of 3 consecutive UTC days should return 3
-        rows = [
-            {"d": (utc_today - timedelta(days=i)).isoformat()} for i in range(3)
-        ]
+        rows = [{"d": (utc_today - timedelta(days=i)).isoformat()} for i in range(3)]
         result = _calculate_streak(rows)
         assert result == 3
 
@@ -315,12 +308,10 @@ class TestStreakUsesUTC:
 
     def test_streak_with_utc_today(self) -> None:
         """Streak calculation uses UTC date, not local date."""
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
-        utc_today = datetime.now(timezone.utc).date()
-        rows = [
-            {"d": (utc_today - timedelta(days=i)).isoformat()} for i in range(3)
-        ]
+        utc_today = datetime.now(UTC).date()
+        rows = [{"d": (utc_today - timedelta(days=i)).isoformat()} for i in range(3)]
         result = _calculate_streak(rows)
         assert result == 3
 
@@ -439,4 +430,5 @@ class TestSessionIdComment:
 
         source = inspect.getsource(session_mod)
         # Should have a comment near token_urlsafe(32) explaining the choice
-        assert "32 bytes" in source.lower() or "43 chars" in source.lower() or "higher entropy" in source.lower()
+        src = source.lower()
+        assert "32 bytes" in src or "43 chars" in src or "higher entropy" in src

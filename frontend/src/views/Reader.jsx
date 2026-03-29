@@ -216,7 +216,8 @@ export function Reader({ id }) {
       window.removeEventListener('scroll', handleScroll);
       // Save a breath mark at the current scroll position on unmount
       const scrollTop = window.scrollY || document.documentElement.scrollTop;
-      const docHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+      const docHeight =
+        document.documentElement.scrollHeight - document.documentElement.clientHeight;
       if (docHeight > 0) {
         const pos = Math.min(1, Math.max(0, scrollTop / docHeight));
         saveBreathMark(currentId, Math.round(pos * 10000) / 10000);

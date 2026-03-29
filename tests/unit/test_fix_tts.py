@@ -11,20 +11,16 @@ from __future__ import annotations
 
 import struct
 
-import pytest
-
 from tts.processing import (
+    _OGG_CRC_TABLE,
     _accumulate_chunks,
     _build_ogg_crc_table,
     _ogg_crc32,
-    _OGG_CRC_TABLE,
     _write_ogg_page,
     chunk_text,
     chunk_text_with_sentences,
-    split_sentences,
     strip_markdown,
 )
-
 
 # ---------------------------------------------------------------------------
 # Issue 17 — OGG CRC-32 lookup table
@@ -89,7 +85,13 @@ class TestOggCrc32Table:
             serial=1,
             page_seq=0,
             segment_table=b"\x13",
-            payload=b"OpusHead" + b"\x01\x02" + b"\x00\x0f" + b"\x80\xbb\x00\x00" + b"\x00\x00\x00\x00\x00",
+            payload=(
+                b"OpusHead"
+                + b"\x01\x02"
+                + b"\x00\x0f"
+                + b"\x80\xbb\x00\x00"
+                + b"\x00\x00\x00\x00\x00"
+            ),
         )
         # Extract CRC from bytes 22-25
         embedded_crc = struct.unpack_from("<I", page, 22)[0]

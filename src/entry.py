@@ -41,7 +41,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # FastAPI application
 # ---------------------------------------------------------------------------
-import os as _os
+import os as _os  # noqa: E402
 
 from fastapi import FastAPI, Request  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
@@ -492,6 +492,17 @@ class Default(WorkerEntrypoint):
                 msg_type = body.get("type", "unknown")
 
                 evt = begin_event("queue", queue_message_type=msg_type)
+
+                enqueued_at = body.get("enqueued_at")
+                if enqueued_at:
+                    from datetime import UTC, datetime
+
+                    try:
+                        enq_time = datetime.fromisoformat(enqueued_at)
+                        wait_ms = (datetime.now(UTC) - enq_time).total_seconds() * 1000
+                        evt.set("queue.wait_ms", round(wait_ms, 2))
+                    except (ValueError, TypeError):
+                        pass
 
                 handler = QUEUE_HANDLERS.get(msg_type)
                 if handler is None:

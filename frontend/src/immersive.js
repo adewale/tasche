@@ -133,7 +133,10 @@ function matchSentencesToDOM(contentEl, sentences) {
         searchFrom = 0;
         // Find where we are in the new text
         const lastSpanText = span.textContent;
-        const refIdx = fullText.indexOf(lastSpanText, Math.max(0, searchFrom - lastSpanText.length));
+        const refIdx = fullText.indexOf(
+          lastSpanText,
+          Math.max(0, searchFrom - lastSpanText.length),
+        );
         if (refIdx >= 0) {
           searchFrom = refIdx + lastSpanText.length;
         }

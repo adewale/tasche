@@ -1,9 +1,0 @@
-{
-  "eval_id": 2,
-  "eval_name": "clean-branch-clean",
-  "prompt": "review my changes before I push",
-  "assertions": [
-    {"name": "verdict-is-clean", "description": "Report gives a Clean verdict"},
-    {"name": "no-false-positives", "description": "Report does not incorrectly flag Blocking or Minor issues"}
-  ]
-}

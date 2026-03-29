@@ -94,9 +94,7 @@ async def create_tag(
     # The UNIQUE constraint (user_id, name) causes the INSERT to be silently
     # ignored rather than raising a 500 error.
     result = await (
-        db.prepare(
-            "INSERT OR IGNORE INTO tags (id, user_id, name, created_at) VALUES (?, ?, ?, ?)"
-        )
+        db.prepare("INSERT OR IGNORE INTO tags (id, user_id, name, created_at) VALUES (?, ?, ?, ?)")
         .bind(tag_id, user_id, name, now)
         .run()
     )

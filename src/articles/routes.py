@@ -303,18 +303,14 @@ async def create_article(
             # Batch-validate tag ownership in a single query
             placeholders = ", ".join("?" for _ in valid_tids)
             owned_rows = await (
-                db.prepare(
-                    f"SELECT id FROM tags WHERE id IN ({placeholders}) AND user_id = ?"
-                )
+                db.prepare(f"SELECT id FROM tags WHERE id IN ({placeholders}) AND user_id = ?")
                 .bind(*valid_tids, user_id)
                 .all()
             )
             owned_ids = {r["id"] for r in owned_rows}
             # Batch-insert all valid tag associations concurrently
             insert_coros = [
-                db.prepare(
-                    "INSERT OR IGNORE INTO article_tags (article_id, tag_id) VALUES (?, ?)"
-                )
+                db.prepare("INSERT OR IGNORE INTO article_tags (article_id, tag_id) VALUES (?, ?)")
                 .bind(article_id, tid)
                 .run()
                 for tid in valid_tids
@@ -651,9 +647,7 @@ async def batch_delete_articles(
         return {"deleted": 0}
     placeholders = ", ".join("?" for _ in valid_ids)
     owned_rows = await (
-        db.prepare(
-            f"SELECT id FROM articles WHERE id IN ({placeholders}) AND user_id = ?"
-        )
+        db.prepare(f"SELECT id FROM articles WHERE id IN ({placeholders}) AND user_id = ?")
         .bind(*valid_ids, user_id)
         .all()
     )

@@ -45,7 +45,8 @@ async def listen_later(
         db,
         article_id,
         user_id,
-        fields="id, audio_status, audio_key, audio_duration_seconds, updated_at, audio_generated_at",
+        fields="id, audio_status, audio_key, audio_duration_seconds,"
+        " updated_at, audio_generated_at",
     )
 
     # Idempotency: if audio is already ready and content hasn't changed

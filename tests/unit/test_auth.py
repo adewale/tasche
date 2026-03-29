@@ -11,7 +11,6 @@ import time
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
-import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 

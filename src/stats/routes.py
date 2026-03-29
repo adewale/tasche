@@ -47,9 +47,7 @@ async def get_stats(
         monthly_archived_rows,
     ) = await asyncio.gather(
         # 1. Total articles
-        db.prepare("SELECT COUNT(*) AS cnt FROM articles WHERE user_id = ?")
-        .bind(user_id)
-        .first(),
+        db.prepare("SELECT COUNT(*) AS cnt FROM articles WHERE user_id = ?").bind(user_id).first(),
         # 2. Total words read (archived articles only)
         db.prepare(
             "SELECT COALESCE(SUM(word_count), 0) AS total "

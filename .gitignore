@@ -51,3 +51,11 @@ python_modules/
 *.swo
 *~
 .DS_Store
+
+# Localflare generated files
+.localflare/
+
+# Vendored skills
+.agents/
+.claude/skills/
+skills-lock.json

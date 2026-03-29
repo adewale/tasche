@@ -31,6 +31,8 @@ Bug inventory:
 
 from __future__ import annotations
 
+from datetime import UTC
+
 from src.articles.routes import router as articles_router
 from src.stats.routes import _calculate_streak
 from src.tts.routes import router as tts_router
@@ -306,9 +308,9 @@ class TestBatchDeleteCleanup:
 class TestStreakTimezoneEdgeCase:
     def test_streak_with_today_included(self) -> None:
         """Streak calculation includes today when today has activity."""
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
-        today = datetime.now(timezone.utc).date()
+        today = datetime.now(UTC).date()
         rows = [
             {"d": today.isoformat()},
             {"d": (today - timedelta(days=1)).isoformat()},
@@ -320,9 +322,9 @@ class TestStreakTimezoneEdgeCase:
 
     def test_streak_with_only_yesterday(self) -> None:
         """Streak starts from yesterday when today has no activity."""
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
-        yesterday = datetime.now(timezone.utc).date() - timedelta(days=1)
+        yesterday = datetime.now(UTC).date() - timedelta(days=1)
         rows = [
             {"d": yesterday.isoformat()},
             {"d": (yesterday - timedelta(days=1)).isoformat()},
@@ -333,9 +335,9 @@ class TestStreakTimezoneEdgeCase:
 
     def test_streak_with_gap_two_days_ago(self) -> None:
         """Streak is 0 when the most recent activity was 2+ days ago."""
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
-        two_days_ago = datetime.now(timezone.utc).date() - timedelta(days=2)
+        two_days_ago = datetime.now(UTC).date() - timedelta(days=2)
         rows = [
             {"d": two_days_ago.isoformat()},
         ]

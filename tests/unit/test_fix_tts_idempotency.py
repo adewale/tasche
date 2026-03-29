@@ -7,11 +7,6 @@ is set after successful TTS generation.
 
 from __future__ import annotations
 
-from typing import Any
-from unittest.mock import AsyncMock
-
-import pytest
-
 from src.tts.routes import router
 from tests.conftest import (
     ArticleFactory,
@@ -268,7 +263,8 @@ class TestAudioGeneratedAtTimestamp:
 
         # Find the final UPDATE that sets audio_status = 'ready'
         final_updates = [
-            (sql, params) for sql, params in executed_updates
+            (sql, params)
+            for sql, params in executed_updates
             if "audio_status" in sql and "audio_generated_at" in sql
         ]
         assert len(final_updates) >= 1, (

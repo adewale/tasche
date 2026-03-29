@@ -454,6 +454,14 @@ class SafeD1:
 
     def prepare(self, sql: str) -> SafeD1Statement:
         """Create a prepared statement wrapped in ``SafeD1Statement``."""
+        try:
+            from wide_event import current_event
+
+            evt = current_event()
+            if evt:
+                evt.record_d1_prepare(sql)
+        except ImportError:
+            pass
         return SafeD1Statement(self._db.prepare(sql))
 
 
@@ -550,10 +558,18 @@ class SafeQueue:
         self._queue = queue
 
     async def send(self, message: Any, **kwargs: Any) -> None:
-        """Send a message with automatic dict→JS Object conversion."""
+        """Send a message with automatic dict→JS Object conversion.
+
+        Injects ``enqueued_at`` (ISO timestamp) into dict messages for
+        queue backpressure visibility.  The consumer computes
+        ``queue.wait_ms`` from this field.
+        """
         t0 = time.monotonic()
         try:
             if isinstance(message, dict):
+                from datetime import UTC, datetime
+
+                message["enqueued_at"] = datetime.now(UTC).isoformat()
                 message = _to_js_value(message)
             await self._queue.send(message, **kwargs)
         finally:
@@ -866,9 +882,7 @@ async def http_fetch(
             js_opts = _to_js_value(opts)
 
             try:
-                response = await asyncio.wait_for(
-                    js.fetch(url, js_opts), timeout=timeout
-                )
+                response = await asyncio.wait_for(js.fetch(url, js_opts), timeout=timeout)
             except TimeoutError as exc:
                 raise TimeoutError(f"Request timed out after {timeout}s") from exc
             except Exception as exc:
