@@ -338,7 +338,7 @@ class TestBatchCheckOriginals:
 
         client, session_id = await _authenticated_client(env)
 
-        with patch("articles.routes.check_original_url", new_callable=AsyncMock):
+        with patch("src.articles.routes.check_original_url", new_callable=AsyncMock):
             resp = client.post("/api/articles/batch-check-originals")
 
         assert resp.status_code == 200
@@ -419,8 +419,10 @@ class TestMetadataJsonEnhanced:
         assert metadata_key in r2._store
         metadata = json.loads(r2._store[metadata_key].decode("utf-8"))
         assert "archived_at" in metadata
-        # ISO 8601 timestamp should contain 'T'
-        assert "T" in metadata["archived_at"]
+        # Validate ISO 8601 format by parsing
+        from datetime import datetime
+
+        datetime.fromisoformat(metadata["archived_at"])
 
     async def test_metadata_has_all_expected_fields(self) -> None:
         """metadata.json contains all required provenance fields."""

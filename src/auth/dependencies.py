@@ -10,7 +10,6 @@ authentication is bypassed and a dev user is returned automatically.
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException, Request
@@ -22,6 +21,24 @@ from auth.session import (
     parse_allowed_emails,
     refresh_session,
 )
+from utils import now_iso
+
+# Module-level cache for parsed ALLOWED_EMAILS — avoids re-parsing on every request.
+_allowed_emails_cache: tuple[str, set[str]] | None = None
+
+
+def _cached_parse_allowed_emails(raw: str) -> set[str]:
+    """Return the parsed allowed emails, caching the result at module level.
+
+    Re-parses only when the raw string changes (e.g. env var updated).
+    """
+    global _allowed_emails_cache
+    if _allowed_emails_cache is not None and _allowed_emails_cache[0] == raw:
+        return _allowed_emails_cache[1]
+    result = parse_allowed_emails(raw)
+    _allowed_emails_cache = (raw, result)
+    return result
+
 
 # Module-level cache — avoids a D1 round-trip on every request after the first.
 _dev_user: dict[str, Any] | None = None
@@ -33,9 +50,9 @@ async def _get_or_create_dev_user(db: Any) -> dict[str, Any]:
     """Return the dev user, creating it in D1 if it doesn't exist yet."""
     global _dev_user
     if _dev_user is not None:
-        return _dev_user
+        return dict(_dev_user)
 
-    now = datetime.now(UTC).isoformat()
+    now = now_iso()
     await (
         db.prepare(
             "INSERT OR IGNORE INTO users (id, github_id, email, username, avatar_url, "
@@ -53,7 +70,7 @@ async def _get_or_create_dev_user(db: Any) -> dict[str, Any]:
         "created_at": now,
     }
     print(json.dumps({"event": "dev_mode_active", "user_id": _DEV_USER_ID}))
-    return _dev_user
+    return dict(_dev_user)
 
 
 async def get_current_user(request: Request) -> dict[str, Any]:
@@ -98,7 +115,7 @@ async def get_current_user(request: Request) -> dict[str, Any]:
 
     # Re-check ALLOWED_EMAILS to handle revocation (whitelist is required)
     allowed_raw = env.get("ALLOWED_EMAILS", "")
-    allowed_emails = parse_allowed_emails(allowed_raw)
+    allowed_emails = _cached_parse_allowed_emails(allowed_raw)
 
     if not allowed_emails:
         await delete_session(env.SESSIONS, session_id)

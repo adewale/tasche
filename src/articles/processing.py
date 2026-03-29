@@ -157,10 +157,17 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
                         content_type = resp.headers.get("content-type", "").split(";")[0].strip()
                         max_thumb = 2 * 1024 * 1024
                         if content_type.startswith("image/") and len(resp.content) <= max_thumb:
-                            thumbnail_key = article_key(article_id, "thumbnail.webp")
+                            # Detect actual format from content-type
+                            from articles.images import _MIME_TO_EXT
+
+                            thumb_ext = _MIME_TO_EXT.get(content_type, ".webp")
+                            thumb_filename = f"thumbnail{thumb_ext}"
+                            thumbnail_key = article_key(article_id, thumb_filename)
                             await r2.put(thumbnail_key, resp.content)
             except Exception:
-                pass  # Thumbnail extraction is non-fatal
+                evt = current_event()
+                if evt:
+                    evt.set("thumbnail_error", traceback.format_exc()[-300:])
 
         # Step 5: Extract article content
         # Prefer the Readability Service Binding (100% Mozilla fidelity)
@@ -215,6 +222,16 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
         # Step 10: Store content.html to R2
         keys = await store_content(r2, article_id, clean_html)
         html_key = keys["html_key"]
+
+        # Step 10b: Store content.md to R2 (dual-format: R2 + D1)
+        md_key = article_key(article_id, "content.md")
+        await r2.put(md_key, markdown)
+
+        # Step 10c: Clean up pre-supplied raw.html if it exists
+        try:
+            await r2.delete(article_key(article_id, "raw.html"))
+        except Exception:
+            pass  # Ignore if raw.html didn't exist
 
         # Step 12: Store metadata.json to R2
         content_hash = hashlib.sha256(clean_html.encode("utf-8")).hexdigest()
@@ -293,7 +310,9 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
                 }
             )
 
-        # Auto-enqueue TTS if listen_later was requested at save time
+        # Auto-enqueue TTS if listen_later was requested at save time.
+        # Only enqueue when audio_status is exactly 'pending' — skip if
+        # already 'generating' (requeue_tts race) or 'ready'/'failed'.
         try:
             art_row = await (
                 db.prepare("SELECT audio_status, user_id FROM articles WHERE id = ?")
@@ -301,6 +320,14 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
                 .first()
             )
             if art_row and art_row.get("audio_status") == "pending":
+                # Atomically set to 'generating' to prevent double-enqueue
+                await (
+                    db.prepare(
+                        "UPDATE articles SET audio_status = ? WHERE id = ? AND audio_status = ?"
+                    )
+                    .bind("generating", article_id, "pending")
+                    .run()
+                )
                 await env.ARTICLE_QUEUE.send(
                     {
                         "type": "tts_generation",
@@ -389,11 +416,16 @@ async def _fetch_page(
 
     # Validate Content-Length before reading body into memory
     content_length = resp.headers.get("content-length")
-    if content_length is not None and int(content_length) > _MAX_CONTENT_LENGTH:
-        raise ValueError(
-            f"Response too large: Content-Length {content_length} exceeds "
-            f"limit of {_MAX_CONTENT_LENGTH} bytes"
-        )
+    if content_length is not None:
+        try:
+            cl_int = int(content_length)
+        except (ValueError, TypeError):
+            cl_int = 0  # Malformed header — fall through to body-length check
+        if cl_int > _MAX_CONTENT_LENGTH:
+            raise ValueError(
+                f"Response too large: Content-Length {content_length} exceeds "
+                f"limit of {_MAX_CONTENT_LENGTH} bytes"
+            )
 
     # Validate Content-Type before reading body into memory
     content_type = resp.headers.get("content-type", "")

@@ -59,6 +59,7 @@ class WideEvent:
         "_start",
         "_d1_count",
         "_d1_ms",
+        "_d1_sqls",
         "_r2_get_count",
         "_r2_get_ms",
         "_r2_put_count",
@@ -87,6 +88,7 @@ class WideEvent:
 
         self._d1_count = 0
         self._d1_ms = 0.0
+        self._d1_sqls: set[str] = set()
         self._r2_get_count = 0
         self._r2_get_ms = 0.0
         self._r2_put_count = 0
@@ -105,6 +107,10 @@ class WideEvent:
         self._svc_ms = 0.0
 
     # -- Infrastructure recording (called by Safe* wrappers) --
+
+    def record_d1_prepare(self, sql: str) -> None:
+        """Record a D1 prepare call for N+1 detection."""
+        self._d1_sqls.add(sql)
 
     def record_d1(self, elapsed_ms: float) -> None:
         self._d1_count += 1
@@ -163,6 +169,7 @@ class WideEvent:
         if self._d1_count:
             self._fields["d1.count"] = self._d1_count
             self._fields["d1.ms"] = round(self._d1_ms, 2)
+            self._fields["d1.unique_sqls"] = len(self._d1_sqls)
         if self._r2_get_count:
             self._fields["r2.get.count"] = self._r2_get_count
             self._fields["r2.get.ms"] = round(self._r2_get_ms, 2)

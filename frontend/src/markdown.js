@@ -22,9 +22,9 @@ marked.use({
         return tokens ? this.parser.parseInline(tokens) : '';
       }
       // Let the built-in renderer produce the HTML, then add target="_blank"
-      var text = this.parser.parseInline(tokens);
-      var cleanHref = href || '';
-      var out = '<a target="_blank" rel="noopener" href="' + escapeHtml(cleanHref) + '"';
+      const text = this.parser.parseInline(tokens);
+      const cleanHref = href || '';
+      let out = '<a target="_blank" rel="noopener" href="' + escapeHtml(cleanHref) + '"';
       if (title) {
         out += ' title="' + escapeHtml(title) + '"';
       }
@@ -37,7 +37,7 @@ marked.use({
       if (href && /^\s*javascript\s*:/i.test(href)) {
         return text || '';
       }
-      var titleAttr = title ? ' title="' + escapeHtml(title) + '"' : '';
+      const titleAttr = title ? ' title="' + escapeHtml(title) + '"' : '';
       return (
         '<img src="' +
         escapeHtml(href) +
@@ -53,7 +53,7 @@ marked.use({
 
 export function renderMarkdown(md) {
   if (!md) return '';
-  var raw = marked.parse(md);
+  const raw = marked.parse(md);
   return DOMPurify.sanitize(raw, {
     FORBID_TAGS: ['style'],
     FORBID_ATTR: ['style'],

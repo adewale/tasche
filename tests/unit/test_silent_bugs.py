@@ -1,7 +1,8 @@
-"""Tests exposing silently broken features in the Tasche codebase.
+"""Tests for silently broken features and regression guards in the Tasche codebase.
 
-These tests demonstrate bugs that look functional in the UI but are
-actually broken. Each test is designed to FAIL, revealing the issue.
+Some tests expose bugs that still exist (marked EXPOSES), while others serve
+as regression guards verifying that previously broken behaviour now works
+correctly (marked REGRESSION or RESOLVED).
 
 Audit categories:
 1. Dead code paths / discarded results
@@ -17,8 +18,11 @@ Bug inventory:
           reports incorrect updated count
 - Bug 3: (removed — reading status eliminated from codebase)
 - Bug 4: Frontend api.js drops offset=0 from query string (falsy guard)
+          (frontend-only, not testable in backend unit tests)
 - Bug 5: Frontend api.js drops limit when it's 0 (falsy guard)
+          (frontend-only, not testable in backend unit tests)
 - Bug 6: Settings handleExport silently swallows errors (no toast)
+          (frontend-only, not testable in backend unit tests)
 - Bug 7: TTS sentence highlighting adjusts timestamps by playback speed,
           but audio.currentTime is already in the media timeline
 - Bug 8: batch_update_articles doesn't verify article ownership before
@@ -27,6 +31,8 @@ Bug inventory:
 
 from __future__ import annotations
 
+from datetime import UTC
+
 from src.articles.routes import router as articles_router
 from src.stats.routes import _calculate_streak
 from src.tts.routes import router as tts_router
@@ -34,6 +40,7 @@ from tests.conftest import (
     ArticleFactory,
     MockD1,
     MockEnv,
+    MockQueue,
     MockR2,
     make_test_helpers,
 )
@@ -225,7 +232,7 @@ class TestOffsetZeroHandling:
 
 
 # ============================================================================
-# Bug 7: batch_delete doesn't clean up FTS5 index entries
+# Bug 10: batch_delete doesn't clean up FTS5 index entries
 #
 # When deleting articles via batch-delete, the endpoint deletes from D1
 # and R2, but doesn't explicitly delete from the articles_fts virtual table.
@@ -254,6 +261,9 @@ class TestBatchDeleteCleanup:
         delete_sqls: list[str] = []
 
         def execute(sql: str, params: list) -> list:
+            if "SELECT id FROM articles" in sql and "IN" in sql:
+                # Batch ownership check
+                return [{"id": p} for p in params if p == "del_test"]
             if "SELECT id FROM articles WHERE id = ?" in sql:
                 if params[0] == "del_test":
                     return [{"id": "del_test"}]
@@ -298,9 +308,9 @@ class TestBatchDeleteCleanup:
 class TestStreakTimezoneEdgeCase:
     def test_streak_with_today_included(self) -> None:
         """Streak calculation includes today when today has activity."""
-        from datetime import date, timedelta
+        from datetime import datetime, timedelta
 
-        today = date.today()
+        today = datetime.now(UTC).date()
         rows = [
             {"d": today.isoformat()},
             {"d": (today - timedelta(days=1)).isoformat()},
@@ -312,9 +322,9 @@ class TestStreakTimezoneEdgeCase:
 
     def test_streak_with_only_yesterday(self) -> None:
         """Streak starts from yesterday when today has no activity."""
-        from datetime import date, timedelta
+        from datetime import datetime, timedelta
 
-        yesterday = date.today() - timedelta(days=1)
+        yesterday = datetime.now(UTC).date() - timedelta(days=1)
         rows = [
             {"d": yesterday.isoformat()},
             {"d": (yesterday - timedelta(days=1)).isoformat()},
@@ -325,9 +335,9 @@ class TestStreakTimezoneEdgeCase:
 
     def test_streak_with_gap_two_days_ago(self) -> None:
         """Streak is 0 when the most recent activity was 2+ days ago."""
-        from datetime import date, timedelta
+        from datetime import datetime, timedelta
 
-        two_days_ago = date.today() - timedelta(days=2)
+        two_days_ago = datetime.now(UTC).date() - timedelta(days=2)
         rows = [
             {"d": two_days_ago.isoformat()},
         ]
@@ -372,7 +382,8 @@ class TestListenLaterAlreadyReady:
             return []
 
         db = MockD1(execute=execute)
-        env = MockEnv(db=db, content=MockR2())
+        queue = MockQueue()
+        env = MockEnv(db=db, content=MockR2(), article_queue=queue)
 
         routers = ((tts_router, "/api/articles"),)
         client, session_id = await _authenticated_client_with(env, *routers)
@@ -384,6 +395,13 @@ class TestListenLaterAlreadyReady:
         assert resp.status_code == 202
         data = resp.json()
         assert data["audio_status"] == "pending"
+
+        # Verify a queue message was sent for TTS generation
+        assert len(queue.messages) == 1, (
+            f"Expected 1 queue message for TTS generation, got {len(queue.messages)}"
+        )
+        msg = queue.messages[0]
+        assert msg["article_id"] == "ready_audio"
 
 
 # ============================================================================

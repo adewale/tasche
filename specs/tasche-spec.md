@@ -3,7 +3,6 @@
 
 ## Product Specification for Coding Agents
 
-**Last Updated:** February 2026
 **Cloudflare Compatibility Date:** 2025-12-01
 **Runtime:** Python Workers (Pyodide)
 
@@ -38,7 +37,7 @@ When you save an article, Tasche creates a **complete, self-contained archive**:
 - Reader loads from R2, not the live web
 - If you click the original URL and it 404s: "Original is gone. Good thing you saved it."
 
-This is the entire point of the app. Tasche captures everything needed for a complete reading experience at save time—clean HTML, all images downloaded locally, and a full-page screenshot as fallback.
+This is the entire point of the app. Tasche captures everything needed for a complete reading experience at save time—clean HTML and all images downloaded locally.
 
 ### 1.2 What Gets Archived
 
@@ -50,11 +49,10 @@ When you save a URL, Tasche creates a complete, self-contained archive:
 | `final_url` | After redirects (t.co → real URL) | D1 |
 | `canonical_url` | What the page declares as canonical | D1 |
 | `content.html` | Clean HTML with localized image paths | R2 |
-| `thumbnail.webp` | Above-the-fold screenshot for article cards | R2 |
-| `original.webp` | Full-page scrolling screenshot for archival | R2 |
+| `thumbnail.*` | OG image thumbnail for article cards | R2 |
 | `images/*.webp` | All article images, converted to WebP | R2 |
 | `metadata.json` | Archive timestamp, image count, provenance | R2 |
-| `audio.mp3` | TTS audio version (only if Listen Later enabled) | R2 |
+| `audio.ogg` | TTS audio (Opus) version (only if Listen Later enabled) | R2 |
 
 **Why three URLs?**
 - `original_url`: Detect duplicates when same article saved via different links (Twitter t.co, newsletter tracking, etc.)
@@ -67,10 +65,6 @@ When you save a URL, Tasche creates a complete, self-contained archive:
 - WebP conversion saves ~30% storage vs. original formats
 - Limits: 2MB per image, 10MB total per article (configurable)
 
-**Why full-page screenshot?**
-- Fallback when Readability extraction fails (infographics, complex layouts)
-- Visual proof of what the page looked like when saved
-- Archival value—the web changes and disappears
 
 ### 1.3 Configuration
 
@@ -123,13 +117,7 @@ Reading requires visual attention. Listening enables multitasking—commutes, ex
 - Storage efficient—audio only for articles that need it
 - Clear mental model: "Listen Later" is a distinct action
 
-**Idempotency:** The listen-later endpoint MUST check `audio_status` before enqueuing:
-- `pending`: Return 409 Conflict (already queued)
-- `generating`: Allow re-queue as a recovery mechanism for stuck jobs (reset to `pending` and re-enqueue)
-- `ready`: Return 200 with existing audio data (no re-enqueue)
-- `null` or `failed`: Proceed to enqueue (new request or retry)
-
-This prevents duplicate Workers AI invocations, which cost real compute.
+**Regeneration:** The listen-later endpoint always allows re-generation. Any existing audio and timing files are deleted from R2 first, `audio_status` is reset to `pending`, and a new TTS job is enqueued. This simplifies the UX (retry and regenerate are the same action) at the cost of occasional duplicate compute. The TTS queue consumer has its own idempotency check (skips if `audio_status` is already `ready`) to guard against race conditions.
 
 **Processing flow:**
 ```
@@ -156,8 +144,8 @@ User clicks "Listen Later"
 │  3. Truncate to 100K chars      │
 │     (append "...truncated" note)│
 │  4. Call Workers AI:            │
-│     TTS_MODEL (default: melotts)│
-│  5. Store audio.mp3 → R2        │
+│     TTS_MODEL (default:aura-2-en│
+│  5. Store audio.ogg → R2         │
 │  6. Update D1:                  │
 │     - audio_key                 │
 │     - audio_duration_seconds    │
@@ -169,9 +157,9 @@ User clicks "Listen Later"
    on article card/view
 ```
 
-**Workers AI model:** Configurable via `TTS_MODEL` env var. Default: `melotts` (`@cf/myshell-ai/melotts`). Also supports `aura-2-en`, `aura-2-es`, `aura-1` (Deepgram). See `docs/tts-models.md` for cost comparison and quality notes. All models run on Cloudflare's edge, no external API keys needed.
+**Workers AI model:** Configurable via `TTS_MODEL` env var. Default: `aura-2-en` (`@cf/deepgram/aura-2-en`). Also supports `aura-2-es`, `aura-1`, `melotts` (`@cf/myshell-ai/melotts`). All models run on Cloudflare's edge, no external API keys needed.
 
-**R2 storage:** Audio stored as `articles/{id}/audio.mp3`. Zero egress fees mean offline audio sync doesn't blow up costs.
+**R2 storage:** Audio stored as `articles/{id}/audio.ogg` (Opus encoding). Zero egress fees mean offline audio sync doesn't blow up costs.
 
 **PWA audio features:**
 - Play/pause, skip ±15s, playback speed (0.75x, 1x, 1.25x, 1.5x, 1.75x, 2x)
@@ -450,11 +438,6 @@ This section explains the architectural decisions behind Tasche and why each Clo
 - Rewritten to local paths in `content.html` for reliable rendering
 - WebP format: 30% smaller than JPEG at same quality
 
-**Why full-page screenshot?**
-- Some content doesn't extract well (infographics, complex layouts)
-- Visual proof of original appearance
-- "View original" fallback when reader mode fails
-- Archive value—web pages change and disappear
 
 ---
 
@@ -599,11 +582,11 @@ User saves URL → POST /api/articles
 │      │             │             │             │                │        │
 │      ▼             ▼             ▼             ▼                ▼        │
 │  ┌───────┐    ┌────────┐   ┌─────────┐   ┌─────────┐    ┌────────────┐  │
-│  │  D1   │    │   R2   │   │   KV    │   │ Queues  │    │  Browser   │  │
-│  │       │    │        │   │         │   │         │    │  Rendering │  │
-│  │Users  │    │Article │   │Sessions │   │Process  │    │  REST API  │  │
-│  │Articles│   │Content │   │         │   │Jobs     │───▶│ Screenshot │  │
-│  │Tags   │    │Thumbnails  │         │   │         │    │ Scrape     │  │
+│  │  D1   │    │   R2   │   │   KV    │   │ Queues  │    │ Readability│  │
+│  │       │    │        │   │         │   │         │    │  Service   │  │
+│  │Users  │    │Article │   │Sessions │   │Process  │    │  Binding   │  │
+│  │Articles│   │Content │   │         │   │Jobs     │───▶│ (content   │  │
+│  │Tags   │    │Thumbnails  │         │   │         │    │ extraction)│  │
 │  └───────┘    └────────┘   └─────────┘   └────┬────┘    └────────────┘  │
 │                                               │                          │
 │                                               ▼                          │
@@ -735,7 +718,7 @@ flowchart TB
     API -->|enqueue TTS job| Q
     QC -->|generate speech| AI
     AI -->|audio| QC
-    QC -->|audio.mp3| R2
+    QC -->|audio.ogg| R2
 ```
 
 **Key flows:**
@@ -758,7 +741,7 @@ flowchart TB
 | Background Processing | Queues | Article fetching, content extraction, TTS generation |
 | Content Extraction | Service Binding (`READABILITY`) | @mozilla/readability via separate JS Worker, BeautifulSoup fallback |
 | Authentication | Manual GitHub OAuth | OAuth flow with KV sessions |
-| Listen Later (TTS) | Workers AI | Text-to-speech via configurable `TTS_MODEL` (default: MeloTTS) |
+| Listen Later (TTS) | Workers AI | Text-to-speech via configurable `TTS_MODEL` (default: `aura-2-en` / Deepgram) |
 
 ---
 
@@ -783,12 +766,11 @@ flowchart TB
 | `status` | TEXT | — | 'pending', 'processing', 'ready', 'failed' |
 | `reading_status` | TEXT | — | 'unread', 'archived' |
 | `is_favorite` | INTEGER | — | 0 or 1 |
-| `audio_key` | TEXT | — | R2 path to audio.mp3 |
+| `audio_key` | TEXT | — | R2 path to audio file |
 | `audio_duration_seconds` | INTEGER | — | For playlist time budgeting |
 | `audio_status` | TEXT | — | 'pending', 'generating', 'ready', 'failed' |
 | `html_key` | TEXT | — | R2 path to content.html |
 | `thumbnail_key` | TEXT | — | R2 path to thumbnail.webp |
-| `original_key` | TEXT | — | R2 path to original.webp (full-page screenshot) |
 | `markdown_content` | TEXT | — | Full Markdown for FTS5 indexing and TTS source |
 | `scroll_position` | REAL | — | Reading scroll position (0–1 percentage), default 0 |
 | `reading_progress` | REAL | — | Reading progress (0–1 percentage), default 0 |
@@ -1016,15 +998,15 @@ The `/bookmarklet` page (`frontend/public/bookmarklet.html`) is a self-contained
 
 1. Reads the `url` and `title` query parameters
 2. Pre-fills an editable title input and displays the URL (domain highlighted)
-3. Fetches `GET /api/tags` and `GET /api/tag-rules` in parallel for tag autocomplete and suggestions
-4. Shows suggested tags: rule-matched tags (★ prefix, client-side matching of domain/title/URL rules) and frequent tags (by `article_count`)
+3. Fetches `GET /api/tags` for tag autocomplete and suggestions
+4. Shows suggested tags: frequent tags (by `article_count`)
 5. Tag input with `<datalist>` autocomplete; selected tags shown as `.tag-chip` chips with × remove; Backspace removes last tag
 6. Two action buttons: **Save** and **🎧 Save audio** (sets `listen_later: true`)
 7. On submit, makes a same-origin `POST /api/articles` with optional `tag_ids[]` array and `listen_later` flag
 8. Shows "Saved!" and auto-closes after 1.5 seconds via `window.close()`
 9. Keyboard shortcuts: Enter = save, Ctrl/⌘+Enter = save audio, Escape = close
 
-The `POST /api/articles` endpoint accepts an optional `tag_ids` array. Each ID is validated (must belong to the user), inserted via `INSERT OR IGNORE INTO article_tags`, and capped at 20 tags. These tags are applied immediately, before the processing pipeline runs `apply_auto_tags()`.
+The `POST /api/articles` endpoint accepts an optional `tag_ids` array. Each ID is validated (must belong to the user), inserted via `INSERT OR IGNORE INTO article_tags`, and capped at 20 tags.
 
 This avoids loading the full SPA and completes in under 2 seconds.
 
@@ -1288,11 +1270,10 @@ R2's `list()` API is paginated (default 1000 objects per page). When deleting al
 
 ### 10.4 Idempotency for Expensive Operations
 
-Any operation that costs real compute (Workers AI) MUST be idempotent:
-- Check the current state before triggering work
-- Return the existing result if work is already done
-- Return 409 if work is already in progress
-- Only trigger new work for initial requests or retries after failure
+Operations that cost real compute (Workers AI) should guard against duplicate work at the queue consumer level:
+- The TTS queue consumer checks `audio_status` and skips if already `ready`
+- The listen-later endpoint always allows re-generation (deletes old audio first) for simple UX
+- See §1.6 for the full listen-later regeneration behavior
 
 ### 10.5 TTS Content Preprocessing
 

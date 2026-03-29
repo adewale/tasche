@@ -1,11 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import {
-  parseTagsFromHash,
-  parseLibraryParams,
-  buildTagHash,
-  buildLibraryHash,
-} from '../../src/nav.js';
+import { parseLibraryParams, buildLibraryHash } from '../../src/nav.js';
 
 // ---------------------------------------------------------------------------
 // Arbitraries
@@ -45,51 +40,6 @@ var libraryParamsArb = fc.record({
   q: queryArb,
   filter: filterArb,
   sort: sortArb,
-});
-
-// ---------------------------------------------------------------------------
-// parseTagsFromHash (backward compat)
-// ---------------------------------------------------------------------------
-describe('parseTagsFromHash', function () {
-  it('returns empty array for empty string', function () {
-    expect(parseTagsFromHash('')).toEqual([]);
-  });
-
-  it('returns empty array for hash with no query', function () {
-    expect(parseTagsFromHash('#/')).toEqual([]);
-  });
-
-  it('returns empty array when no tag params present', function () {
-    expect(parseTagsFromHash('#/?q=hello')).toEqual([]);
-  });
-
-  it('parses single tag', function () {
-    expect(parseTagsFromHash('#/?tag=abc')).toEqual(['abc']);
-  });
-
-  it('parses two tags', function () {
-    expect(parseTagsFromHash('#/?tag=abc&tag=def')).toEqual(['abc', 'def']);
-  });
-
-  it('parses tags interleaved with other params', function () {
-    expect(parseTagsFromHash('#/?tag=abc&q=hello&tag=def')).toEqual(['abc', 'def']);
-  });
-
-  it('decodes URL-encoded tag IDs', function () {
-    expect(parseTagsFromHash('#/?tag=a%20b')).toEqual(['a b']);
-  });
-
-  it('handles tag with special characters', function () {
-    expect(parseTagsFromHash('#/?tag=c%2B%2B&tag=c%23')).toEqual(['c++', 'c#']);
-  });
-
-  it('returns empty array for malformed query with no = sign', function () {
-    expect(parseTagsFromHash('#/?tagfoo')).toEqual([]);
-  });
-
-  it('parses four tags (maximum supported)', function () {
-    expect(parseTagsFromHash('#/?tag=a&tag=b&tag=c&tag=d')).toEqual(['a', 'b', 'c', 'd']);
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -182,39 +132,6 @@ describe('buildLibraryHash', function () {
 
   it('encodes special characters in q', function () {
     expect(buildLibraryHash({ q: 'hello world' })).toBe('#/?q=hello%20world');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// buildTagHash (backward compat alias)
-// ---------------------------------------------------------------------------
-describe('buildTagHash', function () {
-  it('returns #/ for empty tags and no other params', function () {
-    expect(buildTagHash([])).toBe('#/');
-  });
-
-  it('builds single tag hash', function () {
-    expect(buildTagHash(['abc'])).toBe('#/?tag=abc');
-  });
-
-  it('builds multi-tag hash', function () {
-    expect(buildTagHash(['abc', 'def'])).toBe('#/?tag=abc&tag=def');
-  });
-
-  it('includes other params after tags', function () {
-    expect(buildTagHash(['abc'], { q: 'hello' })).toBe('#/?tag=abc&q=hello');
-  });
-
-  it('skips null/empty other params', function () {
-    expect(buildTagHash(['abc'], { q: null, sort: '' })).toBe('#/?tag=abc');
-  });
-
-  it('returns hash with only other params when no tags', function () {
-    expect(buildTagHash([], { q: 'hello' })).toBe('#/?q=hello');
-  });
-
-  it('encodes special characters in tags', function () {
-    expect(buildTagHash(['c++'])).toBe('#/?tag=c%2B%2B');
   });
 });
 
@@ -398,16 +315,6 @@ describe('URL state machine properties (property-based)', function () {
         for (var i = 1; i < positions.length; i++) {
           expect(positions[i].pos).toBeGreaterThan(positions[i - 1].pos);
         }
-      }),
-      { numRuns: 200 },
-    );
-  });
-
-  it('parseTagsFromHash agrees with parseLibraryParams.tags', function () {
-    fc.assert(
-      fc.property(libraryParamsArb, function (params) {
-        var hash = buildLibraryHash(params);
-        expect(parseTagsFromHash(hash)).toEqual(parseLibraryParams(hash).tags);
       }),
       { numRuns: 200 },
     );

@@ -7,12 +7,24 @@ associated with a saved article.  All R2 keys follow the convention
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
 
-def article_key(article_id: str, filename: str) -> str:
+def article_key(article_id: str, filename: str, *, allow_subpath: bool = False) -> str:
     """Generate an R2 object key for an article file.
+
+    Parameters
+    ----------
+    article_id:
+        The article's unique identifier.  Must not contain ``/`` or ``..``.
+    filename:
+        The filename (or subpath when *allow_subpath* is ``True``).
+    allow_subpath:
+        When ``True``, allows a single ``/`` in *filename* to support
+        subdirectory paths like ``images/hash.ext``.  Path traversal
+        (``..``) is still rejected.
 
     Returns
     -------
@@ -26,7 +38,9 @@ def article_key(article_id: str, filename: str) -> str:
     """
     if "/" in article_id or ".." in article_id:
         raise ValueError(f"Invalid article_id: {article_id}")
-    if "/" in filename or ".." in filename:
+    if ".." in filename:
+        raise ValueError(f"Invalid filename: {filename}")
+    if "/" in filename and not allow_subpath:
         raise ValueError(f"Invalid filename: {filename}")
     return f"articles/{article_id}/{filename}"
 
@@ -114,14 +128,25 @@ async def get_metadata(r2: Any, article_id: str) -> dict[str, Any] | None:
     return json.loads(raw)
 
 
-async def delete_audio_content(r2: Any, article_id: str) -> None:
-    """Delete audio-related R2 objects for an article.
+async def _paginated_delete(
+    r2: Any,
+    prefix: str,
+    *,
+    key_filter: Any | None = None,
+) -> None:
+    """List R2 objects under *prefix* and delete them concurrently.
 
-    Uses R2 ``list(prefix=...)`` to discover and delete objects whose keys
-    contain ``audio`` (e.g. ``audio.ogg``, ``audio.mp3``, ``audio-timing.json``).
-    Text content (HTML, images, thumbnails, metadata) is preserved.
+    Parameters
+    ----------
+    r2:
+        The R2 bucket binding.
+    prefix:
+        The R2 key prefix to list under.
+    key_filter:
+        Optional callable ``(key: str) -> bool``.  When provided, only
+        keys for which *key_filter* returns ``True`` are deleted.
+        When ``None``, all keys under the prefix are deleted.
     """
-    prefix = f"articles/{article_id}/"
     cursor = None
 
     while True:
@@ -132,13 +157,14 @@ async def delete_audio_content(r2: Any, article_id: str) -> None:
         converted = await r2.list(**list_kwargs)
 
         objects = converted.get("objects", []) if isinstance(converted, dict) else []
+        keys_to_delete: list[str] = []
         for obj in objects:
             key = obj.get("key", "") if isinstance(obj, dict) else getattr(obj, "key", "")
-            # Match any file with "audio" in the filename
-            if key:
-                filename = key.rsplit("/", 1)[-1]
-                if "audio" in filename:
-                    await r2.delete(key)
+            if key and (key_filter is None or key_filter(key)):
+                keys_to_delete.append(key)
+
+        if keys_to_delete:
+            await asyncio.gather(*[r2.delete(k) for k in keys_to_delete])
 
         truncated = converted.get("truncated", False) if isinstance(converted, dict) else False
         if not truncated:
@@ -146,6 +172,22 @@ async def delete_audio_content(r2: Any, article_id: str) -> None:
         cursor = converted.get("cursor") if isinstance(converted, dict) else None
         if not cursor:
             break
+
+
+async def delete_audio_content(r2: Any, article_id: str) -> None:
+    """Delete audio-related R2 objects for an article.
+
+    Uses R2 ``list(prefix=...)`` to discover and delete objects whose keys
+    contain ``audio`` (e.g. ``audio.ogg``, ``audio.mp3``, ``audio-timing.json``).
+    Text content (HTML, images, thumbnails, metadata) is preserved.
+    """
+    prefix = f"articles/{article_id}/"
+
+    def _is_audio_key(key: str) -> bool:
+        filename = key.rsplit("/", 1)[-1]
+        return "audio" in filename
+
+    await _paginated_delete(r2, prefix, key_filter=_is_audio_key)
 
 
 async def delete_article_content(r2: Any, article_id: str) -> None:
@@ -162,25 +204,4 @@ async def delete_article_content(r2: Any, article_id: str) -> None:
         The article's unique identifier.
     """
     prefix = f"articles/{article_id}/"
-    cursor = None
-
-    while True:
-        list_kwargs: dict[str, Any] = {"prefix": prefix}
-        if cursor is not None:
-            list_kwargs["cursor"] = cursor
-
-        converted = await r2.list(**list_kwargs)
-
-        objects = converted.get("objects", []) if isinstance(converted, dict) else []
-        for obj in objects:
-            key = obj.get("key", "") if isinstance(obj, dict) else getattr(obj, "key", "")
-            if key:
-                await r2.delete(key)
-
-        # Check if there are more pages
-        truncated = converted.get("truncated", False) if isinstance(converted, dict) else False
-        if not truncated:
-            break
-        cursor = converted.get("cursor") if isinstance(converted, dict) else None
-        if not cursor:
-            break
+    await _paginated_delete(r2, prefix)

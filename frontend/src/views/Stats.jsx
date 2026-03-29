@@ -16,7 +16,7 @@ export function Stats() {
     setLoading(true);
     setError(null);
     try {
-      var data = await getStats();
+      const data = await getStats();
       setStats(data);
     } catch (e) {
       setError(e.message || 'Could not load reading statistics. Try again later.');
@@ -168,8 +168,8 @@ export function Stats() {
             <h2 class="stats-section-title">Top Domains</h2>
             <div class="stats-domains-list">
               {stats.top_domains.map(function (d) {
-                var maxCount = stats.top_domains[0].count;
-                var pct = maxCount > 0 ? (d.count / maxCount) * 100 : 0;
+                const maxCount = stats.top_domains[0].count;
+                const pct = maxCount > 0 ? (d.count / maxCount) * 100 : 0;
                 return (
                   <div class="stats-domain-row" key={d.domain}>
                     <div class="stats-domain-info">

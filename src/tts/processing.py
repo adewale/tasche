@@ -210,8 +210,24 @@ def _write_ogg_page(
     return page
 
 
-# OGG CRC-32 lookup table (polynomial 0x04C11DB7, no bit reversal)
-_OGG_CRC_TABLE: list[int] | None = None
+# OGG CRC-32 lookup table (polynomial 0x04C11DB7, no bit reversal).
+# Pre-computed eagerly at module load to avoid per-call checks and to
+# enable fast tuple-based lookup (Issue 17 performance fix).
+def _build_ogg_crc_table() -> tuple[int, ...]:
+    """Build the 256-entry OGG CRC-32 lookup table at import time."""
+    table = []
+    for i in range(256):
+        r = i << 24
+        for _ in range(8):
+            if r & 0x80000000:
+                r = ((r << 1) ^ 0x04C11DB7) & 0xFFFFFFFF
+            else:
+                r = (r << 1) & 0xFFFFFFFF
+        table.append(r)
+    return tuple(table)
+
+
+_OGG_CRC_TABLE: tuple[int, ...] = _build_ogg_crc_table()
 
 
 def _ogg_crc32(data: bytes) -> int:
@@ -219,23 +235,14 @@ def _ogg_crc32(data: bytes) -> int:
 
     OGG uses a direct (non-reflected) CRC-32 with polynomial 0x04C11DB7,
     which differs from the standard zlib/gzip CRC-32.
-    """
-    global _OGG_CRC_TABLE
-    if _OGG_CRC_TABLE is None:
-        table = []
-        for i in range(256):
-            r = i << 24
-            for _ in range(8):
-                if r & 0x80000000:
-                    r = ((r << 1) ^ 0x04C11DB7) & 0xFFFFFFFF
-                else:
-                    r = (r << 1) & 0xFFFFFFFF
-            table.append(r)
-        _OGG_CRC_TABLE = table
 
+    Uses a pre-computed 256-entry lookup table for performance.
+    The table is stored as a tuple for faster indexing in WASM/Pyodide.
+    """
+    table = _OGG_CRC_TABLE  # Local reference avoids repeated global lookup
     crc = 0
     for byte in data:
-        crc = (_OGG_CRC_TABLE[(crc >> 24) ^ byte] ^ (crc << 8)) & 0xFFFFFFFF
+        crc = (table[(crc >> 24) ^ byte] ^ (crc << 8)) & 0xFFFFFFFF
     return crc
 
 
@@ -392,6 +399,48 @@ def split_sentences(text: str) -> list[str]:
     return [s.strip() for s in parts if s.strip()]
 
 
+def _accumulate_chunks(sentences: list[str], max_chars: int) -> list[list[str]]:
+    """Accumulate sentences into chunks respecting a character limit.
+
+    This is the shared helper for :func:`chunk_text` and
+    :func:`chunk_text_with_sentences`.  It groups sentences into
+    sub-lists where each group's joined text (space-separated) fits
+    within *max_chars*.  If a single sentence exceeds the limit, it
+    becomes its own chunk.
+
+    Parameters
+    ----------
+    sentences:
+        Pre-split sentences (from :func:`split_sentences`).
+    max_chars:
+        Maximum character length per chunk (joined with spaces).
+
+    Returns
+    -------
+    list[list[str]]
+        A list of sentence groups, each to be joined with ``" ".join()``.
+    """
+    groups: list[list[str]] = []
+    current: list[str] = []
+    current_len = 0
+
+    for sentence in sentences:
+        # +1 for the space between sentences
+        added = len(sentence) + (1 if current else 0)
+        if current and current_len + added > max_chars:
+            groups.append(current)
+            current = [sentence]
+            current_len = len(sentence)
+        else:
+            current.append(sentence)
+            current_len += added
+
+    if current:
+        groups.append(current)
+
+    return groups
+
+
 def chunk_text(text: str, max_chars: int = _MAX_CHARS_PER_CHUNK) -> list[str]:
     """Split text into chunks that fit within the TTS character limit.
 
@@ -403,25 +452,7 @@ def chunk_text(text: str, max_chars: int = _MAX_CHARS_PER_CHUNK) -> list[str]:
     if not sentences:
         return []
 
-    chunks: list[str] = []
-    current: list[str] = []
-    current_len = 0
-
-    for sentence in sentences:
-        # +1 for the space between sentences
-        added = len(sentence) + (1 if current else 0)
-        if current and current_len + added > max_chars:
-            chunks.append(" ".join(current))
-            current = [sentence]
-            current_len = len(sentence)
-        else:
-            current.append(sentence)
-            current_len += added
-
-    if current:
-        chunks.append(" ".join(current))
-
-    return chunks
+    return [" ".join(group) for group in _accumulate_chunks(sentences, max_chars)]
 
 
 def chunk_text_with_sentences(text: str, max_chars: int = _MAX_CHARS_PER_CHUNK) -> list[dict]:
@@ -435,34 +466,10 @@ def chunk_text_with_sentences(text: str, max_chars: int = _MAX_CHARS_PER_CHUNK) 
     if not sentences:
         return []
 
-    chunks: list[dict] = []
-    current: list[str] = []
-    current_len = 0
-
-    for sentence in sentences:
-        added = len(sentence) + (1 if current else 0)
-        if current and current_len + added > max_chars:
-            chunks.append(
-                {
-                    "text": " ".join(current),
-                    "sentences": list(current),
-                }
-            )
-            current = [sentence]
-            current_len = len(sentence)
-        else:
-            current.append(sentence)
-            current_len += added
-
-    if current:
-        chunks.append(
-            {
-                "text": " ".join(current),
-                "sentences": list(current),
-            }
-        )
-
-    return chunks
+    return [
+        {"text": " ".join(group), "sentences": list(group)}
+        for group in _accumulate_chunks(sentences, max_chars)
+    ]
 
 
 # Approximate pause durations in character-equivalents.
@@ -645,80 +652,25 @@ def strip_markdown(text: str) -> str:
 
     text = "\n".join(result_lines)
 
-    # Remove images entirely: ![alt](url)
-    i = 0
-    out_chars: list[str] = []
-    while i < len(text):
-        if text[i : i + 2] == "![":
-            # Find closing ]
-            close_bracket = text.find("]", i + 2)
-            has_paren = (
-                close_bracket != -1
-                and close_bracket + 1 < len(text)
-                and text[close_bracket + 1] == "("
-            )
-            if has_paren:
-                close_paren = text.find(")", close_bracket + 2)
-                if close_paren != -1:
-                    i = close_paren + 1
-                    continue
-        out_chars.append(text[i])
-        i += 1
-    text = "".join(out_chars)
+    # Inline markdown cleanup using regex — single/two-pass instead of four
+    # character-by-character loops (Issue 18 performance fix).
 
-    # Replace links [text](url) with just text
-    i = 0
-    out_chars = []
-    while i < len(text):
-        if text[i] == "[":
-            close_bracket = text.find("]", i + 1)
-            has_paren = (
-                close_bracket != -1
-                and close_bracket + 1 < len(text)
-                and text[close_bracket + 1] == "("
-            )
-            if has_paren:
-                close_paren = text.find(")", close_bracket + 2)
-                if close_paren != -1:
-                    link_text = text[i + 1 : close_bracket]
-                    out_chars.append(link_text)
-                    i = close_paren + 1
-                    continue
-        out_chars.append(text[i])
-        i += 1
-    text = "".join(out_chars)
+    # 1. Remove images entirely: ![alt](url)
+    text = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", text)
 
-    # Remove inline code
-    i = 0
-    out_chars = []
-    while i < len(text):
-        if text[i] == "`":
-            end = text.find("`", i + 1)
-            if end != -1:
-                out_chars.append(text[i + 1 : end])
-                i = end + 1
-                continue
-        out_chars.append(text[i])
-        i += 1
-    text = "".join(out_chars)
+    # 2. Replace links [text](url) with just the link text
+    text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)
 
-    # Remove bold/italic markers: ***text***, **text**, *text*, ___text___, __text__, _text_
+    # 3. Remove inline code backticks, keeping the code content
+    text = re.sub(r"`([^`]*)`", r"\1", text)
+
+    # 4. Remove bold/italic markers: ***text***, **text**, *text*, etc.
     # Uses regex to only remove formatting markers around words, preserving
     # standalone * and _ in normal text (e.g., "2 * 3", "my_variable").
     text = re.sub(r"(\*{1,3}|_{1,3})(?=\S)(.+?)(?<=\S)\1", r"\2", text)
 
-    # Remove HTML tags
-    i = 0
-    out_chars = []
-    while i < len(text):
-        if text[i] == "<":
-            end = text.find(">", i + 1)
-            if end != -1:
-                i = end + 1
-                continue
-        out_chars.append(text[i])
-        i += 1
-    text = "".join(out_chars)
+    # 5. Remove HTML tags
+    text = re.sub(r"<[^>]+>", "", text)
 
     # Clean up excess whitespace
     while "\n\n\n" in text:
@@ -953,12 +905,14 @@ async def process_tts(
         else:
             duration = _estimate_duration(tts_text)
 
+        now = now_iso()
         await (
             db.prepare(
                 "UPDATE articles SET audio_key = ?, audio_duration_seconds = ?, "
-                "audio_status = ?, updated_at = ? WHERE id = ? AND user_id = ?"
+                "audio_status = ?, audio_generated_at = ?, updated_at = ? "
+                "WHERE id = ? AND user_id = ?"
             )
-            .bind(audio_r2_key, duration, "ready", now_iso(), article_id, user_id)
+            .bind(audio_r2_key, duration, "ready", now, now, article_id, user_id)
             .run()
         )
 

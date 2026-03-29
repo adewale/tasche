@@ -6,42 +6,42 @@ import { useState, useEffect, useRef } from 'preact/hooks';
  * On hover, the full-colour original fades in.
  */
 export function InkWashThumbnail({ src, alt }) {
-  var [inkSrc, setInkSrc] = useState(null);
-  var [error, setError] = useState(false);
-  var canvasRef = useRef(null);
+  const [inkSrc, setInkSrc] = useState(null);
+  const [error, setError] = useState(false);
+  const canvasRef = useRef(null);
 
   useEffect(
     function () {
       if (!src) return;
 
-      var img = new Image();
+      const img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = function () {
         try {
-          var canvas = canvasRef.current;
+          const canvas = canvasRef.current;
           if (!canvas) return;
 
           // Render at the image's natural size, capped at 176px
-          var w = Math.min(img.naturalWidth, 176);
-          var h = Math.round((w / img.naturalWidth) * img.naturalHeight);
+          const w = Math.min(img.naturalWidth, 176);
+          const h = Math.round((w / img.naturalWidth) * img.naturalHeight);
           canvas.width = w;
           canvas.height = h;
-          var ctx = canvas.getContext('2d');
+          const ctx = canvas.getContext('2d');
 
           ctx.drawImage(img, 0, 0, w, h);
-          var imageData = ctx.getImageData(0, 0, w, h);
-          var data = imageData.data;
+          const imageData = ctx.getImageData(0, 0, w, h);
+          const data = imageData.data;
 
           // Desaturate + posterize to 4 tonal levels
-          var levels = [0, 85, 170, 255];
-          for (var i = 0; i < data.length; i += 4) {
-            var grey = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+          const levels = [0, 85, 170, 255];
+          for (let i = 0; i < data.length; i += 4) {
+            const grey = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
 
             // Quantize to nearest of 4 levels
-            var closest = levels[0];
-            var minDist = Math.abs(grey - closest);
-            for (var l = 1; l < levels.length; l++) {
-              var dist = Math.abs(grey - levels[l]);
+            let closest = levels[0];
+            let minDist = Math.abs(grey - closest);
+            for (let l = 1; l < levels.length; l++) {
+              const dist = Math.abs(grey - levels[l]);
               if (dist < minDist) {
                 minDist = dist;
                 closest = levels[l];
@@ -58,10 +58,10 @@ export function InkWashThumbnail({ src, alt }) {
           // Apply slight blur (1px) via CSS filter on the canvas is not possible
           // after getImageData, so we re-draw with a blur. Use a second pass:
           // draw the posterized result onto itself with blur.
-          var tempCanvas = document.createElement('canvas');
+          const tempCanvas = document.createElement('canvas');
           tempCanvas.width = w;
           tempCanvas.height = h;
-          var tempCtx = tempCanvas.getContext('2d');
+          const tempCtx = tempCanvas.getContext('2d');
           tempCtx.filter = 'blur(1px)';
           tempCtx.drawImage(canvas, 0, 0);
 

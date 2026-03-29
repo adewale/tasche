@@ -6,26 +6,26 @@
  * with a gradient sweep animation.
  */
 
-var sentenceSpans = [];
-var cleanupFns = [];
-var currentIdx = -1;
-var rafId = null;
-var userScrolledAway = false;
-var programmaticScroll = false;
-var returnBtnEl = null;
-var scrollTimer = null;
+let sentenceSpans = [];
+let cleanupFns = [];
+let currentIdx = -1;
+let rafId = null;
+let userScrolledAway = false;
+let programmaticScroll = false;
+let returnBtnEl = null;
+let scrollTimer = null;
 
 /**
  * Binary search for the active sentence given current time in ms.
  * Returns the index into the sentences array, or -1 if none match.
  */
 export function binarySearchSentence(sentences, ms) {
-  var lo = 0;
-  var hi = sentences.length - 1;
-  var result = -1;
+  let lo = 0;
+  let hi = sentences.length - 1;
+  let result = -1;
 
   while (lo <= hi) {
-    var mid = (lo + hi) >>> 1;
+    const mid = (lo + hi) >>> 1;
     if (sentences[mid].start_ms <= ms) {
       result = mid;
       lo = mid + 1;
@@ -49,12 +49,11 @@ export function binarySearchSentence(sentences, ms) {
  */
 function matchSentencesToDOM(contentEl, sentences) {
   // Collect all text nodes
-  var walker = document.createTreeWalker(contentEl, NodeFilter.SHOW_TEXT, null);
-  var _textNodes = [];
-  var fullText = '';
-  var nodeOffsets = []; // { node, startOffset (in fullText) }
+  const walker = document.createTreeWalker(contentEl, NodeFilter.SHOW_TEXT, null);
+  let fullText = '';
+  let nodeOffsets = []; // { node, startOffset (in fullText) }
 
-  var node;
+  let node;
   while ((node = walker.nextNode())) {
     nodeOffsets.push({ node: node, start: fullText.length });
     fullText += node.textContent;
@@ -62,36 +61,36 @@ function matchSentencesToDOM(contentEl, sentences) {
 
   if (!fullText.trim()) return [];
 
-  var spans = [];
-  var searchFrom = 0;
+  const spans = [];
+  let searchFrom = 0;
 
-  for (var i = 0; i < sentences.length; i++) {
-    var sentText = sentences[i].text;
+  for (let i = 0; i < sentences.length; i++) {
+    const sentText = sentences[i].text;
     // Normalize whitespace for matching
-    var normalized = sentText.replace(/\s+/g, ' ').trim();
+    const normalized = sentText.replace(/\s+/g, ' ').trim();
     if (normalized.length < 3) {
       spans.push(null);
       continue;
     }
 
     // Find this sentence in the full text
-    var idx = _findSentenceInText(fullText, normalized, searchFrom);
+    const idx = _findSentenceInText(fullText, normalized, searchFrom);
     if (idx === -1) {
       spans.push(null);
       continue;
     }
 
-    var endIdx = idx + normalized.length;
+    const endIdx = idx + normalized.length;
     searchFrom = endIdx;
 
     // Create a range spanning the matched text
-    var range = document.createRange();
-    var startSet = false;
-    var endSet = false;
+    const range = document.createRange();
+    let startSet = false;
+    let endSet = false;
 
-    for (var j = 0; j < nodeOffsets.length; j++) {
-      var no = nodeOffsets[j];
-      var nodeEnd = no.start + no.node.textContent.length;
+    for (let j = 0; j < nodeOffsets.length; j++) {
+      const no = nodeOffsets[j];
+      const nodeEnd = no.start + no.node.textContent.length;
 
       if (!startSet && idx >= no.start && idx < nodeEnd) {
         range.setStart(no.node, idx - no.start);
@@ -111,31 +110,33 @@ function matchSentencesToDOM(contentEl, sentences) {
 
     // Wrap the range in a span
     try {
-      var span = document.createElement('span');
+      const span = document.createElement('span');
       span.className = 'tts-sentence';
       span.dataset.idx = String(i);
 
       // extractContents + insertNode handles cross-element ranges
       // where surroundContents would throw
-      var fragment = range.extractContents();
+      const fragment = range.extractContents();
       span.appendChild(fragment);
       range.insertNode(span);
 
       // Rebuild text node list for remaining matches
       if (i < sentences.length - 1) {
-        _textNodes = [];
         fullText = '';
         nodeOffsets = [];
-        var w2 = document.createTreeWalker(contentEl, NodeFilter.SHOW_TEXT, null);
-        var n2;
+        const w2 = document.createTreeWalker(contentEl, NodeFilter.SHOW_TEXT, null);
+        let n2;
         while ((n2 = w2.nextNode())) {
           nodeOffsets.push({ node: n2, start: fullText.length });
           fullText += n2.textContent;
         }
         searchFrom = 0;
         // Find where we are in the new text
-        var lastSpanText = span.textContent;
-        var refIdx = fullText.indexOf(lastSpanText, Math.max(0, searchFrom - lastSpanText.length));
+        const lastSpanText = span.textContent;
+        const refIdx = fullText.indexOf(
+          lastSpanText,
+          Math.max(0, searchFrom - lastSpanText.length),
+        );
         if (refIdx >= 0) {
           searchFrom = refIdx + lastSpanText.length;
         }
@@ -157,16 +158,16 @@ function matchSentencesToDOM(contentEl, sentences) {
  */
 function _findSentenceInText(fullText, sentenceNormalized, fromIndex) {
   // Try direct indexOf
-  var idx = fullText.indexOf(sentenceNormalized, fromIndex);
+  const idx = fullText.indexOf(sentenceNormalized, fromIndex);
   if (idx >= 0) return idx;
 
   // Try with collapsed whitespace in the full text
   // Build a mapping from collapsed positions to original positions
-  var collapsed = '';
-  var posMap = [];
-  var inSpace = false;
-  for (var k = fromIndex; k < fullText.length; k++) {
-    var ch = fullText[k];
+  let collapsed = '';
+  const posMap = [];
+  let inSpace = false;
+  for (let k = fromIndex; k < fullText.length; k++) {
+    const ch = fullText[k];
     if (/\s/.test(ch)) {
       if (!inSpace) {
         collapsed += ' ';
@@ -180,7 +181,7 @@ function _findSentenceInText(fullText, sentenceNormalized, fromIndex) {
     }
   }
 
-  var cIdx = collapsed.indexOf(sentenceNormalized);
+  const cIdx = collapsed.indexOf(sentenceNormalized);
   if (cIdx >= 0 && cIdx < posMap.length) {
     return posMap[cIdx];
   }
@@ -208,8 +209,8 @@ export function initImmersive(contentEl, timing, audioEl) {
 
   // Set up timeupdate handler
   function onTimeUpdate() {
-    var ms = audioEl.currentTime * 1000;
-    var idx = binarySearchSentence(timing.sentences, ms);
+    const ms = audioEl.currentTime * 1000;
+    const idx = binarySearchSentence(timing.sentences, ms);
 
     if (idx === currentIdx) return;
 
@@ -239,9 +240,9 @@ export function initImmersive(contentEl, timing, audioEl) {
   // Gradient sweep at 60fps
   function sweepLoop() {
     if (currentIdx >= 0 && sentenceSpans[currentIdx] && !audioEl.paused) {
-      var s = timing.sentences[currentIdx];
-      var ms = audioEl.currentTime * 1000;
-      var progress = Math.min(1, Math.max(0, (ms - s.start_ms) / (s.end_ms - s.start_ms)));
+      const s = timing.sentences[currentIdx];
+      const ms = audioEl.currentTime * 1000;
+      const progress = Math.min(1, Math.max(0, (ms - s.start_ms) / (s.end_ms - s.start_ms)));
       sentenceSpans[currentIdx].style.setProperty('--tts-progress', progress * 100 + '%');
     }
     if (!audioEl.paused) {
@@ -274,9 +275,9 @@ export function initImmersive(contentEl, timing, audioEl) {
 
   // Click-to-seek
   function onSentenceClick(e) {
-    var span = e.target.closest('.tts-sentence');
+    const span = e.target.closest('.tts-sentence');
     if (!span || !span.dataset.idx) return;
-    var idx = parseInt(span.dataset.idx, 10);
+    const idx = parseInt(span.dataset.idx, 10);
     if (idx >= 0 && idx < timing.sentences.length) {
       audioEl.currentTime = timing.sentences[idx].start_ms / 1000;
       // Reset scroll tracking
@@ -347,7 +348,7 @@ export function destroyImmersive() {
   }
 
   // Run cleanup functions
-  for (var i = 0; i < cleanupFns.length; i++) {
+  for (let i = 0; i < cleanupFns.length; i++) {
     try {
       cleanupFns[i]();
     } catch (_e) {
@@ -357,10 +358,10 @@ export function destroyImmersive() {
   cleanupFns = [];
 
   // Unwrap sentence spans (replace span with its children)
-  for (var j = 0; j < sentenceSpans.length; j++) {
-    var span = sentenceSpans[j];
+  for (let j = 0; j < sentenceSpans.length; j++) {
+    const span = sentenceSpans[j];
     if (!span || !span.parentNode) continue;
-    var parent = span.parentNode;
+    const parent = span.parentNode;
     while (span.firstChild) {
       parent.insertBefore(span.firstChild, span);
     }

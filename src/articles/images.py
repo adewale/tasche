@@ -10,13 +10,18 @@ conversion requires testing in the actual Pyodide environment.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 
+from articles.storage import article_key
 from articles.urls import _is_private_hostname
 from wrappers import http_fetch
+
+# Maximum number of concurrent image downloads
+_DOWNLOAD_CONCURRENCY = 5
 
 # Mapping of MIME types to file extensions for stored images
 _MIME_TO_EXT: dict[str, str] = {
@@ -65,14 +70,9 @@ async def download_images(
         seen.add(src)
         urls.append(src)
 
-    results: list[dict] = []
-    total_size = 0
-
+    # Filter URLs for SSRF before downloading
+    safe_urls: list[str] = []
     for url in urls:
-        if total_size >= max_total:
-            break
-
-        # SSRF protection: skip images pointing to private/internal URLs
         try:
             parsed = urlparse(url)
             if parsed.scheme and parsed.scheme not in ("http", "https"):
@@ -81,43 +81,59 @@ async def download_images(
                 continue
         except Exception:
             continue
+        safe_urls.append(url)
 
-        try:
-            resp = await http_fetch(url, timeout=15.0, follow_redirects=False)
-            # Follow redirects manually, checking each hop for SSRF
-            hops = 0
-            while resp.status_code in (301, 302, 303, 307, 308) and hops < 5:
-                location = resp.headers.get("location")
-                if not location:
-                    break
-                redirect_parsed = urlparse(location)
-                if redirect_parsed.hostname and _is_private_hostname(redirect_parsed.hostname):
-                    break
-                resp = await http_fetch(location, timeout=15.0, follow_redirects=False)
-                hops += 1
-            if resp.status_code != 200:
-                continue
-        except Exception:
-            continue
+    # Download images concurrently with a semaphore to limit parallelism
+    semaphore = asyncio.Semaphore(_DOWNLOAD_CONCURRENCY)
 
-        data = resp.content
-        if len(data) > max_per_image:
-            continue
-        if total_size + len(data) > max_total:
-            continue
+    async def _download_one(url: str) -> dict | None:
+        async with semaphore:
+            try:
+                resp = await http_fetch(url, timeout=15.0, follow_redirects=False)
+                # Follow redirects manually, checking each hop for SSRF
+                hops = 0
+                while resp.status_code in (301, 302, 303, 307, 308) and hops < 5:
+                    location = resp.headers.get("location")
+                    if not location:
+                        break
+                    redirect_parsed = urlparse(location)
+                    if redirect_parsed.hostname and _is_private_hostname(redirect_parsed.hostname):
+                        break
+                    resp = await http_fetch(location, timeout=15.0, follow_redirects=False)
+                    hops += 1
+                if resp.status_code != 200:
+                    return None
+            except Exception:
+                return None
 
-        content_type = resp.headers.get("content-type", "image/jpeg").split(";")[0].strip()
-        if not content_type.startswith("image/"):
-            continue
-        total_size += len(data)
+            data = resp.content
+            if len(data) > max_per_image:
+                return None
 
-        results.append(
-            {
+            content_type = resp.headers.get("content-type", "image/jpeg").split(";")[0].strip()
+            if not content_type.startswith("image/"):
+                return None
+
+            return {
                 "url": url,
                 "data": data,
                 "content_type": content_type,
             }
-        )
+
+    downloaded = await asyncio.gather(*[_download_one(u) for u in safe_urls])
+
+    # Apply total size budget sequentially (order-preserving)
+    results: list[dict] = []
+    total_size = 0
+    for item in downloaded:
+        if item is None:
+            continue
+        if total_size >= max_total:
+            break
+        if total_size + len(item["data"]) > max_total:
+            continue
+        total_size += len(item["data"])
+        results.append(item)
 
     return results
 
@@ -148,6 +164,7 @@ async def store_images(
         Mapping of original URL -> R2 key.
     """
     image_map: dict[str, str] = {}
+    upload_tasks: list[tuple[str, str, bytes]] = []
 
     for img in images:
         url = img["url"]
@@ -167,9 +184,12 @@ async def store_images(
 
         # Deterministic hash from original URL
         url_hash = hashlib.sha256(url.encode()).hexdigest()[:16]
-        r2_key = f"articles/{article_id}/images/{url_hash}{ext}"
+        r2_key = article_key(article_id, f"images/{url_hash}{ext}", allow_subpath=True)
 
-        await r2.put(r2_key, data)
         image_map[url] = r2_key
+        upload_tasks.append((url, r2_key, data))
+
+    # Upload all images concurrently
+    await asyncio.gather(*[r2.put(key, data) for _, key, data in upload_tasks])
 
     return image_map

@@ -84,8 +84,9 @@ class TestCreateArticle:
                 return []
             return []
 
+        queue = MockQueue()
         db = MockD1(execute=execute)
-        env = MockEnv(db=db)
+        env = MockEnv(db=db, article_queue=queue)
 
         client, session_id = await _authenticated_client(env)
         resp = client.post(
@@ -98,6 +99,10 @@ class TestCreateArticle:
         assert data["updated"] is True
         assert data["id"] == existing["id"]
         assert len(updates) == 1
+
+        # Verify a queue message was sent for reprocessing
+        assert len(queue.messages) >= 1, "Expected a queue message for reprocessing"
+        assert queue.messages[-1]["type"] == "article_processing"
 
     async def test_reprocess_cleans_up_all_r2_content(self) -> None:
         """POST /api/articles re-processing cleans up ALL old R2 content including audio."""
@@ -518,9 +523,9 @@ class TestCreateArticle:
 
         def execute(sql: str, params: list) -> list:
             calls.append({"sql": sql, "params": params})
-            # Return tag row when validating tag ownership
+            # Return tag rows when validating tag ownership (batch IN query)
             if "FROM tags WHERE id" in sql:
-                return [t for t in user_tags if t["id"] == params[0]]
+                return [t for t in user_tags if t["id"] in params]
             return []
 
         queue = MockQueue()
@@ -635,7 +640,7 @@ class TestCreateArticle:
         def execute(sql: str, params: list) -> list:
             calls.append({"sql": sql, "params": params})
             if "FROM tags WHERE id" in sql:
-                return [t for t in many_tags if t["id"] == params[0]]
+                return [t for t in many_tags if t["id"] in params]
             return []
 
         queue = MockQueue()
@@ -2442,8 +2447,10 @@ class TestBatchDeleteArticles:
         deletes: list[str] = []
 
         def execute(sql: str, params: list) -> list:
+            if "SELECT id FROM articles" in sql and "IN" in sql:
+                # Batch ownership check — return all matching articles
+                return [{"id": p} for p in params if p in ("art_bd1", "art_bd2")]
             if "SELECT id FROM articles" in sql:
-                # Simulate found articles
                 article_id = params[0]
                 if article_id in ("art_bd1", "art_bd2"):
                     return [{"id": article_id}]
@@ -2694,3 +2701,156 @@ class TestArticleOwnershipIsolation:
         data = resp.json()
         assert len(data) == 1
         assert data[0]["id"] == "art_mine"
+
+
+# ---------------------------------------------------------------------------
+# Negative test cases
+# ---------------------------------------------------------------------------
+
+
+class TestMalformedJsonBody:
+    async def test_empty_json_object_returns_422(self) -> None:
+        """POST /api/articles with empty JSON object returns 422 (no url)."""
+        env = MockEnv()
+        client, session_id = await _authenticated_client(env)
+
+        resp = client.post(
+            "/api/articles",
+            json={},
+        )
+
+        assert resp.status_code == 422
+
+    async def test_missing_url_field_returns_error(self) -> None:
+        """POST /api/articles with JSON missing 'url' field returns 422."""
+        env = MockEnv()
+        client, session_id = await _authenticated_client(env)
+
+        resp = client.post(
+            "/api/articles",
+            json={"title": "No URL provided"},
+        )
+
+        assert resp.status_code == 422
+
+    async def test_null_url_returns_422(self) -> None:
+        """POST /api/articles with null url returns 422."""
+        env = MockEnv()
+        client, session_id = await _authenticated_client(env)
+
+        resp = client.post(
+            "/api/articles",
+            json={"url": None},
+        )
+
+        assert resp.status_code == 422
+
+
+class TestSsrfProtection:
+    async def test_rejects_private_ip_url(self) -> None:
+        """POST /api/articles rejects URLs pointing to private IP addresses."""
+        env = MockEnv()
+        client, session_id = await _authenticated_client(env)
+
+        resp = client.post(
+            "/api/articles",
+            json={"url": "http://192.168.1.1/admin"},
+        )
+
+        assert resp.status_code == 422
+        detail = resp.json()["detail"].lower()
+        assert "private" in detail or "internal" in detail
+
+    async def test_rejects_localhost_url(self) -> None:
+        """POST /api/articles rejects URLs pointing to localhost."""
+        env = MockEnv()
+        client, session_id = await _authenticated_client(env)
+
+        resp = client.post(
+            "/api/articles",
+            json={"url": "http://localhost:8080/secret"},
+        )
+
+        assert resp.status_code == 422
+
+    async def test_rejects_metadata_endpoint_url(self) -> None:
+        """POST /api/articles rejects URLs pointing to cloud metadata endpoints."""
+        env = MockEnv()
+        client, session_id = await _authenticated_client(env)
+
+        resp = client.post(
+            "/api/articles",
+            json={"url": "http://169.254.169.254/latest/meta-data/"},
+        )
+
+        assert resp.status_code == 422
+
+
+class TestDuplicateUrlHandling:
+    async def test_duplicate_url_returns_updated_not_error(self) -> None:
+        """POST /api/articles with duplicate URL re-processes gracefully (not 409 or 500)."""
+        existing = ArticleFactory.create(
+            id="art_dup_neg",
+            user_id="user_001",
+            original_url="https://example.com/dup-negative-test",
+        )
+
+        def execute(sql: str, params: list) -> list:
+            if "original_url = ?" in sql:
+                return [existing]
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles",
+            json={"url": "https://example.com/dup-negative-test"},
+        )
+
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["updated"] is True
+        assert data["id"] == "art_dup_neg"
+
+
+class TestBatchOperationsNegative:
+    async def test_batch_update_with_nonexistent_ids_succeeds(self) -> None:
+        """POST /api/articles/batch-update with nonexistent IDs does not crash."""
+
+        def execute(sql: str, params: list) -> list:
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles/batch-update",
+            json={
+                "article_ids": ["nonexistent_1", "nonexistent_2"],
+                "updates": {"reading_status": "archived"},
+            },
+        )
+
+        # Should succeed but update 0 or 2 rows (not crash)
+        assert resp.status_code == 200
+
+    async def test_batch_delete_with_nonexistent_ids_succeeds(self) -> None:
+        """POST /api/articles/batch-delete with nonexistent IDs does not crash."""
+
+        def execute(sql: str, params: list) -> list:
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles/batch-delete",
+            json={"article_ids": ["nonexistent_1", "nonexistent_2"]},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["deleted"] == 0

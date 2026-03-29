@@ -1151,3 +1151,70 @@ class TestTagPropertyBased:
             assert resp.status_code == 200
         else:
             assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Negative test cases
+# ---------------------------------------------------------------------------
+
+
+class TestInvalidTagIdInAssociation:
+    async def test_nonexistent_tag_id_returns_404(self) -> None:
+        """POST /api/articles/{id}/tags with a nonexistent tag_id returns 404."""
+        article = ArticleFactory.create(id="art_neg_tag", user_id="user_001")
+
+        def execute(sql: str, params: list) -> list:
+            if "FROM articles" in sql and params[0] == "art_neg_tag":
+                return [article]
+            # Tag not found
+            return []
+
+        db = MockD1(execute=execute)
+        env = MockEnv(db=db)
+
+        client, session_id = await _authenticated_client(env)
+        resp = client.post(
+            "/api/articles/art_neg_tag/tags",
+            json={"tag_id": "tag_does_not_exist"},
+        )
+
+        assert resp.status_code == 404
+        assert "Tag not found" in resp.json()["detail"]
+
+
+class TestCreateTagWithEmptyName:
+    async def test_empty_string_name_returns_422(self) -> None:
+        """POST /api/tags with empty string name returns 422."""
+        env = MockEnv()
+        client, session_id = await _authenticated_client(env)
+
+        resp = client.post(
+            "/api/tags",
+            json={"name": ""},
+        )
+
+        assert resp.status_code == 422
+
+    async def test_whitespace_only_name_returns_422(self) -> None:
+        """POST /api/tags with whitespace-only name returns 422."""
+        env = MockEnv()
+        client, session_id = await _authenticated_client(env)
+
+        resp = client.post(
+            "/api/tags",
+            json={"name": "   \t\n  "},
+        )
+
+        assert resp.status_code == 422
+
+    async def test_missing_name_field_returns_422(self) -> None:
+        """POST /api/tags with missing name field returns 422."""
+        env = MockEnv()
+        client, session_id = await _authenticated_client(env)
+
+        resp = client.post(
+            "/api/tags",
+            json={},
+        )
+
+        assert resp.status_code == 422

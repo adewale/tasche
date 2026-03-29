@@ -11,15 +11,15 @@ import {
 import { IconPencil } from '../components/Icons.jsx';
 
 export function Tags() {
-  var [tagName, setTagName] = useState('');
-  var [isLoading, setIsLoading] = useState(true);
-  var [creatingTag, setCreatingTag] = useState(false);
-  var [deletingTagId, setDeletingTagId] = useState(null);
-  var [renamingTagId, setRenamingTagId] = useState(null);
-  var [editingTagId, setEditingTagId] = useState(null);
-  var [editName, setEditName] = useState('');
-  var editInputRef = useRef(null);
-  var tagList = tagsSignal.value;
+  const [tagName, setTagName] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [creatingTag, setCreatingTag] = useState(false);
+  const [deletingTagId, setDeletingTagId] = useState(null);
+  const [renamingTagId, setRenamingTagId] = useState(null);
+  const [editingTagId, setEditingTagId] = useState(null);
+  const [editName, setEditName] = useState('');
+  const editInputRef = useRef(null);
+  const tagList = tagsSignal.value;
 
   useEffect(function () {
     loadTags();
@@ -48,15 +48,15 @@ export function Tags() {
 
   async function handleCreateTag() {
     if (creatingTag) return;
-    var name = tagName.trim();
+    const name = tagName.trim();
     if (!name) {
       addToast('Enter a tag name', 'error');
       return;
     }
     setCreatingTag(true);
     try {
-      var tag = await apiCreateTag(name);
-      var newTags = [...tagsSignal.value, tag];
+      const tag = await apiCreateTag(name);
+      const newTags = [...tagsSignal.value, tag];
       newTags.sort(function (a, b) {
         return a.name.localeCompare(b.name);
       });
@@ -99,12 +99,12 @@ export function Tags() {
 
   async function saveRename(tagId) {
     if (renamingTagId) return;
-    var trimmed = editName.trim();
+    const trimmed = editName.trim();
     if (!trimmed) {
       addToast('Tag name cannot be empty', 'error');
       return;
     }
-    var currentTag = tagsSignal.value.find(function (t) {
+    const currentTag = tagsSignal.value.find(function (t) {
       return t.id === tagId;
     });
     if (currentTag && currentTag.name === trimmed) {
@@ -113,8 +113,8 @@ export function Tags() {
     }
     setRenamingTagId(tagId);
     try {
-      var updated = await apiRenameTag(tagId, trimmed);
-      var newTags = tagsSignal.value.map(function (t) {
+      const updated = await apiRenameTag(tagId, trimmed);
+      const newTags = tagsSignal.value.map(function (t) {
         if (t.id === tagId) {
           return Object.assign({}, t, { name: updated.name });
         }
@@ -175,7 +175,7 @@ export function Tags() {
             <EmptyState title="No tags yet">Create a tag to organise your articles.</EmptyState>
           )}
           {tagList.map(function (t) {
-            var isEditing = editingTagId === t.id;
+            const isEditing = editingTagId === t.id;
             return (
               <div class="tag-row" key={t.id}>
                 {isEditing ? (

@@ -7,6 +7,7 @@ saved articles.  All endpoints require authentication via the
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from typing import Any
@@ -79,8 +80,12 @@ _LIST_COLUMNS = (
     "excerpt, author, word_count, reading_time_minutes, image_count, status, "
     "reading_status, is_favorite, audio_key, audio_duration_seconds, "
     "audio_status, html_key, thumbnail_key, original_key, original_status, "
-    "scroll_position, reading_progress, created_at, updated_at"
+    "scroll_position, reading_progress, created_at, updated_at, last_checked_at"
 )
+
+# Pre-computed "articles."-prefixed column string for use in JOINs (avoids
+# recomputing on every request).
+_LIST_COLUMNS_PREFIXED = ", ".join(f"articles.{c.strip()}" for c in _LIST_COLUMNS.split(","))
 
 _VALID_READING_STATUSES = {"unread", "archived"}
 _VALID_STATUSES = {"pending", "processing", "ready", "failed"}
@@ -157,6 +162,17 @@ async def _get_user_article(
         fields=fields,
         not_found="Article not found",
     )
+
+
+def _parse_tags_json(row: dict[str, Any]) -> list[dict[str, Any]]:
+    """Parse and filter the ``tags_json`` field from a row.
+
+    Pops the ``tags_json`` key, deserialises the JSON string, and filters
+    out ``null`` entries produced by ``json_group_array`` for zero tags.
+    """
+    raw = row.pop("tags_json", "[]")
+    parsed = json.loads(raw) if raw else []
+    return [t for t in parsed if t is not None]
 
 
 @router.post("", status_code=201)
@@ -282,23 +298,26 @@ async def create_article(
     # Apply tags if provided (from bookmarklet popup)
     tag_ids = body.get("tag_ids")
     if tag_ids and isinstance(tag_ids, list):
-        for tid in tag_ids[:20]:  # Cap at 20 tags
-            if not isinstance(tid, str) or not tid:
-                continue
-            # Validate tag belongs to user, silently skip invalid
-            tag_exists = await (
-                db.prepare("SELECT id FROM tags WHERE id = ? AND user_id = ?")
-                .bind(tid, user_id)
-                .first()
+        valid_tids = [tid for tid in tag_ids[:20] if isinstance(tid, str) and tid]
+        if valid_tids:
+            # Batch-validate tag ownership in a single query
+            placeholders = ", ".join("?" for _ in valid_tids)
+            owned_rows = await (
+                db.prepare(f"SELECT id FROM tags WHERE id IN ({placeholders}) AND user_id = ?")
+                .bind(*valid_tids, user_id)
+                .all()
             )
-            if tag_exists is not None:
-                await (
-                    db.prepare(
-                        "INSERT OR IGNORE INTO article_tags (article_id, tag_id) VALUES (?, ?)"
-                    )
-                    .bind(article_id, tid)
-                    .run()
-                )
+            owned_ids = {r["id"] for r in owned_rows}
+            # Batch-insert all valid tag associations concurrently
+            insert_coros = [
+                db.prepare("INSERT OR IGNORE INTO article_tags (article_id, tag_id) VALUES (?, ?)")
+                .bind(article_id, tid)
+                .run()
+                for tid in valid_tids
+                if tid in owned_ids
+            ]
+            if insert_coros:
+                await asyncio.gather(*insert_coros)
 
     # Enqueue processing job
     message: dict[str, Any] = {
@@ -320,7 +339,7 @@ async def create_article(
 
     await _enqueue_or_fail(env, db, message, article_id)
 
-    result: dict[str, Any] = {"id": article_id, "status": "pending"}
+    result: dict[str, Any] = {"id": article_id, "status": "pending", "created_at": now}
     if is_update:
         result["updated"] = True
         result["created_at"] = existing.get("created_at", "")
@@ -447,9 +466,6 @@ async def list_articles(
     else:
         order_by = _VALID_SORT_OPTIONS["newest"]
 
-    # Prefix columns with "articles." to avoid ambiguity with FTS5 table columns.
-    prefixed = ", ".join(f"articles.{c.strip()}" for c in _LIST_COLUMNS.split(","))
-
     # Include tags inline via correlated subquery to avoid N+1 fetches.
     tags_sub = (
         "COALESCE("
@@ -460,7 +476,7 @@ async def list_articles(
         "WHERE at2.article_id = articles.id), '[]')"
     )
     sql = (
-        f"SELECT {prefixed}, {tags_sub} AS tags_json "
+        f"SELECT {_LIST_COLUMNS_PREFIXED}, {tags_sub} AS tags_json "
         f"FROM articles {fts_join} WHERE {where} ORDER BY {order_by} LIMIT ? OFFSET ?"
     )
     params.extend([limit, offset])
@@ -469,10 +485,7 @@ async def list_articles(
 
     # Parse the JSON-encoded tags into actual lists.
     for row in rows:
-        raw = row.pop("tags_json", "[]")
-        parsed = json.loads(raw) if raw else []
-        # json_group_array produces [null] for zero tags — filter it out.
-        row["tags"] = [t for t in parsed if t is not None]
+        row["tags"] = _parse_tags_json(row)
 
     return rows
 
@@ -594,17 +607,16 @@ async def batch_update_articles(
     set_clauses.append("updated_at = ?")
     params.append(now)
 
-    updated_count = 0
-    for article_id in article_ids:
-        if not isinstance(article_id, str):
-            continue
-        bind_params = params + [article_id, user_id]
-        sql = f"UPDATE articles SET {', '.join(set_clauses)} WHERE id = ? AND user_id = ?"
-        result = await db.prepare(sql).bind(*bind_params).run()
-        if result.get("meta", {}).get("changes", 0) > 0:
-            updated_count += 1
+    sql = f"UPDATE articles SET {', '.join(set_clauses)} WHERE id = ? AND user_id = ?"
+    valid_ids = [aid for aid in article_ids if isinstance(aid, str)]
 
-    return {"updated": updated_count}
+    async def _update_one(article_id: str) -> int:
+        bind_params = params + [article_id, user_id]
+        result = await db.prepare(sql).bind(*bind_params).run()
+        return 1 if result.get("meta", {}).get("changes", 0) > 0 else 0
+
+    results = await asyncio.gather(*[_update_one(aid) for aid in valid_ids])
+    return {"updated": sum(results)}
 
 
 @router.post("/batch-delete")
@@ -628,18 +640,23 @@ async def batch_delete_articles(
     db = env.DB
     user_id = user["user_id"]
 
-    deleted_count = 0
-    for article_id in article_ids:
-        if not isinstance(article_id, str):
-            continue
-        # Verify ownership before deleting
-        article = await (
-            db.prepare("SELECT id FROM articles WHERE id = ? AND user_id = ?")
-            .bind(article_id, user_id)
-            .first()
-        )
-        if article is None:
-            continue
+    valid_ids = [aid for aid in article_ids if isinstance(aid, str)]
+
+    # Batch-verify ownership in a single query
+    if not valid_ids:
+        return {"deleted": 0}
+    placeholders = ", ".join("?" for _ in valid_ids)
+    owned_rows = await (
+        db.prepare(f"SELECT id FROM articles WHERE id IN ({placeholders}) AND user_id = ?")
+        .bind(*valid_ids, user_id)
+        .all()
+    )
+    owned_ids = [r["id"] for r in owned_rows]
+
+    if not owned_ids:
+        return {"deleted": 0}
+
+    async def _delete_one(article_id: str) -> None:
         # Delete R2 content first
         await delete_article_content(env.CONTENT, article_id)
         # Delete from D1
@@ -648,9 +665,9 @@ async def batch_delete_articles(
             .bind(article_id, user_id)
             .run()
         )
-        deleted_count += 1
 
-    return {"deleted": deleted_count}
+    await asyncio.gather(*[_delete_one(aid) for aid in owned_ids])
+    return {"deleted": len(owned_ids)}
 
 
 @router.get("/{article_id}")
@@ -686,9 +703,7 @@ async def get_article(
     if row is None:
         raise HTTPException(status_code=404, detail="Article not found")
 
-    raw = row.pop("tags_json", "[]")
-    parsed = json.loads(raw) if raw else []
-    row["tags"] = [t for t in parsed if t is not None]
+    row["tags"] = _parse_tags_json(row)
 
     return row
 
@@ -870,11 +885,19 @@ async def get_article_image(
         ext = filename[dot_pos:].lower()
     media_type = _IMAGE_MEDIA_TYPES.get(ext, "application/octet-stream")
 
-    return await _serve_r2_object(
+    response = await _serve_r2_object(
         obj,
         media_type=media_type,
         cache_control="public, max-age=31536000, immutable",
     )
+
+    # SVG files can contain embedded JavaScript — serve with protective
+    # headers to prevent XSS.
+    if media_type == "image/svg+xml":
+        response.headers["Content-Disposition"] = "attachment"
+        response.headers["Content-Security-Policy"] = "sandbox"
+
+    return response
 
 
 @router.patch("/{article_id}")
@@ -1091,7 +1114,7 @@ async def process_now(
         actual_status = updated.get("status", "unknown")
         result = "success" if actual_status == "ready" else "error"
         return {"id": article_id, "result": result, "article": updated}
-    except Exception as exc:
+    except Exception:
         import traceback
 
         tb = traceback.format_exc()[-500:]
@@ -1107,7 +1130,7 @@ async def process_now(
         return {
             "id": article_id,
             "result": "error",
-            "error": str(exc),
+            "error": "An internal error occurred during processing",
         }
 
 

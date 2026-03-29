@@ -1,19 +1,19 @@
 import { signal } from '@preact/signals';
 import { useEffect } from 'preact/hooks';
 
-var DISMISSED_KEY = 'tasche-install-dismissed';
+const DISMISSED_KEY = 'tasche-install-dismissed';
 
 // Reactive state
-var deferredPrompt = signal(null);
-export var canInstall = signal(false);
-export var showIOSHint = signal(false);
+const deferredPrompt = signal(null);
+export const canInstall = signal(false);
+export const showIOSHint = signal(false);
 
 // Static detection
-var isStandalone =
+const isStandalone =
   typeof window !== 'undefined' &&
   (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true);
 
-export var isIOS =
+export const isIOS =
   typeof navigator !== 'undefined' &&
   navigator.standalone === undefined &&
   /iPhone|iPad|iPod/.test(navigator.userAgent) &&
@@ -24,7 +24,7 @@ function isDismissed() {
 }
 
 export function triggerInstall() {
-  var prompt = deferredPrompt.value;
+  const prompt = deferredPrompt.value;
   if (!prompt) return;
   prompt.prompt();
   prompt.userChoice.then(function () {
