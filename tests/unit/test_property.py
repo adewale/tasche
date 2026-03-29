@@ -8,7 +8,7 @@ calculation.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import UTC, datetime, timedelta
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -646,7 +646,7 @@ class TestCalculateStreakProperties:
     @settings(max_examples=200)
     def test_consecutive_days_from_today(self, n: int) -> None:
         """N consecutive days ending today should produce a streak of N."""
-        today = date.today()
+        today = datetime.now(UTC).date()
         rows = [{"d": (today - timedelta(days=i)).isoformat()} for i in range(n)]
         assert _calculate_streak(rows) == n
 
@@ -654,7 +654,7 @@ class TestCalculateStreakProperties:
     @settings(max_examples=200)
     def test_consecutive_days_from_yesterday(self, n: int) -> None:
         """N consecutive days ending yesterday should produce a streak of N."""
-        yesterday = date.today() - timedelta(days=1)
+        yesterday = datetime.now(UTC).date() - timedelta(days=1)
         rows = [{"d": (yesterday - timedelta(days=i)).isoformat()} for i in range(n)]
         assert _calculate_streak(rows) == n
 
@@ -662,7 +662,7 @@ class TestCalculateStreakProperties:
     @settings(max_examples=200)
     def test_gap_from_today_returns_zero(self, gap: int) -> None:
         """A single date more than 1 day in the past should yield streak 0."""
-        old_date = date.today() - timedelta(days=gap)
+        old_date = datetime.now(UTC).date() - timedelta(days=gap)
         rows = [{"d": old_date.isoformat()}]
         assert _calculate_streak(rows) == 0
 
@@ -683,7 +683,7 @@ class TestCalculateStreakProperties:
     @settings(max_examples=200)
     def test_streak_breaks_at_gap(self, n: int, gap: int, extra: int) -> None:
         """A gap in dates should cause the streak to stop at the gap."""
-        today = date.today()
+        today = datetime.now(UTC).date()
         # N consecutive days from today
         recent = [{"d": (today - timedelta(days=i)).isoformat()} for i in range(n)]
         # Then a gap, then more days

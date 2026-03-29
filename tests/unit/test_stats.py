@@ -284,9 +284,9 @@ class TestGetStats:
 class TestReadingStreak:
     async def test_streak_with_consecutive_days(self) -> None:
         """Reading streak counts consecutive days ending today."""
-        from datetime import date, timedelta
+        from datetime import UTC, datetime, timedelta
 
-        today = date.today()
+        today = datetime.now(UTC).date()
         dates = [{"d": (today - timedelta(days=i)).isoformat()} for i in range(5)]
 
         def execute(sql: str, params: list) -> list:
@@ -316,9 +316,9 @@ class TestReadingStreak:
 
     async def test_streak_starting_yesterday(self) -> None:
         """Reading streak can start from yesterday (no activity today yet)."""
-        from datetime import date, timedelta
+        from datetime import UTC, datetime, timedelta
 
-        yesterday = date.today() - timedelta(days=1)
+        yesterday = datetime.now(UTC).date() - timedelta(days=1)
         dates = [{"d": (yesterday - timedelta(days=i)).isoformat()} for i in range(3)]
 
         def execute(sql: str, params: list) -> list:
@@ -348,9 +348,9 @@ class TestReadingStreak:
 
     async def test_streak_broken_gap(self) -> None:
         """Reading streak breaks on a gap day."""
-        from datetime import date, timedelta
+        from datetime import UTC, datetime, timedelta
 
-        today = date.today()
+        today = datetime.now(UTC).date()
         # Today, yesterday, then skip a day, then 2 more days
         dates = [
             {"d": today.isoformat()},
@@ -387,9 +387,9 @@ class TestReadingStreak:
 
     async def test_streak_no_recent_activity(self) -> None:
         """Reading streak is 0 when no recent archived activity."""
-        from datetime import date, timedelta
+        from datetime import UTC, datetime, timedelta
 
-        old_date = date.today() - timedelta(days=10)
+        old_date = datetime.now(UTC).date() - timedelta(days=10)
 
         def execute(sql: str, params: list) -> list:
             if "DISTINCT date" in sql:
