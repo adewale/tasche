@@ -20,6 +20,10 @@ const createdTagIds = [];
 
 test.use({ viewport: VIEWPORT, hasTouch: true });
 
+test.beforeAll(async ({ request }) => {
+  await request.get('/api/health');
+});
+
 test.afterAll(async ({ request }) => {
   for (const id of createdArticleIds) {
     try {

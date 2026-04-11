@@ -14,6 +14,10 @@ import { test, expect } from '@playwright/test';
 /** @type {string[]} */
 const createdArticleIds = [];
 
+test.beforeAll(async ({ request }) => {
+  await request.get('/api/health');
+});
+
 test.afterAll(async ({ request }) => {
   for (const id of createdArticleIds) {
     try {
@@ -746,7 +750,7 @@ test.describe('Save audio — UI form', () => {
       .locator('.toast')
       .click()
       .catch(() => {});
-    await page.waitForTimeout(500);
+    await expect(page.locator('.toast, [role="alert"]')).toBeHidden({ timeout: 5000 });
 
     await input.fill('https://example.com/e2e-parity-audio');
     await page.locator('button', { hasText: 'Save audio' }).click();

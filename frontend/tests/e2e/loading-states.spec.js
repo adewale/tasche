@@ -16,6 +16,10 @@ const createdArticleIds = [];
 /** @type {string[]} */
 const createdTagIds = [];
 
+test.beforeAll(async ({ request }) => {
+  await request.get('/api/health');
+});
+
 test.afterAll(async ({ request }) => {
   for (const id of createdArticleIds) {
     try {

@@ -13,6 +13,10 @@ const createdArticleIds = [];
 /** @type {string[]} */
 const createdTagIds = [];
 
+test.beforeAll(async ({ request }) => {
+  await request.get('/api/health');
+});
+
 test.afterAll(async ({ request }) => {
   for (const id of createdArticleIds) {
     try {
@@ -103,13 +107,17 @@ test.describe('Reader — change reading status', () => {
     // Wait for toast confirming status update
     await expect(page.locator('.toast')).toBeVisible({ timeout: 5000 });
 
-    // Give the PATCH request time to complete on the server
-    await page.waitForTimeout(1000);
-
-    // Verify via API
-    const getResp = await request.get(`/api/articles/${id}`);
-    const article = await getResp.json();
-    expect(article.reading_status).toBe('archived');
+    // Poll until the server-side state reflects the update
+    await expect
+      .poll(
+        async () => {
+          const resp = await request.get(`/api/articles/${id}`);
+          const data = await resp.json();
+          return data.reading_status;
+        },
+        { timeout: 10000 },
+      )
+      .toBe('archived');
   });
 });
 

@@ -16,6 +16,10 @@ import AxeBuilder from '@axe-core/playwright';
 /** @type {string[]} */
 const createdArticleIds = [];
 
+test.beforeAll(async ({ request }) => {
+  await request.get('/api/health');
+});
+
 test.afterAll(async ({ request }) => {
   for (const id of createdArticleIds) {
     try {
@@ -53,9 +57,7 @@ async function scanForCritical(page) {
 // ---------------------------------------------------------------------------
 test('Library view has no critical a11y violations', async ({ page }) => {
   await page.goto('/#/');
-  await page.waitForSelector('.main-content');
-  // Let the page settle
-  await page.waitForTimeout(500);
+  await page.waitForSelector('.save-form', { timeout: 15000 });
 
   const violations = await scanForCritical(page);
   expect(violations).toEqual([]);
@@ -73,8 +75,8 @@ test('Reader view has no critical a11y violations', async ({ page, request }) =>
   await request.post(`/api/articles/${article.id}/process-now`);
 
   await page.goto(`/#/article/${article.id}`);
-  await page.waitForSelector('.reader-title');
-  await page.waitForTimeout(500);
+  await page.waitForSelector('.reader-title', { timeout: 15000 });
+  await page.waitForSelector('.reader-content, .reader-status-message', { timeout: 15000 });
 
   const violations = await scanForCritical(page);
   expect(violations).toEqual([]);
@@ -85,8 +87,7 @@ test('Reader view has no critical a11y violations', async ({ page, request }) =>
 // ---------------------------------------------------------------------------
 test('Tags view has no critical a11y violations', async ({ page }) => {
   await page.goto('/#/tags');
-  await page.waitForSelector('.main-content');
-  await page.waitForTimeout(500);
+  await page.waitForSelector('input[placeholder="New tag name..."]', { timeout: 15000 });
 
   const violations = await scanForCritical(page);
   expect(violations).toEqual([]);
@@ -97,8 +98,7 @@ test('Tags view has no critical a11y violations', async ({ page }) => {
 // ---------------------------------------------------------------------------
 test('Search view has no critical a11y violations', async ({ page }) => {
   await page.goto('/#/search');
-  await page.waitForSelector('.main-content');
-  await page.waitForTimeout(500);
+  await page.waitForSelector('.save-form', { timeout: 15000 });
 
   const violations = await scanForCritical(page);
   expect(violations).toEqual([]);
@@ -109,8 +109,7 @@ test('Search view has no critical a11y violations', async ({ page }) => {
 // ---------------------------------------------------------------------------
 test('Settings view has no critical a11y violations', async ({ page }) => {
   await page.goto('/#/settings');
-  await page.waitForSelector('.main-content');
-  await page.waitForTimeout(500);
+  await page.waitForSelector('h2.section-title', { timeout: 15000 });
 
   const violations = await scanForCritical(page);
   expect(violations).toEqual([]);

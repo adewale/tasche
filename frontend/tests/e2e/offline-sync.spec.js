@@ -12,6 +12,10 @@ import { test, expect } from '@playwright/test';
 /** @type {string[]} */
 const createdArticleIds = [];
 
+test.beforeAll(async ({ request }) => {
+  await request.get('/api/health');
+});
+
 test.afterAll(async ({ request }) => {
   for (const id of createdArticleIds) {
     try {
@@ -74,14 +78,17 @@ test.describe('Offline sync round-trip', () => {
       timeout: 15000,
     });
 
-    // Give the sync request time to complete on the server
-    await page.waitForTimeout(2000);
-
-    // Verify the favorite actually persisted on the server
-    const resp = await request.get(`/api/articles/${id}`);
-    expect(resp.ok()).toBeTruthy();
-    const article = await resp.json();
-    expect(article.is_favorite).toBeTruthy();
+    // Poll until the server-side state reflects the sync
+    await expect
+      .poll(
+        async () => {
+          const resp = await request.get(`/api/articles/${id}`);
+          const data = await resp.json();
+          return data.is_favorite;
+        },
+        { timeout: 10000 },
+      )
+      .toBeTruthy();
   });
 
   test('archive toggled offline syncs when back online', async ({ page, context, request }) => {
@@ -113,14 +120,17 @@ test.describe('Offline sync round-trip', () => {
       timeout: 15000,
     });
 
-    // Give the sync request time to complete on the server
-    await page.waitForTimeout(2000);
-
-    // Verify the status persisted on the server
-    const resp = await request.get(`/api/articles/${id}`);
-    expect(resp.ok()).toBeTruthy();
-    const article = await resp.json();
-    expect(article.reading_status).toBe('archived');
+    // Poll until the server-side state reflects the sync
+    await expect
+      .poll(
+        async () => {
+          const resp = await request.get(`/api/articles/${id}`);
+          const data = await resp.json();
+          return data.reading_status;
+        },
+        { timeout: 10000 },
+      )
+      .toBe('archived');
   });
 });
 
