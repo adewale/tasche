@@ -10,7 +10,7 @@ import asyncio
 from datetime import UTC
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 
 from auth.dependencies import get_current_user
 
@@ -20,6 +20,7 @@ router = APIRouter()
 @router.get("")
 async def get_stats(
     request: Request,
+    response: Response,
     user: dict[str, Any] = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Return aggregated reading statistics for the authenticated user.
@@ -174,6 +175,7 @@ async def get_stats(
         for m in all_months
     ]
 
+    response.headers["Cache-Control"] = "private, max-age=120"
     return {
         "total_articles": total_articles,
         "total_words_read": total_words_read,

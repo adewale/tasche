@@ -2854,3 +2854,109 @@ class TestBatchOperationsNegative:
 
         assert resp.status_code == 200
         assert resp.json()["deleted"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Cache-Control headers — Tier 1 (immutable) and Tier 3 (mutable)
+# ---------------------------------------------------------------------------
+
+
+class TestCacheControlHeaders:
+    """Verify Cache-Control headers across all article endpoints."""
+
+    # -- Tier 1: Immutable content --
+
+    async def test_content_has_immutable_cache_header(self) -> None:
+        """GET /articles/{id}/content uses immutable caching."""
+        article = ArticleFactory.create(
+            id="art_cc_html",
+            html_key="articles/art_cc_html/content.html",
+        )
+
+        def execute(sql, params):
+            if "id = ?" in sql:
+                return [article]
+            return []
+
+        r2 = MockR2()
+        await r2.put("articles/art_cc_html/content.html", b"<p>hi</p>")
+        env = MockEnv(db=MockD1(execute=execute), content=r2)
+        client, _ = await _authenticated_client(env)
+        resp = client.get("/api/articles/art_cc_html/content")
+        assert resp.status_code == 200
+        cc = resp.headers["cache-control"]
+        assert "private" in cc
+        assert "max-age=31536000" in cc
+        assert "immutable" in cc
+
+    async def test_markdown_has_immutable_cache_header(self) -> None:
+        """GET /articles/{id}/markdown uses immutable caching."""
+        article = ArticleFactory.create(id="art_cc_md", markdown_content="# Hi")
+
+        def execute(sql, params):
+            if "SELECT" in sql:
+                return [article]
+            return []
+
+        env = MockEnv(db=MockD1(execute=execute))
+        client, _ = await _authenticated_client(env)
+        resp = client.get("/api/articles/art_cc_md/markdown")
+        assert resp.status_code == 200
+        cc = resp.headers["cache-control"]
+        assert "private" in cc
+        assert "max-age=31536000" in cc
+        assert "immutable" in cc
+
+    async def test_metadata_has_immutable_cache_header(self) -> None:
+        """GET /articles/{id}/metadata uses immutable caching."""
+        article = ArticleFactory.create(id="art_cc_meta")
+
+        def execute(sql, params):
+            if "id = ?" in sql:
+                return [article]
+            return []
+
+        r2 = MockR2()
+        import json
+
+        await r2.put(
+            "articles/art_cc_meta/metadata.json",
+            json.dumps({"word_count": 100}).encode(),
+        )
+        env = MockEnv(db=MockD1(execute=execute), content=r2)
+        client, _ = await _authenticated_client(env)
+        resp = client.get("/api/articles/art_cc_meta/metadata")
+        assert resp.status_code == 200
+        cc = resp.headers["cache-control"]
+        assert "private" in cc
+        assert "max-age=31536000" in cc
+        assert "immutable" in cc
+
+    # -- Tier 3: Mutable endpoints with short-lived cache --
+
+    async def test_list_articles_has_short_cache(self) -> None:
+        """GET /articles includes Cache-Control: private, max-age=30."""
+        env = MockEnv(db=MockD1(execute=lambda s, p: []))
+        client, _ = await _authenticated_client(env)
+        resp = client.get("/api/articles")
+        assert resp.status_code == 200
+        cc = resp.headers.get("cache-control", "")
+        assert "private" in cc
+        assert "max-age=30" in cc
+
+    async def test_get_article_has_short_cache(self) -> None:
+        """GET /articles/{id} includes Cache-Control: private, max-age=60."""
+        article = ArticleFactory.create(id="art_cc_detail")
+
+        def execute(sql, params):
+            if "id = ?" in sql:
+                return [article]
+            return []
+
+        env = MockEnv(db=MockD1(execute=execute))
+        client, _ = await _authenticated_client(env)
+        resp = client.get("/api/articles/art_cc_detail")
+        assert resp.status_code == 200
+        cc = resp.headers.get("cache-control", "")
+        assert "private" in cc
+        assert "max-age=60" in cc

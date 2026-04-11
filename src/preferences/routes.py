@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from auth.dependencies import get_current_user
 from utils import now_iso
@@ -21,6 +21,7 @@ _VALID_VOICES = ("athena", "orion")
 @router.get("")
 async def get_preferences(
     request: Request,
+    response: Response,
     user: dict[str, Any] = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Return the current user's preferences.
@@ -36,6 +37,7 @@ async def get_preferences(
     )
 
     tts_voice = row.get("tts_voice") if row else "athena"
+    response.headers["Cache-Control"] = "private, max-age=300"
     return {"tts_voice": tts_voice}
 
 

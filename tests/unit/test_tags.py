@@ -1218,3 +1218,19 @@ class TestCreateTagWithEmptyName:
         )
 
         assert resp.status_code == 422
+
+
+class TestTagsCacheControl:
+    async def test_list_tags_has_cache_control(self) -> None:
+        """GET /api/tags includes Cache-Control: private, max-age=120."""
+
+        def execute(sql, params):
+            return []
+
+        env = MockEnv(db=MockD1(execute=execute))
+        client, _ = await _authenticated_client(env)
+        resp = client.get("/api/tags")
+        assert resp.status_code == 200
+        cc = resp.headers.get("cache-control", "")
+        assert "private" in cc
+        assert "max-age=120" in cc

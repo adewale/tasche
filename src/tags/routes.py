@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from articles.routes import _get_user_article
 from auth.dependencies import get_current_user
@@ -112,6 +112,7 @@ async def create_tag(
 @router.get("")
 async def list_tags(
     request: Request,
+    response: Response,
     user: dict[str, Any] = Depends(get_current_user),
 ) -> list[dict[str, Any]]:
     """List the authenticated user's tags.
@@ -122,7 +123,7 @@ async def list_tags(
     db = env.DB
     user_id = user["user_id"]
 
-    return await (
+    rows = await (
         db.prepare(
             "SELECT t.id, t.user_id, t.name, t.created_at, "
             "COUNT(at.article_id) as article_count "
@@ -134,6 +135,8 @@ async def list_tags(
         .bind(user_id)
         .all()
     )
+    response.headers["Cache-Control"] = "private, max-age=120"
+    return rows
 
 
 @router.patch("/{tag_id}")

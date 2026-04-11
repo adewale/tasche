@@ -41,6 +41,23 @@ Patterns observed in [adewale/planet_cf](https://github.com/adewale/planet_cf) t
 
 6. **`dict_converter=Object.fromEntries` always in `to_js()`** — without this, `to_js()` creates a JS `LiteralMap` instead of a plain `Object`. Bindings that use property access (Vectorize, Workers AI, R2 put options) see `undefined` for every field. planet_cf's latest commit (2026-03-28) fixes a production bug caused by this. Note: Pyodide 0.29.0 will default to Object conversion, making `dict_converter` redundant.
 
+## Edge Caching
+
+### Done: Browser cache headers (Tiers 1 & 3)
+
+Immutable content endpoints now use `private, max-age=31536000, immutable`. Mutable
+endpoints use short-lived `private, max-age=N` to speed up back/forward navigation.
+
+### Blocked: Cache API at the edge (Tier 2)
+
+Cloudflare's Cache API (`caches.default`) is not available on `*.workers.dev`
+subdomains — requires a custom domain. Once a custom domain is configured, the
+`entry.py` fetch handler can intercept GET requests for immutable content, check the
+edge cache before waking Pyodide, and serve cached responses in ~5ms (bypassing the
+~3s cold start). The auth check must run before the cache lookup, and cache keys
+must be scoped by user to prevent cross-user leakage. Cache is per-PoP (not global),
+so the benefit is location-dependent.
+
 ## Kindle Integration
 
 Ideas for getting articles onto Kindle devices and into the Kindle reading experience.

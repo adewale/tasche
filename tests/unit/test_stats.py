@@ -614,3 +614,42 @@ class TestStatsResponseStructure:
             assert isinstance(data[key], (int, float)), (
                 f"{key} should be numeric, got {type(data[key])}: {data[key]}"
             )
+
+
+class TestStatsCacheControl:
+    async def test_stats_has_cache_control(self) -> None:
+        """GET /api/stats includes Cache-Control: private, max-age=120."""
+
+        def execute(sql, params):
+            if "COUNT(*)" in sql:
+                return [{"cnt": 0}]
+            if "SUM(word_count)" in sql:
+                return [{"total": 0}]
+            if "GROUP BY reading_status" in sql:
+                return []
+            if "GROUP BY domain" in sql:
+                return []
+            if "DISTINCT date" in sql:
+                return []
+            if "AVG(" in sql:
+                return [{"avg_rt": None}]
+            if "strftime" in sql:
+                return []
+            if "saved_week" in sql:
+                return [
+                    {
+                        "saved_week": 0,
+                        "saved_month": 0,
+                        "archived_week": 0,
+                        "archived_month": 0,
+                    }
+                ]
+            return []
+
+        env = MockEnv(db=MockD1(execute=execute))
+        client, _ = await _authenticated_client(env)
+        resp = client.get("/api/stats")
+        assert resp.status_code == 200
+        cc = resp.headers.get("cache-control", "")
+        assert "private" in cc
+        assert "max-age=120" in cc

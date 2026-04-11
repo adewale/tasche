@@ -12,8 +12,8 @@ import json
 import re
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.responses import HTMLResponse
 
 from articles.health import check_original_url
 from articles.storage import (
@@ -349,6 +349,7 @@ async def create_article(
 @router.get("")
 async def list_articles(
     request: Request,
+    response: Response,
     q: str | None = Query(default=None),
     status: str | None = Query(default=None),
     reading_status: str | None = Query(default=None),
@@ -487,6 +488,7 @@ async def list_articles(
     for row in rows:
         row["tags"] = _parse_tags_json(row)
 
+    response.headers["Cache-Control"] = "private, max-age=30"
     return rows
 
 
@@ -673,6 +675,7 @@ async def batch_delete_articles(
 @router.get("/{article_id}")
 async def get_article(
     request: Request,
+    response: Response,
     article_id: str,
     user: dict[str, Any] = Depends(get_current_user),
 ) -> dict[str, Any]:
@@ -705,6 +708,7 @@ async def get_article(
 
     row["tags"] = _parse_tags_json(row)
 
+    response.headers["Cache-Control"] = "private, max-age=60"
     return row
 
 
@@ -740,9 +744,10 @@ async def get_article_content(
     response.headers["Content-Security-Policy"] = (
         "default-src 'none'; img-src * data:; style-src 'unsafe-inline'"
     )
-    # Ensure the SW's network-first strategy always revalidates — content
-    # can change when a user retries processing (#10).
-    response.headers["Cache-Control"] = "private, no-cache"
+    # Immutable: article content never changes after processing completes.
+    # Re-processing deletes R2 content and resets status, so the old cache
+    # entry becomes unreachable (404 on next request).
+    response.headers["Cache-Control"] = "private, max-age=31536000, immutable"
     return response
 
 
@@ -771,7 +776,7 @@ async def get_article_markdown(
     return Response(
         content=markdown_content,
         media_type="text/markdown; charset=utf-8",
-        headers={"Cache-Control": "private, max-age=300"},
+        headers={"Cache-Control": "private, max-age=31536000, immutable"},
     )
 
 
@@ -797,7 +802,12 @@ async def get_article_metadata(
     if metadata is None:
         raise HTTPException(status_code=404, detail="No metadata available")
 
-    return metadata
+    from fastapi.responses import JSONResponse
+
+    return JSONResponse(
+        content=metadata,
+        headers={"Cache-Control": "private, max-age=31536000, immutable"},
+    )
 
 
 @router.get("/{article_id}/thumbnail")
