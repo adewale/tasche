@@ -207,19 +207,16 @@ test.describe('Reader — check original URL', () => {
 
     // Look for the "Check now" button
     const checkBtn = statusDiv.locator('button').filter({ hasText: 'Check now' });
+    await expect(checkBtn).toBeVisible({ timeout: 5000 });
+    await checkBtn.click();
 
-    // If "Check now" is visible, click it
-    if (await checkBtn.isVisible()) {
-      await checkBtn.click();
+    // Wait for the toast or for the status to change
+    await expect(page.locator('.toast')).toBeVisible({ timeout: 15000 });
 
-      // Wait for the toast or for the status to change
-      await expect(page.locator('.toast')).toBeVisible({ timeout: 15000 });
-
-      // Verify via API that original_status was updated
-      const getResp = await request.get(`/api/articles/${id}`);
-      const article = await getResp.json();
-      expect(article.original_status).not.toBe('unknown');
-    }
+    // Verify via API that original_status was updated
+    const getResp = await request.get(`/api/articles/${id}`);
+    const article = await getResp.json();
+    expect(article.original_status).not.toBe('unknown');
   });
 });
 
@@ -304,22 +301,22 @@ test.describe('Library — card actions', () => {
 
     // Find the card for our article
     const card = page.locator('.article-card').filter({ hasText: 'Card Fav Test' });
-    if (await card.isVisible()) {
-      const favBtn = card.locator('.fav-btn');
-      await expect(favBtn).toBeVisible();
+    await expect(card).toBeVisible({ timeout: 15000 });
 
-      // Should not be favourited initially
-      await expect(favBtn).not.toHaveClass(/favorited/);
+    const favBtn = card.locator('.fav-btn');
+    await expect(favBtn).toBeVisible();
 
-      // Click to favourite
-      await favBtn.click();
-      await expect(favBtn).toHaveClass(/favorited/, { timeout: 5000 });
+    // Should not be favourited initially
+    await expect(favBtn).not.toHaveClass(/favorited/);
 
-      // Verify via API
-      const getResp = await request.get(`/api/articles/${id}`);
-      const article = await getResp.json();
-      expect(article.is_favorite).toBeTruthy();
-    }
+    // Click to favourite
+    await favBtn.click();
+    await expect(favBtn).toHaveClass(/favorited/, { timeout: 5000 });
+
+    // Verify via API
+    const getResp = await request.get(`/api/articles/${id}`);
+    const article = await getResp.json();
+    expect(article.is_favorite).toBeTruthy();
   });
 
   test('delete button on card removes article', async ({ page, request }) => {
@@ -336,24 +333,24 @@ test.describe('Library — card actions', () => {
     await expect(page.locator('.article-card').first()).toBeVisible({ timeout: 15000 });
 
     const card = page.locator('.article-card').filter({ hasText: 'Card Delete Test' });
-    if (await card.isVisible()) {
-      // Accept confirm dialog
-      page.on('dialog', (dialog) => dialog.accept());
+    await expect(card).toBeVisible({ timeout: 15000 });
 
-      const deleteBtn = card.locator('.delete-btn');
-      await deleteBtn.click();
+    // Accept confirm dialog
+    page.on('dialog', (dialog) => dialog.accept());
 
-      // Card should disappear
-      await expect(card).not.toBeVisible({ timeout: 5000 });
+    const deleteBtn = card.locator('.delete-btn');
+    await deleteBtn.click();
 
-      // Verify via API
-      const getResp = await request.get(`/api/articles/${id}`);
-      expect(getResp.status()).toBe(404);
+    // Card should disappear
+    await expect(card).not.toBeVisible({ timeout: 5000 });
 
-      // Remove from cleanup list
-      const idx = createdArticleIds.indexOf(id);
-      if (idx !== -1) createdArticleIds.splice(idx, 1);
-    }
+    // Verify via API
+    const getResp = await request.get(`/api/articles/${id}`);
+    expect(getResp.status()).toBe(404);
+
+    // Remove from cleanup list
+    const idx = createdArticleIds.indexOf(id);
+    if (idx !== -1) createdArticleIds.splice(idx, 1);
   });
 });
 
@@ -375,24 +372,22 @@ test.describe('Library — filter tabs', () => {
     const archivedTab = page
       .locator('.filter-tabs button, .filter-tabs a')
       .filter({ hasText: 'Archived' });
-    if (await archivedTab.isVisible()) {
-      await archivedTab.click();
-      // Should show the archived article or empty state
-      await expect(page.locator('.article-card, .empty-state').first()).toBeVisible({
-        timeout: 10000,
-      });
-    }
+    await expect(archivedTab).toBeVisible({ timeout: 5000 });
+    await archivedTab.click();
+    // Should show the archived article or empty state
+    await expect(page.locator('.article-card, .empty-state').first()).toBeVisible({
+      timeout: 10000,
+    });
 
     // Click "Favorites" tab
     const favTab = page
       .locator('.filter-tabs button, .filter-tabs a')
       .filter({ hasText: 'Favourites' });
-    if (await favTab.isVisible()) {
-      await favTab.click();
-      await expect(page.locator('.article-card, .empty-state').first()).toBeVisible({
-        timeout: 10000,
-      });
-    }
+    await expect(favTab).toBeVisible({ timeout: 5000 });
+    await favTab.click();
+    await expect(page.locator('.article-card, .empty-state').first()).toBeVisible({
+      timeout: 10000,
+    });
   });
 });
 
@@ -408,13 +403,12 @@ test.describe('Reader — listen later', () => {
 
     // "Listen Later" button should be visible (since audio_status is not ready/pending)
     const listenBtn = page.locator('.reader-actions button').filter({ hasText: 'Listen Later' });
+    await expect(listenBtn).toBeVisible({ timeout: 10000 });
 
-    if (await listenBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await listenBtn.click();
+    await listenBtn.click();
 
-      // Should show toast about audio generation
-      await expect(page.locator('.toast').first()).toBeVisible({ timeout: 5000 });
-    }
+    // Should show toast about audio generation
+    await expect(page.locator('.toast').first()).toBeVisible({ timeout: 5000 });
   });
 });
 

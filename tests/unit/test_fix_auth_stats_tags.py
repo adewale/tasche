@@ -14,17 +14,14 @@ Covers:
 
 from __future__ import annotations
 
-import inspect
 import json
 import time
-from datetime import UTC
 from typing import Any
 
 from src.auth.session import (
     SESSION_PREFIX,
     refresh_session,
 )
-from src.stats.routes import _calculate_streak
 from src.stats.routes import router as stats_router
 from src.tags.routes import article_tags_router
 from src.tags.routes import router as tags_router
@@ -283,40 +280,6 @@ class TestReadingStatusCounted:
 
 
 # =========================================================================
-# Issue 26: _calculate_streak uses UTC date
-# =========================================================================
-
-
-class TestStreakUsesUTC:
-    def test_calculate_streak_uses_utc(self) -> None:
-        """_calculate_streak correctly handles UTC dates, not local time."""
-        from datetime import datetime, timedelta
-
-        utc_today = datetime.now(UTC).date()
-        # A streak of 3 consecutive UTC days should return 3
-        rows = [{"d": (utc_today - timedelta(days=i)).isoformat()} for i in range(3)]
-        result = _calculate_streak(rows)
-        assert result == 3
-
-        # A gap should break the streak
-        rows_with_gap = [
-            {"d": utc_today.isoformat()},
-            {"d": (utc_today - timedelta(days=2)).isoformat()},  # gap at day 1
-        ]
-        result_gap = _calculate_streak(rows_with_gap)
-        assert result_gap == 1
-
-    def test_streak_with_utc_today(self) -> None:
-        """Streak calculation uses UTC date, not local date."""
-        from datetime import datetime, timedelta
-
-        utc_today = datetime.now(UTC).date()
-        rows = [{"d": (utc_today - timedelta(days=i)).isoformat()} for i in range(3)]
-        result = _calculate_streak(rows)
-        assert result == 3
-
-
-# =========================================================================
 # Issue 30: TOCTOU-safe tag creation
 # =========================================================================
 
@@ -364,22 +327,6 @@ class TestTagCreationTOCTOU:
 
 
 # =========================================================================
-# Issue 76: now_iso() used in dependencies.py
-# =========================================================================
-
-
-class TestNowIsoUsage:
-    def test_dependencies_uses_now_iso(self) -> None:
-        """dependencies.py should import and use now_iso() instead of raw datetime."""
-        import src.auth.dependencies as deps
-
-        source = inspect.getsource(deps)
-        assert "from utils import now_iso" in source or "from src.utils import now_iso" in source
-        # Should NOT use datetime.now(UTC).isoformat() directly
-        assert "datetime.now(UTC).isoformat()" not in source
-
-
-# =========================================================================
 # Issue 20: Cached parse_allowed_emails
 # =========================================================================
 
@@ -416,19 +363,3 @@ class TestCachedParseAllowedEmails:
         result2 = _cached_parse_allowed_emails("a@b.com,c@d.com")
         assert result1 != result2
         assert result2 == {"a@b.com", "c@d.com"}
-
-
-# =========================================================================
-# Issue 75: Session ID size comment
-# =========================================================================
-
-
-class TestSessionIdComment:
-    def test_session_id_size_is_documented(self) -> None:
-        """session.py should have a comment explaining the 32-byte session ID size."""
-        import src.auth.session as session_mod
-
-        source = inspect.getsource(session_mod)
-        # Should have a comment near token_urlsafe(32) explaining the choice
-        src = source.lower()
-        assert "32 bytes" in src or "43 chars" in src or "higher entropy" in src

@@ -72,10 +72,9 @@ test.describe('Markdown view', () => {
 
     // If content is available, check tabs exist (content area may be empty
     // for example.com which produces minimal HTML with no markdown)
-    if (await hasContent.isVisible().catch(() => false)) {
-      await expect(page.locator('button').filter({ hasText: 'Rendered' })).toBeVisible();
-      await expect(page.locator('button').filter({ hasText: 'Source' })).toBeVisible();
-    }
+    await expect(hasContent).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('button').filter({ hasText: 'Rendered' })).toBeVisible();
+    await expect(page.locator('button').filter({ hasText: 'Source' })).toBeVisible();
 
     // No JS errors should have occurred
     expect(errors).toEqual([]);
@@ -98,14 +97,13 @@ test.describe('Markdown view', () => {
     await expect(hasContent.or(hasError)).toBeVisible({ timeout: 10000 });
 
     // Only test source tab if content loaded
-    if (await hasContent.isVisible().catch(() => false)) {
-      await page.locator('button').filter({ hasText: 'Source' }).click();
-      // example.com may produce minimal HTML with no markdown — the <pre>
-      // element only appears when markdown content actually exists
-      await expect(
-        page.locator('.markdown-view-content, .reader-status-message').first(),
-      ).toBeVisible({ timeout: 5000 });
-    }
+    await expect(hasContent).toBeVisible({ timeout: 5000 });
+    await page.locator('button').filter({ hasText: 'Source' }).click();
+    // example.com may produce minimal HTML with no markdown — the <pre>
+    // element only appears when markdown content actually exists
+    await expect(
+      page.locator('.markdown-view-content, .reader-status-message').first(),
+    ).toBeVisible({ timeout: 5000 });
 
     expect(errors).toEqual([]);
   });
@@ -365,16 +363,15 @@ test.describe('Library — bulk select', () => {
       .locator('button[title="Select mode"], button')
       .filter({ hasText: /select/i })
       .first();
-    if (await selectBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await selectBtn.click();
+    await expect(selectBtn).toBeVisible({ timeout: 5000 });
+    await selectBtn.click();
 
-      // Cards should show checkboxes
-      await expect(page.locator('.article-card-checkbox').first()).toBeVisible({ timeout: 5000 });
+    // Cards should show checkboxes
+    await expect(page.locator('.article-card-checkbox').first()).toBeVisible({ timeout: 5000 });
 
-      // Click a card to select it
-      await page.locator('.article-card').first().click();
-      await expect(page.locator('.article-card--checked').first()).toBeVisible({ timeout: 3000 });
-    }
+    // Click a card to select it
+    await page.locator('.article-card').first().click();
+    await expect(page.locator('.article-card--checked').first()).toBeVisible({ timeout: 3000 });
 
     expect(errors).toEqual([]);
   });
@@ -396,11 +393,10 @@ test.describe('Reader — theme toggle', () => {
     const themeBtn = page
       .locator('button[title*="theme" i], button[title*="Theme" i], .theme-toggle')
       .first();
-    if (await themeBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await themeBtn.click();
-      // Page should not crash
-      await expect(page.locator('.reader-header')).toBeVisible({ timeout: 5000 });
-    }
+    await expect(themeBtn).toBeVisible({ timeout: 5000 });
+    await themeBtn.click();
+    // Page should not crash
+    await expect(page.locator('.reader-header')).toBeVisible({ timeout: 5000 });
 
     expect(errors).toEqual([]);
   });
@@ -425,11 +421,10 @@ test.describe('Reader — view modes', () => {
 
     // The reader toolbar should have Original, Rendered, Source buttons
     const toolbar = page.locator('.reader-toolbar');
-    if (await toolbar.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await expect(toolbar.locator('button').filter({ hasText: 'Original' })).toBeVisible();
-      await expect(toolbar.locator('button').filter({ hasText: 'Rendered' })).toBeVisible();
-      await expect(toolbar.locator('button').filter({ hasText: 'Source' })).toBeVisible();
-    }
+    await expect(toolbar).toBeVisible({ timeout: 5000 });
+    await expect(toolbar.locator('button').filter({ hasText: 'Original' })).toBeVisible();
+    await expect(toolbar.locator('button').filter({ hasText: 'Rendered' })).toBeVisible();
+    await expect(toolbar.locator('button').filter({ hasText: 'Source' })).toBeVisible();
 
     expect(errors).toEqual([]);
   });
@@ -448,14 +443,13 @@ test.describe('Reader — view modes', () => {
     await expect(page.locator('.reader-header')).toBeVisible({ timeout: 10000 });
 
     const renderedBtn = page.locator('.reader-toolbar button').filter({ hasText: 'Rendered' });
-    if (await renderedBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await renderedBtn.click();
+    await expect(renderedBtn).toBeVisible({ timeout: 5000 });
+    await renderedBtn.click();
 
-      // Should show either rendered markdown content or a status message
-      await expect(page.locator('.reader-content, .reader-status-message').first()).toBeVisible({
-        timeout: 10000,
-      });
-    }
+    // Should show either rendered markdown content or a status message
+    await expect(page.locator('.reader-content, .reader-status-message').first()).toBeVisible({
+      timeout: 10000,
+    });
 
     expect(errors).toEqual([]);
   });
@@ -477,20 +471,17 @@ test.describe('Reader — view modes', () => {
     await expect(page.locator('.reader-header')).toBeVisible({ timeout: 10000 });
 
     const sourceBtn = page.locator('.reader-toolbar button').filter({ hasText: 'Source' });
-    if (await sourceBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await sourceBtn.click();
+    await expect(sourceBtn).toBeVisible({ timeout: 5000 });
+    await sourceBtn.click();
 
-      // Should show raw markdown in a <pre> block or a status message
-      await expect(
-        page.locator('.markdown-view-content, .reader-status-message, pre').first(),
-      ).toBeVisible({ timeout: 10000 });
+    // Should show raw markdown in a <pre> block or a status message
+    await expect(
+      page.locator('.markdown-view-content, .reader-status-message, pre').first(),
+    ).toBeVisible({ timeout: 10000 });
 
-      // If content loaded, Copy Markdown button should be visible
-      const copyBtn = page.locator('button').filter({ hasText: /copy markdown/i });
-      if (await copyBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-        await expect(copyBtn).toBeVisible();
-      }
-    }
+    // Copy Markdown button should be visible
+    const copyBtn = page.locator('button').filter({ hasText: /copy markdown/i });
+    await expect(copyBtn).toBeVisible({ timeout: 5000 });
 
     expect(errors).toEqual([]);
   });
@@ -510,9 +501,7 @@ test.describe('Settings — export', () => {
 
     // Should show Data Export section
     const exportHeading = page.getByRole('heading', { name: /export/i });
-    if (await exportHeading.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await expect(exportHeading).toBeVisible();
-    }
+    await expect(exportHeading).toBeVisible({ timeout: 5000 });
 
     expect(errors).toEqual([]);
   });
@@ -571,25 +560,21 @@ test.describe('Card rendering', () => {
 
     // Cards should have the article-card class
     const card = page.locator('.article-card').filter({ hasText: 'Card Render Test' });
-    if (await card.isVisible({ timeout: 5000 }).catch(() => false)) {
-      // Should have title
-      await expect(card.locator('.article-card-title')).toBeVisible();
+    await expect(card).toBeVisible({ timeout: 5000 });
 
-      // Should have meta row
-      await expect(card.locator('.article-card-meta')).toBeVisible();
+    // Should have title
+    await expect(card.locator('.article-card-title')).toBeVisible();
 
-      // Should have action buttons container
-      await expect(card.locator('.article-card-actions')).toBeAttached();
+    // Should have meta row
+    await expect(card.locator('.article-card-meta')).toBeVisible();
 
-      // Compact cards (no thumbnail) should have favicon container
-      if (
-        await card
-          .locator('.article-card-favicon')
-          .isVisible()
-          .catch(() => false)
-      ) {
-        await expect(card.locator('.favicon-container')).toBeVisible();
-      }
+    // Should have action buttons container
+    await expect(card.locator('.article-card-actions')).toBeAttached();
+
+    // Compact cards (no thumbnail) should have favicon container
+    const faviconArea = card.locator('.article-card-favicon');
+    if (await faviconArea.isVisible()) {
+      await expect(card.locator('.favicon-container')).toBeVisible();
     }
 
     expect(errors).toEqual([]);
@@ -1076,11 +1061,10 @@ test.describe('Reader — interactions', () => {
     await expect(page.locator('.reader-header')).toBeVisible({ timeout: 10000 });
 
     const favBtn = page.locator('.reader-actions button').filter({ hasText: /favourite/i });
-    if (await favBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await favBtn.click();
-      // Star icon toggles immediately — no toast is shown for favourite toggle
-      await expect(favBtn).toHaveClass(/btn-primary/, { timeout: 5000 });
-    }
+    await expect(favBtn).toBeVisible({ timeout: 5000 });
+    await favBtn.click();
+    // Star icon toggles immediately — no toast is shown for favourite toggle
+    await expect(favBtn).toHaveClass(/btn-primary/, { timeout: 5000 });
 
     expect(errors).toEqual([]);
   });
@@ -1123,10 +1107,9 @@ test.describe('Reader — interactions', () => {
       .locator('.reader-actions select, select')
       .filter({ has: page.locator('option') })
       .first();
-    if (await statusSelect.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await statusSelect.selectOption('archived');
-      await expect(page.locator('.toast')).toBeVisible({ timeout: 5000 });
-    }
+    await expect(statusSelect).toBeVisible({ timeout: 5000 });
+    await statusSelect.selectOption('archived');
+    await expect(page.locator('.toast')).toBeVisible({ timeout: 5000 });
 
     expect(errors).toEqual([]);
   });
@@ -1249,23 +1232,22 @@ test.describe('Tags', () => {
     });
 
     const tagInput = page.locator('input[placeholder*="ag" i]').first();
-    if (await tagInput.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await tagInput.fill('E2E Test Tag');
-      await page
-        .locator('button')
-        .filter({ hasText: /create/i })
-        .click();
+    await expect(tagInput).toBeVisible({ timeout: 5000 });
+    await tagInput.fill('E2E Test Tag');
+    await page
+      .locator('button')
+      .filter({ hasText: /create/i })
+      .click();
 
-      await expect(page.locator('.toast').filter({ hasText: /created/i })).toBeVisible({
-        timeout: 5000,
-      });
+    await expect(page.locator('.toast').filter({ hasText: /created/i })).toBeVisible({
+      timeout: 5000,
+    });
 
-      // Clean up via API
-      const resp = await request.get('/api/tags');
-      const tags = await resp.json();
-      const newTag = tags.find((t) => t.name === 'E2E Test Tag');
-      if (newTag) createdTagIds.push(newTag.id);
-    }
+    // Clean up via API
+    const resp = await request.get('/api/tags');
+    const tags = await resp.json();
+    const newTag = tags.find((t) => t.name === 'E2E Test Tag');
+    if (newTag) createdTagIds.push(newTag.id);
 
     expect(errors).toEqual([]);
   });
@@ -1292,17 +1274,16 @@ test.describe('Tags', () => {
 
     // Find the tag chip on the card
     const tagChip = page.locator('.tag-chip').filter({ hasText: 'E2E Filter Tag' });
-    if (await tagChip.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await tagChip.click();
+    await expect(tagChip).toBeVisible({ timeout: 5000 });
+    await tagChip.click();
 
-      // Should navigate to tag-filtered view
-      await expect(
-        page
-          .locator('.reader-back, a')
-          .filter({ hasText: /back to tags/i })
-          .first(),
-      ).toBeVisible({ timeout: 10000 });
-    }
+    // Should navigate to tag-filtered view
+    await expect(
+      page
+        .locator('.reader-back, a')
+        .filter({ hasText: /back to tags/i })
+        .first(),
+    ).toBeVisible({ timeout: 10000 });
 
     expect(errors).toEqual([]);
   });
@@ -1379,12 +1360,11 @@ test.describe('Bulk operations', () => {
 
     // Click delete
     const deleteBtn = page.locator('.bulk-action-bar .btn-danger');
-    if (await deleteBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await deleteBtn.click();
-      await expect(page.locator('.toast').filter({ hasText: /deleted/i })).toBeVisible({
-        timeout: 5000,
-      });
-    }
+    await expect(deleteBtn).toBeVisible({ timeout: 5000 });
+    await deleteBtn.click();
+    await expect(page.locator('.toast').filter({ hasText: /deleted/i })).toBeVisible({
+      timeout: 5000,
+    });
 
     expect(errors).toEqual([]);
   });
@@ -1421,12 +1401,11 @@ test.describe('Settings', () => {
       .locator('.header-nav a[href*="search"], .header-nav button')
       .filter({ hasText: /search/i })
       .first();
-    if (await searchLink.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await searchLink.click();
-      await expect(
-        page.locator('input[type="search"], input[placeholder*="earch"]').first(),
-      ).toBeVisible({ timeout: 10000 });
-    }
+    await expect(searchLink).toBeVisible({ timeout: 5000 });
+    await searchLink.click();
+    await expect(
+      page.locator('input[type="search"], input[placeholder*="earch"]').first(),
+    ).toBeVisible({ timeout: 10000 });
 
     // Navigate to tags
     await page.goto('/#/tags');

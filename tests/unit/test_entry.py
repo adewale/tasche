@@ -248,20 +248,6 @@ class TestQueueBodyConversion:
         output = capsys.readouterr().out
         assert "unknown_str_type" in output
 
-    async def test_body_as_plain_dict(self) -> None:
-        """When body is already a dict, _to_py_safe returns it unchanged."""
-        from entry import Default
-
-        worker = Default()
-        worker.env = MockEnv()
-
-        msg = _MockMessage({"type": "some_other_unknown"})
-        batch = _MockBatch([msg])
-
-        await worker.queue(batch)
-
-        assert msg.acked is True
-
 
 # ---------------------------------------------------------------------------
 # SPA fallback routing

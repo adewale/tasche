@@ -214,12 +214,10 @@ test.describe('Article cards at mobile viewport', () => {
     await expect(page.locator('.article-card').first()).toBeVisible({ timeout: 15000 });
 
     const thumbnail = page.locator('.article-card-thumbnail').first();
-    // Thumbnail may not be present if no image — only check if visible
-    if (await thumbnail.isVisible()) {
-      const box = await thumbnail.boundingBox();
-      expect(box.width).toBe(72);
-      expect(box.height).toBe(72);
-    }
+    await expect(thumbnail).toBeVisible({ timeout: 5000 });
+    const box = await thumbnail.boundingBox();
+    expect(box.width).toBe(72);
+    expect(box.height).toBe(72);
   });
 
   test('article card actions are tappable size (44px min)', async ({ page, request }) => {

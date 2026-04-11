@@ -155,14 +155,13 @@ test('Reader — Listen Later button shows "Requesting..." while submitting', as
   await page.waitForSelector('.reader-title');
 
   const listenBtn = page.locator('button:has-text("Listen Later")');
-  if (await listenBtn.isVisible().catch(() => false)) {
-    await listenBtn.click();
+  await expect(listenBtn).toBeVisible({ timeout: 5000 });
+  await listenBtn.click();
 
-    try {
-      await expect(listenBtn).toContainText('Requesting', { timeout: 2000 });
-    } catch {
-      // Fast response
-    }
+  try {
+    await expect(listenBtn).toContainText('Requesting', { timeout: 2000 });
+  } catch {
+    // Fast response
   }
 });
 

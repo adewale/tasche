@@ -72,13 +72,11 @@ test.describe('Immersive Reading', () => {
 
     // "Listen Later" button should be visible for a processed article without audio
     const listenBtn = page.locator('.reader-actions button').filter({ hasText: 'Listen Later' });
+    await expect(listenBtn).toBeVisible({ timeout: 5000 });
+    await listenBtn.click();
 
-    if (await listenBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await listenBtn.click();
-
-      // Should show a toast about audio generation being queued
-      await expect(page.locator('.toast').first()).toBeVisible({ timeout: 5000 });
-    }
+    // Should show a toast about audio generation being queued
+    await expect(page.locator('.toast').first()).toBeVisible({ timeout: 5000 });
   });
 
   test('audio-timing endpoint returns valid data after TTS', async ({ request }) => {
@@ -321,13 +319,10 @@ test.describe('Reader — continue reading nudge', () => {
 
     // The continue-reading-nudge should be visible
     const nudge = page.locator('.continue-reading-nudge');
-    if (await nudge.isVisible({ timeout: 5000 }).catch(() => false)) {
-      // Verify it shows the percentage and action buttons
-      await expect(nudge).toContainText('35%');
-      await expect(nudge.locator('button').filter({ hasText: 'Continue reading' })).toBeVisible();
-      await expect(nudge.locator('button').filter({ hasText: 'Start from top' })).toBeVisible();
-    }
-    // If not visible, the nudge requires conditions that may differ in this environment
-    // (e.g., article has no content after processing example.com). This is acceptable.
+    await expect(nudge).toBeVisible({ timeout: 5000 });
+    // Verify it shows the percentage and action buttons
+    await expect(nudge).toContainText('35%');
+    await expect(nudge.locator('button').filter({ hasText: 'Continue reading' })).toBeVisible();
+    await expect(nudge.locator('button').filter({ hasText: 'Start from top' })).toBeVisible();
   });
 });
