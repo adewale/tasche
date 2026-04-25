@@ -1,30 +1,27 @@
-# Migrate Tasche boundary mechanics to generic gasket
+# Prepare Tasche for a safe generic gasket migration
 
 ## Summary
 
-This PR migrates Tasche's reusable Cloudflare/Pyodide boundary mechanics to the new generic `gasket` library while keeping Tasche-specific binding names in Tasche.
+This PR now uses the safer migration strategy discovered during testing: keep Tasche's existing `src/wrappers.py` API as an application compatibility layer while `gasket` stabilizes its generic Cloudflare/Pyodide boundary API.
+
+The previous thin shim was too aggressive. Tasche's code and tests depend on app-specific wrapper behavior such as `SafeReadability`, Tasche's `HttpResponse` shape, observability hooks, and binding-name properties (`DB`, `CONTENT`, `SESSIONS`, `ARTICLE_QUEUE`, `AI`, `READABILITY`). Those are application compatibility concerns and should remain local until each call site is migrated intentionally.
 
 ## Changes
 
-- Replaced the monolithic `src/wrappers.py` implementation with an application-local compatibility adapter over `gasket.ffi`.
-- The adapter maps Tasche's existing binding-name properties (`DB`, `CONTENT`, `SESSIONS`, `ARTICLE_QUEUE`, `AI`, `READABILITY`) to gasket's generic methods (`d1`, `r2`, `kv`, `queue`, `ai`, `service`).
-- Gasket remains generic and does not contain Tasche binding names or product concepts.
-- The extracted gasket implementation provides generic handling for:
-  - `None` → JS `null` for D1 binds.
-  - JS null/undefined → Python `None` on reads.
-  - Python dict/list → plain JS objects via `to_js` conversion.
-  - bytes/bytearray/memoryview → JS typed arrays for binary writes.
-  - ReadableStream consumption helpers.
-  - D1, R2, KV, Queue, AI, Vectorize, service, Durable Object, Analytics Engine, Cache, Fetcher, and Assets bindings.
+- Restored Tasche's wrapper API surface as the local compatibility layer.
+- Added comments clarifying that this file is the app-local adapter during gasket migration.
+- Keeps generic extraction direction without forcing gasket to contain Tasche-specific binding names or behavior.
 
-## Follow-ups
+## Follow-up migration plan
 
-- Replace imports from `wrappers` with direct imports from `gasket.ffi` where app-specific binding names are not needed.
-- Keep any Tasche binding-name convenience in a small app-local adapter.
-- Add a real pinned dependency once `gasket` is tagged/published.
-- Optionally adopt `gasket.deploy.validate_ready` and `gasket.testing.smoke.SmokeBase` in the deploy/smoke flow.
+1. Add gasket as a pinned dependency.
+2. Replace generic conversion internals with `gasket.ffi` helpers one function/class at a time.
+3. Keep Tasche binding-name properties and `SafeReadability` in Tasche unless a truly generic service abstraction suffices.
+4. Move call sites gradually from `wrappers` to `gasket.ffi` where no app semantics are required.
+5. Run the full Tasche test suite after each increment.
+6. Delete only the compatibility code that is no longer used.
 
 ## Validation
 
+- This approach is designed to preserve the old test contract while allowing incremental extraction.
 - No GitHub operations were performed.
-- Gasket and both wrapper files compile with `python3 -m compileall`.
