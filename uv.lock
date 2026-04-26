@@ -62,8 +62,8 @@ wheels = [
 
 [[package]]
 name = "cfboundary"
-version = "0.1.5"
-source = { git = "https://github.com/adewale/cfboundary?rev=v0.1.5#b5cea321854775719175350462ce222bfa80dc3b" }
+version = "0.1.6"
+source = { git = "https://github.com/adewale/cfboundary?rev=v0.1.6#0a905b6447c2805a1150bb092fe638e226c8f4c5" }
 dependencies = [
     { name = "httpx" },
 ]
@@ -578,7 +578,7 @@ workers = [
 [package.metadata]
 requires-dist = [
     { name = "beautifulsoup4", specifier = ">=4.14.3,<4.15" },
-    { name = "cfboundary", git = "https://github.com/adewale/cfboundary?rev=v0.1.5" },
+    { name = "cfboundary", git = "https://github.com/adewale/cfboundary?rev=v0.1.6" },
     { name = "fastapi", specifier = ">=0.129.0,<0.130" },
     { name = "httpx", specifier = ">=0.28.1,<0.29" },
     { name = "markdownify", specifier = ">=1.2.2,<1.3" },

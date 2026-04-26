@@ -58,23 +58,6 @@ except ModuleNotFoundError as exc:
         """Stub that never matches outside Pyodide."""
 
 
-def _sync_cfboundary_runtime() -> None:
-    """Mirror Tasche's runtime/fake globals into CFBoundary before delegation."""
-    js_null_value = None
-    if HAS_PYODIDE:
-        try:
-            js_null_value = js.JSON.parse("null")
-        except Exception:
-            js_null_value = None
-    cf_boundary.configure_runtime(
-        has_pyodide=HAS_PYODIDE,
-        js_module=js,
-        js_proxy_type=JsProxy,
-        js_null_value=js_null_value,
-        to_js_func=to_js,
-    )
-
-
 # ---------------------------------------------------------------------------
 # JS null sentinel
 # ---------------------------------------------------------------------------
@@ -89,7 +72,6 @@ def get_js_null() -> Any:
     Called as a function (not a module-level constant) to avoid executing JS
     code during the Wasm snapshot phase.
     """
-    _sync_cfboundary_runtime()
     return cf_boundary.js_null()
 
 
@@ -102,33 +84,27 @@ def d1_null(value: Any) -> Any:
 
     Outside Pyodide, returns the value unchanged.
     """
-    if value is None:
-        return get_js_null()
-    return value
+    return cf_boundary.d1_null(value)
 
 
 async def consume_readable_stream(value: Any) -> bytes:
     """Consume a JS ReadableStream or ArrayBuffer into Python bytes."""
-    _sync_cfboundary_runtime()
     return await cf_boundary.consume_readable_stream(value)
 
 
 async def stream_r2_body(r2_obj: Any) -> Any:
     """Yield Python byte chunks from an R2 object's body."""
-    _sync_cfboundary_runtime()
     async for chunk in cf_boundary.stream_r2_body(r2_obj):
         yield chunk
 
 
 def get_r2_size(r2_obj: Any) -> int | None:
     """Extract the size property from an R2 object."""
-    _sync_cfboundary_runtime()
     return cf_boundary.get_r2_size(r2_obj)
 
 
 def to_js_bytes(data: bytes | bytearray | memoryview) -> Any:
     """Convert Python bytes-like values to a JS Uint8Array in Workers."""
-    _sync_cfboundary_runtime()
     return cf_boundary.to_js_bytes(data)
 
 
@@ -141,13 +117,11 @@ MAX_CONVERSION_DEPTH = 20
 
 def _to_py_safe(value: Any, depth: int = 0) -> Any:
     """Recursively convert JsProxy/null/undefined values to native Python."""
-    _sync_cfboundary_runtime()
     return cf_boundary.to_py(value) if depth <= MAX_CONVERSION_DEPTH else value
 
 
 def to_py_bytes(value: Any) -> bytes:
     """Convert a JS buffer to Python bytes."""
-    _sync_cfboundary_runtime()
     return cf_boundary.to_py_bytes(value)
 
 
@@ -167,21 +141,11 @@ def is_js_null(value: Any) -> bool:
     ``null`` is a ``JsNull`` type that is **not** Python ``None``.
     Outside Pyodide we simply check for ``None``.
     """
-    if not HAS_PYODIDE:
+    if not cf_boundary.is_pyodide_runtime():
         return value is None
-
-    # Pyodide exposes js.undefined as the singleton for JS undefined.
-    try:
-        if value is js.undefined:
-            return True
-    except AttributeError:
-        pass
-
-    # JS null becomes JsNull in Pyodide — not Python None.
-    if type(value).__name__ == "JsNull":
-        return True
-
-    return False
+    if value is None:
+        return False
+    return cf_boundary.is_js_missing(value)
 
 
 # Backward-compatible alias for code that imported the private name.
@@ -194,14 +158,11 @@ def _is_js_undefined(value: Any) -> bool:
     In Pyodide, ``undefined`` is exposed as a special singleton on the ``js``
     module.  Outside Pyodide we simply check for ``None``.
     """
-    if not HAS_PYODIDE:
+    if not cf_boundary.is_pyodide_runtime():
         return value is None
-
-    # Pyodide exposes js.undefined as the singleton for JS undefined.
-    try:
-        return value is js.undefined
-    except AttributeError:
+    if value is None:
         return False
+    return cf_boundary.is_js_missing(value) and not cf_boundary.is_js_null(value)
 
 
 # ---------------------------------------------------------------------------
@@ -211,7 +172,6 @@ def _is_js_undefined(value: Any) -> bool:
 
 def _to_js_value(value: Any) -> Any:
     """Convert a Python value to a JS-compatible representation."""
-    _sync_cfboundary_runtime()
     return cf_boundary.to_js(value)
 
 
@@ -555,10 +515,7 @@ def d1_rows(results: Any) -> list[dict[str, Any]]:
     if results is None or is_js_null(results):
         return []
 
-    if HAS_PYODIDE:
-        converted = _to_py_safe(results)
-    else:
-        converted = results
+    converted = _to_py_safe(results)
 
     # Handle both attribute access (.results) and dict access (["results"])
     if isinstance(converted, list):
@@ -589,10 +546,7 @@ def d1_first(results: Any) -> dict[str, Any] | None:
     if results is None or is_js_null(results):
         return None
 
-    if HAS_PYODIDE:
-        converted = _to_py_safe(results)
-    else:
-        converted = results
+    converted = _to_py_safe(results)
 
     if converted is None:
         return None
