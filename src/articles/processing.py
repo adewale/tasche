@@ -36,9 +36,9 @@ from articles.extraction import (
 from articles.images import download_images, store_images
 from articles.storage import article_key, store_content, store_metadata
 from articles.urls import _is_private_hostname, extract_domain
+from src.boundary import HttpError, SafeEnv, http_fetch
 from utils import now_iso
 from wide_event import current_event
-from wrappers import HttpError, SafeEnv, http_fetch
 
 
 async def _mark_failed(db: object, article_id: str) -> None:

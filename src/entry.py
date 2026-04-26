@@ -13,8 +13,8 @@ from __future__ import annotations
 import json
 import re
 
+from src.boundary import SafeEnv, _to_py_safe, is_js_null
 from wide_event import begin_event, current_event, emit_event
-from wrappers import SafeEnv, _to_py_safe, is_js_null
 
 # Audio path pattern — matched before ASGI routing so large R2 objects
 # are streamed directly without loading into Python memory.
@@ -22,7 +22,7 @@ _AUDIO_PATH_RE = re.compile(r"^/api/articles/([A-Za-z0-9_-]+)/audio$")
 
 # ---------------------------------------------------------------------------
 # Pyodide guard — HAS_PYODIDE is the single source of truth defined in
-# wrappers.py (the FFI boundary layer).  We import it above and use it to
+# boundary (the FFI boundary layer).  We import it above and use it to
 # conditionally load Workers-only packages.
 # ---------------------------------------------------------------------------
 

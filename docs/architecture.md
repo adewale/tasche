@@ -57,9 +57,9 @@ Each message is processed individually within a batch. On success: `message.ack(
 
 ## 3. The FFI Boundary
 
-**File:** `src/wrappers.py`
+**File:** `src/boundary/__init__.py`
 
-Tasche keeps its historical `src/wrappers.py` compatibility API, but generic JavaScript↔Python conversion is delegated to CFBoundary. Application code never touches `JsProxy` directly. Tasche-local `HAS_PYODIDE` is only used for app-specific JS APIs such as outbound `js.fetch`; conversion runtime state and test fakes live in CFBoundary.
+Tasche keeps its historical `src/boundary/__init__.py` compatibility API, but generic JavaScript↔Python conversion is delegated to CFBoundary. Application code never touches `JsProxy` directly. Tasche-local `HAS_PYODIDE` is only used for app-specific JS APIs such as outbound `js.fetch`; conversion runtime state and test fakes live in CFBoundary.
 
 ### SafeEnv
 

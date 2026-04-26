@@ -24,8 +24,8 @@ from articles.storage import (
 )
 from articles.urls import check_duplicate, extract_domain, validate_url
 from auth.dependencies import get_current_user
+from src.boundary import consume_readable_stream, get_r2_size
 from utils import generate_id, get_user_entity, now_iso
-from wrappers import consume_readable_stream, get_r2_size
 
 router = APIRouter()
 

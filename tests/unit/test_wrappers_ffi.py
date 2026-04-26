@@ -1,6 +1,6 @@
 """FFI boundary contract tests — exercise the REAL Pyodide code paths.
 
-The existing test_wrappers.py runs against the CPython fallback path. These
+The existing test_boundary runs against the CPython fallback path. These
 tests install a fake CFBoundary Pyodide runtime and use JS-type fakes
 (FakeJsProxy, JsNull, fake js module) to exercise the actual conversion logic
 that runs in production.
@@ -19,7 +19,7 @@ from typing import Any
 import pytest
 from cfboundary.testing import patch_pyodide_runtime
 
-import src.wrappers as wrappers_mod
+import src.boundary as wrappers_mod
 
 # =========================================================================
 # Fake JS types — simulate Pyodide's JsProxy / JsNull / js module in CPython

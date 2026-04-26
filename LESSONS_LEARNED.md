@@ -8,9 +8,9 @@ Each phase was implemented by a sub-agent, then audited by a separate sub-agent.
 
 ### Phase 1: Project Foundation
 - **Iterations:** 2 (implement → audit → fix → re-audit → PASS)
-- **Files:** `wrangler.jsonc`, `pyproject.toml`, `Makefile`, `src/wrappers.py`, `src/entry.py`, `migrations/0001_initial.sql`, `tests/conftest.py`, `.gitignore`
+- **Files:** `wrangler.jsonc`, `pyproject.toml`, `Makefile`, `src/boundary/__init__.py`, `src/entry.py`, `migrations/0001_initial.sql`, `tests/conftest.py`, `.gitignore`
 - **Audit issues:** Minor issues with FFI boundary layer and mock completeness
-- **Key fix:** Ensured `_to_py_safe`, `_to_js_value`, `_is_js_undefined`, `get_js_null()` were all implemented in `wrappers.py`
+- **Key fix:** Ensured `_to_py_safe`, `_to_js_value`, `_is_js_undefined`, `get_js_null()` were all implemented in `boundary`
 
 ### Phase 2: Authentication
 - **Iterations:** 2 (implement → audit → fix → re-audit → PASS)
@@ -162,7 +162,7 @@ Phase 8 (Observability) was the only phase to pass audit on the first attempt. T
 **Lesson:** Self-contained middleware patterns with clear inputs/outputs are easier to get right than cross-cutting features that touch multiple modules.
 
 ### 10. The FFI Boundary Layer Pays Off
-The `wrappers.py` module (`_to_py_safe`, `_to_js_value`, `d1_first`, etc.) established in Phase 1 prevented JsProxy leakage throughout the codebase. Every phase that interacted with D1, R2, or KV used these wrappers consistently.
+The `boundary` module (`_to_py_safe`, `_to_js_value`, `d1_first`, etc.) established in Phase 1 prevented JsProxy leakage throughout the codebase. Every phase that interacted with D1, R2, or KV used these wrappers consistently.
 
 **Lesson:** Invest in the FFI boundary layer early. Convert at the boundary, use native Python types everywhere else.
 
@@ -390,7 +390,7 @@ Earlier lessons (1, 10, 27) focused on the JS→Python direction: converting D1 
 - `bytes` → PyProxy (not `Uint8Array`) breaks R2 `.put()`
 - `dict` → Map (not Object) breaks queue `.send()`
 
-The centralised boundary layer (`wrappers.py`) must handle **both directions**. The Safe* wrapper classes (`SafeD1`, `SafeR2`, `SafeKV`, `SafeQueue`, `SafeAI`, `SafeReadability`) encapsulate both read and write conversions. Low-level helpers like `d1_null()`, `to_js_bytes()`, and `_to_js_value()` handle specific type conversions, while the Safe* wrappers compose them into a seamless interface.
+The centralised boundary layer (`boundary`) must handle **both directions**. The Safe* wrapper classes (`SafeD1`, `SafeR2`, `SafeKV`, `SafeQueue`, `SafeAI`, `SafeReadability`) encapsulate both read and write conversions. Low-level helpers like `d1_null()`, `to_js_bytes()`, and `_to_js_value()` handle specific type conversions, while the Safe* wrappers compose them into a seamless interface.
 
 **Lesson:** Design the FFI boundary layer as a bidirectional gateway. For each Cloudflare binding, there should be wrapper helpers for both reading (JS→Python) and writing (Python→JS). If you only wrap reads, writes will eventually break in production.
 
@@ -426,7 +426,7 @@ Across 25 commits over 8 days, 11 were corrective (fix-to-feature ratio nearly 1
 
 The most damning statistic: the primary user journey ("save a URL, read it later") didn't work until commit 20 of 25.
 
-**What was avoidable:** All three fatal bugs (queue signature, eval() restriction, None→undefined) would have been caught by a single live smoke test on day 1. Feature churn (notes, listen_later — added then removed within minutes) could have been prevented by tighter spec review. Three FFI centralization commits could have been one if wrappers.py was designed bidirectional from the start.
+**What was avoidable:** All three fatal bugs (queue signature, eval() restriction, None→undefined) would have been caught by a single live smoke test on day 1. Feature churn (notes, listen_later — added then removed within minutes) could have been prevented by tighter spec review. Three FFI centralization commits could have been one if boundary was designed bidirectional from the start.
 
 **What was inherent:** The Pyodide FFI type matrix is genuinely non-obvious (no docs say None→undefined). JsNull being distinct from None and not a JsProxy is a platform gotcha. Content extraction fallback (BS4 replacing readability due to eval()) is an inherent Workers constraint.
 
@@ -444,7 +444,7 @@ Python Workers using Pyodide/WASM have a heavy cold start (~1100ms CPU). When a 
 
 `SafeR2.get()` returned raw JsNull when an R2 key didn't exist, because the wrapper only protected writes (`bytes→Uint8Array`, `None→null`) and passed reads through unchanged. Code checking `if raw_obj is not None` missed JsNull, crashing `process_article()` with `AttributeError: 'JsNull' object has no attribute 'text'`.
 
-The `_is_js_null_or_undefined()` helper existed in `wrappers.py` but was never called in `SafeR2.get()`, `SafeKV.get()`, or `SafeAI.run()`. The inline fix in `processing.py` (`type(raw_obj).__name__ != "JsNull"`) was correct but in the wrong place — it should be in the wrapper so every caller is protected.
+The `_is_js_null_or_undefined()` helper existed in `boundary` but was never called in `SafeR2.get()`, `SafeKV.get()`, or `SafeAI.run()`. The inline fix in `processing.py` (`type(raw_obj).__name__ != "JsNull"`) was correct but in the wrong place — it should be in the wrapper so every caller is protected.
 
 **Lesson:** Every Safe* wrapper method that returns a value from JS must convert JsNull/undefined→None on the way out. The FFI boundary layer must be bidirectional: convert on writes (Python→JS) AND on reads (JS→Python). If you only guard one direction, the other will eventually crash in production.
 
@@ -464,11 +464,11 @@ An analysis of the initial 53 commits reveals systematic patterns of rework that
   4. `tests/conftest.py` — 12 modifications
   5. `src/tts/processing.py` — 12 modifications
   6. `src/entry.py` — 12 modifications
-  7. `src/wrappers.py` — 10 modifications
+  7. `src/boundary/__init__.py` — 10 modifications
 
 ### Pattern 1: FFI Boundary Centralization Required 7 Commits
 
-The FFI boundary layer (`wrappers.py`) was touched in 10 separate commits, with 7 specifically about centralization or fixing FFI gaps:
+The FFI boundary layer (`boundary`) was touched in 10 separate commits, with 7 specifically about centralization or fixing FFI gaps:
 
 1. `12575c6` — Harden FFI boundary, fix D1 result wrapper bug
 2. `a71559f` — Fix JsNull detection and None→null conversion
@@ -529,7 +529,7 @@ Based on these patterns, four diagnostic scripts were created in `scripts/agent-
 
 ### 37. Unit Tests That Only Exercise the Fallback Path Give False Confidence
 
-All 100 `test_wrappers.py` tests ran with `HAS_PYODIDE = False`, exercising only the CPython fallback code path. The actual production code — the `if HAS_PYODIDE:` branches that convert JsProxy→dict, detect JsNull, convert None→null, and transform bytes→Uint8Array — had zero test coverage. Every historical FFI production bug (JsNull leak, None→undefined in D1, bytes→PyProxy in R2) lived in these untested branches.
+All 100 `test_boundary` tests ran with `HAS_PYODIDE = False`, exercising only the CPython fallback code path. The actual production code — the `if HAS_PYODIDE:` branches that convert JsProxy→dict, detect JsNull, convert None→null, and transform bytes→Uint8Array — had zero test coverage. Every historical FFI production bug (JsNull leak, None→undefined in D1, bytes→PyProxy in R2) lived in these untested branches.
 
 The core issue: the module uses a feature flag (`HAS_PYODIDE`) to switch between two completely different implementations. Testing only one side of the flag is equivalent to testing a different program than the one that runs in production.
 
@@ -697,7 +697,7 @@ Dead code comes in three forms: (1) features added then abandoned before complet
 
 The FFI boundary evolved through three stages:
 1. **Standalone helpers** (`JS_NULL` constant, `r2_put()` function, `get_js_null()`) — each function handled one conversion.
-2. **Centralized module** — all helpers in `wrappers.py`, but callers still needed to know which helper to call for each binding.
+2. **Centralized module** — all helpers in `boundary`, but callers still needed to know which helper to call for each binding.
 3. **Safe* wrapper classes** (`SafeD1`, `SafeR2`, `SafeKV`, `SafeQueue`, `SafeAI`, `SafeReadability`) wrapped at construction time by `SafeEnv` — callers use the same API as raw bindings but get automatic conversion.
 
 The standalone helpers (`JS_NULL`, `r2_put()`) were removed because the Safe* wrappers made them unnecessary at the call site. Lower-level helpers that the Safe* wrappers compose internally (`d1_null()`, `to_js_bytes()`, `_to_js_value()`) still exist. `get_js_null()` still exists as the underlying mechanism for `d1_null()`.

@@ -22,8 +22,8 @@ from auth.session import (
     delete_session,
     parse_allowed_emails,
 )
+from src.boundary import http_fetch
 from utils import generate_id, now_iso
-from wrappers import http_fetch
 
 router = APIRouter()
 

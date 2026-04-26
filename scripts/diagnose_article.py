@@ -26,7 +26,7 @@ async def diagnose(url: str) -> None:
     print("[Step 1] Fetching page...")
     try:
         from articles.processing import _fetch_page
-        from wrappers import HttpClient
+        from src.boundary import HttpClient
 
         async with HttpClient() as client:
             html, final_url = await _fetch_page(client, url)

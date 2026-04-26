@@ -2,14 +2,14 @@
 """Validate that all FFI operations go through the Safe* boundary layer.
 
 Scans all .py files under src/ (excluding the boundary modules themselves)
-for patterns that indicate direct FFI usage bypassing wrappers.py.
+for patterns that indicate direct FFI usage bypassing boundary.
 
 Checks:
-  1. Raw FFI function imports from wrappers.py (d1_first, d1_rows, etc.)
+  1. Raw FFI function imports from boundary (d1_first, d1_rows, etc.)
      that should only be used inside Safe* classes
-  2. Direct .to_py() calls outside wrappers.py
-  3. Direct JsProxy/JsNull type checks outside wrappers.py
-  4. Direct js.* access outside wrappers.py and entry.py
+  2. Direct .to_py() calls outside boundary
+  3. Direct JsProxy/JsNull type checks outside boundary
+  4. Direct js.* access outside boundary and entry.py
   5. Direct r2.put() / kv.put() / queue.send() bypassing Safe* wrappers
   6. None comparisons on JS return values (should use _is_js_null_or_undefined)
 
@@ -29,12 +29,12 @@ TEST_DIR = PROJECT_ROOT / "tests"
 
 # Files that ARE the boundary -- allowed to use raw FFI functions
 BOUNDARY_FILES = {
-    SRC_DIR / "wrappers.py",
+    SRC_DIR / "boundary",
     SRC_DIR / "entry.py",  # queue message body conversion at JS->Python boundary
 }
 
 # Raw FFI helper names that must NOT be imported/called outside boundary files.
-# These are internal to wrappers.py and should be used via Safe* classes.
+# These are internal to boundary and should be used via Safe* classes.
 FORBIDDEN_IMPORTS = {
     "d1_first": "use SafeD1Statement.first() instead",
     "d1_rows": "use SafeD1Statement.all() instead",
@@ -44,7 +44,7 @@ FORBIDDEN_IMPORTS = {
     "get_js_null": "SafeD1Statement.bind() handles None->null automatically",
 }
 
-# Patterns that are safe to import from wrappers.py in application code
+# Patterns that are safe to import from boundary in application code
 ALLOWED_IMPORTS = {
     "SafeEnv", "SafeD1", "SafeR2", "SafeKV", "SafeQueue", "SafeAI",
     "SafeReadability", "SafeD1Statement",
@@ -134,7 +134,7 @@ def scan_file(path: Path) -> list[str]:
         if _DIRECT_JSNULL_CHECK.search(stripped):
             violations.append(
                 f"  {rel_path}:{lineno}: DIRECT JsNull type check -- "
-                f"use _is_js_null_or_undefined() from wrappers.py or rely on Safe* wrappers"
+                f"use _is_js_null_or_undefined() from boundary or rely on Safe* wrappers"
             )
 
         # Check 5: Direct js.* access (excluding standard import guards)
@@ -144,7 +144,7 @@ def scan_file(path: Path) -> list[str]:
                 continue
             violations.append(
                 f"  {rel_path}:{lineno}: DIRECT js.* access -- "
-                f"all JS interop should go through wrappers.py"
+                f"all JS interop should go through boundary"
             )
 
     return violations
@@ -174,7 +174,7 @@ def main() -> int:
         count = sum(1 for v in all_violations if v.startswith("  ") and ":" in v)
         print(f"\n{count} violation(s) found.")
         print(
-            "\nAll FFI operations must go through the Safe* layer in src/wrappers.py."
+            "\nAll FFI operations must go through the Safe* layer in src/boundary/__init__.py."
         )
         print("See LESSONS_LEARNED.md sections 29, 30, 36 for context.")
         return 1

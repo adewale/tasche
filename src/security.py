@@ -51,7 +51,7 @@ class SecurityHeadersMiddleware:
                 # Add HSTS only for HTTPS origins
                 env = scope.get("env")
                 if env:
-                    from wrappers import SafeEnv
+                    from src.boundary import SafeEnv
 
                     site_url = SafeEnv(env).get("SITE_URL", "")
                     if site_url.startswith("https://"):

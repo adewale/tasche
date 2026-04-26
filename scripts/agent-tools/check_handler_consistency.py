@@ -161,12 +161,12 @@ def scan_route_file(path: Path) -> list[Issue]:
         if re.match(r"^\s*(?:import\s+js\b|from\s+js\s+import)", stripped):
             issues.append(Issue(
                 path, lineno, "RAW_JS_IMPORT",
-                "Route files should not import 'js' directly -- use wrappers.py"
+                "Route files should not import 'js' directly -- use boundary"
             ))
         if re.match(r"^\s*from\s+pyodide", stripped):
             issues.append(Issue(
                 path, lineno, "RAW_PYODIDE_IMPORT",
-                "Route files should not import from 'pyodide' directly -- use wrappers.py"
+                "Route files should not import from 'pyodide' directly -- use boundary"
             ))
 
     return issues
