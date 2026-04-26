@@ -7,16 +7,10 @@ module is unavailable.
 
 Key design decisions
 --------------------
-* **HAS_PYODIDE guard** – a single ``try/except ImportError`` at module level
-  determines whether we are running inside Pyodide.  All JS-specific code is
-  gated behind this flag.
+* **HAS_PYODIDE guard** – local JS-specific HTTP code is gated behind this flag.
 * **No module-level PRNG** – calling ``random`` or ``secrets`` at import time
   would break the Wasm snapshot that Workers uses for fast cold starts.
-* **``to_py()`` is a method on JsProxy** – it is *not* a standalone function.
-* **``to_js()`` needs ``dict_converter=Object.fromEntries``** for dicts,
-  otherwise Python dicts become JS ``Map`` objects instead of plain Objects.
-* **Python ``None`` maps to JS ``undefined``** (not ``null``).  When a real
-  JSON ``null`` is needed, use ``js.JSON.parse("null")``.
+* Generic JS/Python conversion is delegated to CFBoundary.
 """
 
 from __future__ import annotations
@@ -40,22 +34,14 @@ HAS_PYODIDE = False
 
 try:
     import js  # type: ignore[import-not-found]
-    from pyodide.ffi import (  # type: ignore[import-not-found]
-        JsException,
-        JsProxy,
-        to_js,
-    )
 
     HAS_PYODIDE = True
 except ModuleNotFoundError as exc:
-    if exc.name not in {"js", "pyodide"}:
+    if exc.name != "js":
         raise
     js = None  # type: ignore[assignment]
-    JsProxy = None  # type: ignore[assignment, misc]
-    to_js = None  # type: ignore[assignment]
 
-    class JsException(Exception):  # type: ignore[no-redef]
-        """Stub that never matches outside Pyodide."""
+JsException = cf_boundary.JsException
 
 
 # ---------------------------------------------------------------------------
