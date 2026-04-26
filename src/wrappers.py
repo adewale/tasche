@@ -111,15 +111,11 @@ async def consume_readable_stream(value: Any) -> bytes:
     return await cf_boundary.consume_readable_stream(value)
 
 
-
-
 async def stream_r2_body(r2_obj: Any) -> Any:
     """Yield Python byte chunks from an R2 object's body."""
     _sync_cfboundary_runtime()
     async for chunk in cf_boundary.stream_r2_body(r2_obj):
         yield chunk
-
-
 
 
 def get_r2_size(r2_obj: Any) -> int | None:
@@ -128,14 +124,10 @@ def get_r2_size(r2_obj: Any) -> int | None:
     return cf_boundary.get_r2_size(r2_obj)
 
 
-
-
 def to_js_bytes(data: bytes | bytearray | memoryview) -> Any:
     """Convert Python bytes-like values to a JS Uint8Array in Workers."""
     _sync_cfboundary_runtime()
     return cf_boundary.to_js_bytes(data)
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -151,14 +143,10 @@ def _to_py_safe(value: Any, depth: int = 0) -> Any:
     return cf_boundary.to_py(value) if depth <= MAX_CONVERSION_DEPTH else value
 
 
-
-
 def to_py_bytes(value: Any) -> bytes:
     """Convert a JS buffer to Python bytes."""
     _sync_cfboundary_runtime()
     return cf_boundary.to_py_bytes(value)
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -223,8 +211,6 @@ def _to_js_value(value: Any) -> Any:
     """Convert a Python value to a JS-compatible representation."""
     _sync_cfboundary_runtime()
     return cf_boundary.to_js(value)
-
-
 
 
 # ---------------------------------------------------------------------------
