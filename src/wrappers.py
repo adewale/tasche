@@ -30,7 +30,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-import cfboundary.ffi.safe_env as cf_boundary
+import cfboundary.ffi as cf_boundary
 
 # ---------------------------------------------------------------------------
 # Pyodide detection
