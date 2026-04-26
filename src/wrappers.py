@@ -30,6 +30,8 @@ import cfboundary.ffi as cf_boundary
 # Pyodide detection
 # ---------------------------------------------------------------------------
 
+# App-local JS runtime flag used only for Tasche-specific JS APIs such as
+# ``safe_http_fetch``. Generic FFI conversion runtime state lives in CFBoundary.
 HAS_PYODIDE = False
 
 try:

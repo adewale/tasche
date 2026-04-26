@@ -1,9 +1,9 @@
 """FFI boundary contract tests — exercise the REAL Pyodide code paths.
 
-The existing test_wrappers.py runs with HAS_PYODIDE=False, so it only tests
-the CPython fallback path.  These tests monkeypatch HAS_PYODIDE=True and use
-JS-type fakes (FakeJsProxy, JsNull, fake js module) to exercise the actual
-conversion logic that runs in production.
+The existing test_wrappers.py runs against the CPython fallback path. These
+tests install a fake CFBoundary Pyodide runtime and use JS-type fakes
+(FakeJsProxy, JsNull, fake js module) to exercise the actual conversion logic
+that runs in production.
 
 These tests would have caught the 3 historical production bugs:
   1. JsNull leaking through _to_py_safe (JsNull is NOT a JsProxy)
@@ -17,6 +17,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from cfboundary.testing import patch_pyodide_runtime
 
 import src.wrappers as wrappers_mod
 
@@ -123,32 +124,13 @@ def fake_to_js(value: Any, *, dict_converter: Any = None) -> Any:
 def pyodide_fakes() -> FakeJsModule:
     """Configure CFBoundary to behave as if running inside Pyodide."""
     fake_js = FakeJsModule()
-    import cfboundary.ffi.safe_env as safe_env
-
-    original = (
-        safe_env.HAS_PYODIDE,
-        safe_env.js,
-        safe_env.JsProxy,
-        safe_env.jsnull,
-        safe_env._pyodide_to_js,
-    )
-    wrappers_mod.cf_boundary.configure_runtime(
-        has_pyodide=True,
+    with patch_pyodide_runtime(
         js_module=fake_js,
         js_proxy_type=FakeJsProxy,
         js_null_value=fake_js.JSON.parse("null"),
         to_js_func=fake_to_js,
-    )
-    try:
+    ):
         yield fake_js
-    finally:
-        wrappers_mod.cf_boundary.configure_runtime(
-            has_pyodide=original[0],
-            js_module=original[1],
-            js_proxy_type=original[2],
-            js_null_value=original[3],
-            to_js_func=original[4],
-        )
 
 
 # =========================================================================
