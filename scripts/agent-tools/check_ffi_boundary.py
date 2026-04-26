@@ -56,8 +56,8 @@ ALLOWED_IMPORTS = {
 }
 
 # Regex patterns for checks
-_IMPORT_FROM_WRAPPERS = re.compile(
-    r"^\s*from\s+(?:src\.)?wrappers\s+import\s+(.+)", re.MULTILINE
+_IMPORT_FROM_BOUNDARY = re.compile(
+    r"^\s*from\s+(?:src\.)?boundary\s+import\s+(.+)", re.MULTILINE
 )
 _DIRECT_TO_PY = re.compile(r"\.to_py\(\)")
 _DIRECT_JSPROXY_CHECK = re.compile(r"isinstance\([^,]+,\s*JsProxy\)")
@@ -102,8 +102,8 @@ def scan_file(path: Path) -> list[str]:
         if stripped.startswith("#"):
             continue
 
-        # Check 1: Forbidden imports from wrappers
-        import_match = _IMPORT_FROM_WRAPPERS.match(line)
+        # Check 1: Forbidden imports from the boundary package
+        import_match = _IMPORT_FROM_BOUNDARY.match(line)
         if import_match:
             imported_names = {
                 name.strip().split(" as ")[0].strip()
@@ -120,21 +120,21 @@ def scan_file(path: Path) -> list[str]:
         if _DIRECT_TO_PY.search(stripped):
             violations.append(
                 f"  {rel_path}:{lineno}: DIRECT .to_py() call -- "
-                f"use Safe* wrappers for automatic conversion"
+                f"use Safe* boundary classes for automatic conversion"
             )
 
         # Check 3: Direct JsProxy isinstance checks
         if _DIRECT_JSPROXY_CHECK.search(stripped):
             violations.append(
                 f"  {rel_path}:{lineno}: DIRECT JsProxy isinstance check -- "
-                f"Safe* wrappers handle conversion; if needed, use HAS_PYODIDE guard"
+                f"Safe* boundary classes handle conversion; if needed, use HAS_PYODIDE guard"
             )
 
         # Check 4: Direct JsNull type name checks
         if _DIRECT_JSNULL_CHECK.search(stripped):
             violations.append(
                 f"  {rel_path}:{lineno}: DIRECT JsNull type check -- "
-                f"use _is_js_null_or_undefined() from boundary or rely on Safe* wrappers"
+                f"use _is_js_null_or_undefined() from boundary or rely on Safe* boundary classes"
             )
 
         # Check 5: Direct js.* access (excluding standard import guards)

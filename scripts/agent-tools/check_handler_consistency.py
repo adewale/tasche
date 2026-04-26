@@ -11,7 +11,7 @@ Checks:
   4. All handlers that write to DB call .run() (not .first() or .all())
   5. Status string literals match the known valid enums
   6. Deletion order: R2 content deleted before D1 row (not vice versa)
-  7. All route files import from wrappers, not raw js/pyodide
+  7. All route files import from boundary, not raw js/pyodide
 
 Exit 0 if clean, exit 1 if inconsistencies found.
 
