@@ -47,7 +47,9 @@ try:
     )
 
     HAS_PYODIDE = True
-except ImportError:
+except ModuleNotFoundError as exc:
+    if exc.name not in {"js", "pyodide"}:
+        raise
     js = None  # type: ignore[assignment]
     JsProxy = None  # type: ignore[assignment, misc]
     to_js = None  # type: ignore[assignment]
