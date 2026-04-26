@@ -533,7 +533,7 @@ All 100 `test_wrappers.py` tests ran with `HAS_PYODIDE = False`, exercising only
 
 The core issue: the module uses a feature flag (`HAS_PYODIDE`) to switch between two completely different implementations. Testing only one side of the flag is equivalent to testing a different program than the one that runs in production.
 
-**Solution:** Create JS-type fakes (`FakeJsProxy`, `JsNull` sentinel, `FakeJsModule` with `.undefined`/`.JSON`/`.Object`) that simulate Pyodide's types in CPython. Monkeypatch `HAS_PYODIDE=True` plus the three module globals (`JsProxy`, `js`, `to_js`) to point at the fakes. This forces every `if HAS_PYODIDE:` branch to execute with types that behave like the real thing — `type(x).__name__ == "JsNull"` returns True, `isinstance(x, JsProxy)` works, `.to_py()` returns the wrapped value.
+**Solution:** Create JS-type fakes (`FakeJsProxy`, `JsNull` sentinel, `FakeJsModule` with `.undefined`/`.JSON`/`.Object`) that simulate Pyodide's types in CPython. Install a fake CFBoundary Pyodide runtime with `cfboundary.testing.patch_pyodide_runtime()` and point it at the fakes. This forces every `if HAS_PYODIDE:` branch to execute with types that behave like the real thing — `type(x).__name__ == "JsNull"` returns True, `isinstance(x, JsProxy)` works, `.to_py()` returns the wrapped value.
 
 **Rule for future sessions:** When a module has a feature flag that switches between a production path and a fallback path, both paths need dedicated tests. The fallback-path tests verify graceful degradation; the production-path tests (using fakes + monkeypatching) verify the actual conversion logic. If the test file only imports the module once without any patching, it's only testing one side.
 
