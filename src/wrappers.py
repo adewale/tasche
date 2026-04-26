@@ -32,6 +32,8 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+import cfboundary.ffi.safe_env as cf_boundary
+
 # ---------------------------------------------------------------------------
 # Pyodide detection
 # ---------------------------------------------------------------------------
@@ -70,9 +72,11 @@ def get_js_null() -> Any:
     Called as a function (not a module-level constant) to avoid executing JS
     code during the Wasm snapshot phase.
     """
+    if HAS_PYODIDE and cf_boundary.HAS_PYODIDE:
+        return cf_boundary.js_null()
     if HAS_PYODIDE:
         return js.JSON.parse("null")
-    return None
+    return cf_boundary.js_null()
 
 
 def d1_null(value: Any) -> Any:
@@ -196,8 +200,10 @@ def to_js_bytes(data: bytes | bytearray | memoryview) -> Any:
 
     Outside Pyodide, returns the data unchanged (for test mocks).
     """
+    if HAS_PYODIDE and cf_boundary.HAS_PYODIDE:
+        return cf_boundary.to_js_bytes(data)
     if not HAS_PYODIDE:
-        return data
+        return cf_boundary.to_js_bytes(data)
     return to_js(data)
 
 
@@ -228,8 +234,12 @@ def _to_py_safe(value: Any, depth: int = 0) -> Any:
         return value
 
     # None / non-Pyodide fast path
-    if value is None or not HAS_PYODIDE:
-        return value
+    if value is None:
+        return None
+    if HAS_PYODIDE and cf_boundary.HAS_PYODIDE:
+        return cf_boundary.to_py(value)
+    if not HAS_PYODIDE:
+        return cf_boundary.to_py(value)
 
     # Check for JS null and undefined
     if is_js_null(value):
@@ -274,6 +284,8 @@ def to_py_bytes(value: Any) -> bytes:
 
     Outside Pyodide the value is passed through ``bytes()`` directly.
     """
+    if not HAS_PYODIDE or cf_boundary.HAS_PYODIDE:
+        return cf_boundary.to_py_bytes(value)
     if value is None:
         return b""
     if HAS_PYODIDE and isinstance(value, JsProxy):
