@@ -22,12 +22,10 @@ Key design decisions
 from __future__ import annotations
 
 # NOTE: This file is intentionally retained as Tasche's application compatibility
-# layer during the gasket migration.  It preserves Tasche's historical wrapper
+# layer during the CFBoundary migration.  It preserves Tasche's historical wrapper
 # API (SafeReadability, HttpResponse shape, observability hooks, and binding-name
-# properties) while gasket stabilizes its generic API.  Generic behavior should
-# move to gasket incrementally; application-specific binding names remain here.
-
-
+# properties) while CFBoundary stabilizes its generic API.  Generic behavior should
+# move to CFBoundary incrementally; application-specific binding names remain here.
 import time
 from dataclasses import dataclass
 from typing import Any
