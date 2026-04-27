@@ -48,6 +48,9 @@ frontend-test:
 
 frontend-check: frontend-lint frontend-format-check frontend-test frontend-build
 
+bundle-size:
+	uv run python scripts/bundle_size.py
+
 check: lint test frontend-check
 
 smoke-staging:
