@@ -22,6 +22,9 @@ lint:
 	uv run ruff check src/ tests/
 	uv run ruff format --check src/ tests/
 
+typecheck:
+	PYTHONPATH=src uvx ty check src/boundary scripts/bundle_size.py
+
 format:
 	uv run ruff format src/ tests/
 
@@ -48,7 +51,10 @@ frontend-test:
 
 frontend-check: frontend-lint frontend-format-check frontend-test frontend-build
 
-check: lint test frontend-check
+bundle-size:
+	uv run python scripts/bundle_size.py
+
+check: lint typecheck test frontend-check
 
 smoke-staging:
 	@python3 scripts/smoke-test.py https://tasche-staging.adewale-883.workers.dev

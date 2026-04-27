@@ -18,7 +18,7 @@ from bs4 import BeautifulSoup
 
 from articles.storage import article_key
 from articles.urls import _is_private_hostname
-from wrappers import http_fetch
+from src.boundary import http_fetch
 
 # Maximum number of concurrent image downloads
 _DOWNLOAD_CONCURRENCY = 5

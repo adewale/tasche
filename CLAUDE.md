@@ -66,7 +66,7 @@ Wide events pattern: emit one JSON log line per request (not many small lines). 
 
 ## Key Conventions
 
-- **FFI boundary:** All JS↔Python conversion happens in `src/wrappers.py`. Application code accesses bindings through Safe* wrappers (`SafeD1`, `SafeR2`, `SafeKV`, `SafeQueue`, `SafeAI`, `SafeReadability`) via `SafeEnv`. Never expose JsProxy to business logic.
+- **FFI boundary:** All JS↔Python conversion happens in `src/boundary/__init__.py`. Application code accesses bindings through Safe* wrappers (`SafeD1`, `SafeR2`, `SafeKV`, `SafeQueue`, `SafeAI`, `SafeReadability`) via `SafeEnv`. Never expose JsProxy to business logic.
 - **Status enums:** `reading_status`: unread/archived (D1 CHECK also allows 'reading' as a historical artifact, but the app enforces only unread/archived). `audio_status`: pending/generating/ready/failed. `article.status`: pending/processing/ready/failed. These match D1 CHECK constraints exactly.
 - **IDs:** `secrets.token_urlsafe(16)` for article/tag IDs, `secrets.token_urlsafe(32)` for session IDs.
 - **Timestamps:** `now_iso()` from `utils.py` everywhere.

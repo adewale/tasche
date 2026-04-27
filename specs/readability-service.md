@@ -40,7 +40,7 @@ Deploy a separate JavaScript Worker that bundles `@mozilla/readability` and `lin
 
 **100% algorithm fidelity.** The real Readability.js, not a port or approximation.
 
-**Minimal effort.** The JS Worker is ~30 lines. The Python integration is ~20 lines in `wrappers.py` + ~10 lines in `processing.py`.
+**Minimal effort.** The JS Worker is ~30 lines. The Python integration is ~20 lines in `boundary` + ~10 lines in `processing.py`.
 
 **Clean FFI boundary.** The Service Binding returns a plain JS object `{title, html, excerpt, byline}` — four string fields. This crosses the FFI via `_to_py_safe()` in `SafeReadability.parse()`, same pattern as every other binding. No new FFI complexity class.
 
@@ -84,7 +84,7 @@ The Service Binding introduces one new FFI crossing point. It follows the existi
 
 `SafeReadability` is the simplest wrapper — strings cross the FFI boundary as-is (no `None→null` or `bytes→Uint8Array` conversion needed), and the result is a shallow dict of strings/null converted by `_to_py_safe()`.
 
-The wrapper lives in `wrappers.py` alongside all other Safe* classes. `SafeEnv.__init__` wraps it at construction time, same as every other binding. Application code never touches the raw JS binding.
+The wrapper lives in `boundary` alongside all other Safe* classes. `SafeEnv.__init__` wraps it at construction time, same as every other binding. Application code never touches the raw JS binding.
 
 ## Deployment
 

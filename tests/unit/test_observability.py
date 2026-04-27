@@ -29,7 +29,7 @@ def _make_app(env: Any | None = None) -> FastAPI:
     test_app = FastAPI()
 
     if env is not None:
-        from src.wrappers import SafeEnv
+        from src.boundary import SafeEnv
 
         safe_env = SafeEnv(env)
 
@@ -245,7 +245,7 @@ class TestUserIdExtraction:
 
         # Build a custom app where the route sets request.state.user_id
         # (simulating what get_current_user does in real handlers).
-        from src.wrappers import SafeEnv
+        from src.boundary import SafeEnv
 
         test_app = FastAPI()
         safe_env = SafeEnv(env)

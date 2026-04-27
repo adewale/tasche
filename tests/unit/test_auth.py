@@ -166,7 +166,7 @@ class TestRefreshSession:
 
 def _make_app_with_env(env: Any) -> FastAPI:
     """Create a minimal FastAPI app that injects ``env`` into the ASGI scope."""
-    from src.wrappers import SafeEnv
+    from src.boundary import SafeEnv
 
     test_app = FastAPI()
     safe_env = SafeEnv(env)
@@ -433,7 +433,7 @@ class TestGetSiteUrl:
     def test_site_url_returns_configured_value(self) -> None:
         """When SITE_URL is set to a real URL, returns it unchanged."""
         env = MockEnv(site_url="https://tasche.example.com")
-        from src.wrappers import SafeEnv
+        from src.boundary import SafeEnv
 
         safe_env = SafeEnv(env)
         request = _FakeRequest(headers={"host": "other.example.com"})
@@ -443,7 +443,7 @@ class TestGetSiteUrl:
     def test_site_url_auto_detects_from_host_header(self) -> None:
         """When SITE_URL is empty, returns https://{host} from request."""
         env = MockEnv(site_url="")
-        from src.wrappers import SafeEnv
+        from src.boundary import SafeEnv
 
         safe_env = SafeEnv(env)
         request = _FakeRequest(
@@ -455,7 +455,7 @@ class TestGetSiteUrl:
     def test_site_url_auto_detects_when_placeholder(self) -> None:
         """When SITE_URL contains <your-subdomain>, auto-detects from host."""
         env = MockEnv(site_url="https://<your-subdomain>.workers.dev")
-        from src.wrappers import SafeEnv
+        from src.boundary import SafeEnv
 
         safe_env = SafeEnv(env)
         request = _FakeRequest(
@@ -467,7 +467,7 @@ class TestGetSiteUrl:
     def test_site_url_strips_trailing_slash(self) -> None:
         """Ensures no trailing slash on configured or auto-detected URLs."""
         env = MockEnv(site_url="https://tasche.example.com/")
-        from src.wrappers import SafeEnv
+        from src.boundary import SafeEnv
 
         safe_env = SafeEnv(env)
         request = _FakeRequest(headers={"host": "other.example.com"})
@@ -478,7 +478,7 @@ class TestGetSiteUrl:
     def test_site_url_uses_http_when_no_https_indicators(self) -> None:
         """When neither x-forwarded-proto nor scheme is https, uses http."""
         env = MockEnv(site_url="")
-        from src.wrappers import SafeEnv
+        from src.boundary import SafeEnv
 
         safe_env = SafeEnv(env)
         request = _FakeRequest(
@@ -496,7 +496,7 @@ class TestGetSiteUrl:
 
 def _make_auth_app(env: Any) -> FastAPI:
     """Create a FastAPI app with the auth router mounted, injecting env."""
-    from src.wrappers import SafeEnv
+    from src.boundary import SafeEnv
 
     safe_env = SafeEnv(env)
     test_app = FastAPI()
@@ -524,7 +524,7 @@ def _mock_http_fetch(
     Routes by URL: token endpoint -> token response, /user/emails -> emails
     response, /user -> user response.
     """
-    from src.wrappers import HttpResponse
+    from src.boundary import HttpResponse
 
     token_resp = HttpResponse(status_code=token_status, _body=json.dumps(token_data).encode())
     user_resp = HttpResponse(status_code=user_status, _body=json.dumps(user_data).encode())

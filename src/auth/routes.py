@@ -1,6 +1,6 @@
 """Auth routes for Tasche — GitHub OAuth login, callback, logout, and session.
 
-All outbound GitHub API communication uses ``http_fetch`` from ``wrappers``,
+All outbound GitHub API communication uses ``http_fetch`` from ``src.boundary``,
 which delegates to the native JS ``fetch()`` API in the Workers runtime and
 falls back to httpx in CPython tests.  D1 queries use parameterised SQL
 (``?`` placeholders) via the SafeD1 wrapper.
@@ -22,8 +22,8 @@ from auth.session import (
     delete_session,
     parse_allowed_emails,
 )
+from src.boundary import http_fetch
 from utils import generate_id, now_iso
-from wrappers import http_fetch
 
 router = APIRouter()
 

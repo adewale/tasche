@@ -11,7 +11,7 @@ Checks:
   4. All handlers that write to DB call .run() (not .first() or .all())
   5. Status string literals match the known valid enums
   6. Deletion order: R2 content deleted before D1 row (not vice versa)
-  7. All route files import from wrappers, not raw js/pyodide
+  7. All route files import from boundary, not raw js/pyodide
 
 Exit 0 if clean, exit 1 if inconsistencies found.
 
@@ -161,12 +161,12 @@ def scan_route_file(path: Path) -> list[Issue]:
         if re.match(r"^\s*(?:import\s+js\b|from\s+js\s+import)", stripped):
             issues.append(Issue(
                 path, lineno, "RAW_JS_IMPORT",
-                "Route files should not import 'js' directly -- use wrappers.py"
+                "Route files should not import 'js' directly -- use boundary"
             ))
         if re.match(r"^\s*from\s+pyodide", stripped):
             issues.append(Issue(
                 path, lineno, "RAW_PYODIDE_IMPORT",
-                "Route files should not import from 'pyodide' directly -- use wrappers.py"
+                "Route files should not import from 'pyodide' directly -- use boundary"
             ))
 
     return issues

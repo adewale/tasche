@@ -1,9 +1,9 @@
 """FFI boundary contract tests — exercise the REAL Pyodide code paths.
 
-The existing test_wrappers.py runs with HAS_PYODIDE=False, so it only tests
-the CPython fallback path.  These tests monkeypatch HAS_PYODIDE=True and use
-JS-type fakes (FakeJsProxy, JsNull, fake js module) to exercise the actual
-conversion logic that runs in production.
+The existing test_boundary runs against the CPython fallback path. These
+tests install a fake CFBoundary Pyodide runtime and use JS-type fakes
+(FakeJsProxy, JsNull, fake js module) to exercise the actual conversion logic
+that runs in production.
 
 These tests would have caught the 3 historical production bugs:
   1. JsNull leaking through _to_py_safe (JsNull is NOT a JsProxy)
@@ -17,8 +17,9 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from cfboundary.testing import patch_pyodide_runtime
 
-import src.wrappers as wrappers_mod
+import src.boundary as boundary_mod
 
 # =========================================================================
 # Fake JS types — simulate Pyodide's JsProxy / JsNull / js module in CPython
@@ -115,26 +116,21 @@ def fake_to_js(value: Any, *, dict_converter: Any = None) -> Any:
 
 
 # =========================================================================
-# Fixture: monkeypatch wrappers module to simulate Pyodide environment
+# Fixture: monkeypatch boundary module to simulate Pyodide environment
 # =========================================================================
 
 
 @pytest.fixture()
-def pyodide_fakes(monkeypatch: pytest.MonkeyPatch) -> FakeJsModule:
-    """Patch src.wrappers to behave as if running inside Pyodide.
-
-    Patches 4 module-level globals:
-      - HAS_PYODIDE → True
-      - JsProxy → FakeJsProxy
-      - js → FakeJsModule()
-      - to_js → fake_to_js
-    """
+def pyodide_fakes() -> FakeJsModule:
+    """Configure CFBoundary to behave as if running inside Pyodide."""
     fake_js = FakeJsModule()
-    monkeypatch.setattr(wrappers_mod, "HAS_PYODIDE", True)
-    monkeypatch.setattr(wrappers_mod, "JsProxy", FakeJsProxy)
-    monkeypatch.setattr(wrappers_mod, "js", fake_js)
-    monkeypatch.setattr(wrappers_mod, "to_js", fake_to_js)
-    return fake_js
+    with patch_pyodide_runtime(
+        js_module=fake_js,
+        js_proxy_type=FakeJsProxy,
+        js_null_value=fake_js.JSON.parse("null"),
+        to_js_func=fake_to_js,
+    ):
+        yield fake_js
 
 
 # =========================================================================
@@ -145,19 +141,19 @@ def pyodide_fakes(monkeypatch: pytest.MonkeyPatch) -> FakeJsModule:
 class TestIsJsNullOrUndefinedFFI:
     def test_jsnull_detected(self, pyodide_fakes: FakeJsModule) -> None:
         """JsNull is detected as null (the historical bug: JsNull is NOT a JsProxy)."""
-        assert wrappers_mod._is_js_null_or_undefined(JsNull()) is True
+        assert boundary_mod._is_js_null_or_undefined(JsNull()) is True
 
     def test_js_undefined_detected(self, pyodide_fakes: FakeJsModule) -> None:
         """js.undefined singleton is detected."""
-        assert wrappers_mod._is_js_null_or_undefined(pyodide_fakes.undefined) is True
+        assert boundary_mod._is_js_null_or_undefined(pyodide_fakes.undefined) is True
 
     def test_python_none_not_treated_as_jsnull(self, pyodide_fakes: FakeJsModule) -> None:
         """When HAS_PYODIDE=True, Python None is NOT JsNull or undefined."""
-        assert wrappers_mod._is_js_null_or_undefined(None) is False
+        assert boundary_mod._is_js_null_or_undefined(None) is False
 
     def test_jsproxy_not_null(self, pyodide_fakes: FakeJsModule) -> None:
         """A JsProxy wrapping a dict is NOT null/undefined."""
-        assert wrappers_mod._is_js_null_or_undefined(FakeJsProxy({"a": 1})) is False
+        assert boundary_mod._is_js_null_or_undefined(FakeJsProxy({"a": 1})) is False
 
 
 # =========================================================================
@@ -167,14 +163,14 @@ class TestIsJsNullOrUndefinedFFI:
 
 class TestIsJsUndefinedFFI:
     def test_undefined_detected(self, pyodide_fakes: FakeJsModule) -> None:
-        assert wrappers_mod._is_js_undefined(pyodide_fakes.undefined) is True
+        assert boundary_mod._is_js_undefined(pyodide_fakes.undefined) is True
 
     def test_jsnull_is_not_undefined(self, pyodide_fakes: FakeJsModule) -> None:
         """JsNull is null, not undefined — they are distinct in JS."""
-        assert wrappers_mod._is_js_undefined(JsNull()) is False
+        assert boundary_mod._is_js_undefined(JsNull()) is False
 
     def test_python_none_not_undefined_in_pyodide(self, pyodide_fakes: FakeJsModule) -> None:
-        assert wrappers_mod._is_js_undefined(None) is False
+        assert boundary_mod._is_js_undefined(None) is False
 
 
 # =========================================================================
@@ -185,24 +181,24 @@ class TestIsJsUndefinedFFI:
 class TestGetJsNullFFI:
     def test_returns_jsnull_instance(self, pyodide_fakes: FakeJsModule) -> None:
         """In Pyodide, get_js_null() returns a JsNull (not Python None)."""
-        result = wrappers_mod.get_js_null()
+        result = boundary_mod.get_js_null()
         assert type(result).__name__ == "JsNull"
 
     def test_result_is_detected_as_null(self, pyodide_fakes: FakeJsModule) -> None:
-        result = wrappers_mod.get_js_null()
-        assert wrappers_mod._is_js_null_or_undefined(result) is True
+        result = boundary_mod.get_js_null()
+        assert boundary_mod._is_js_null_or_undefined(result) is True
 
 
 class TestD1NullFFI:
     def test_none_becomes_jsnull(self, pyodide_fakes: FakeJsModule) -> None:
         """The historical bug: None→undefined breaks D1 .bind(). d1_null must convert."""
-        result = wrappers_mod.d1_null(None)
+        result = boundary_mod.d1_null(None)
         assert type(result).__name__ == "JsNull"
 
     def test_non_none_passes_through(self, pyodide_fakes: FakeJsModule) -> None:
-        assert wrappers_mod.d1_null("hello") == "hello"
-        assert wrappers_mod.d1_null(42) == 42
-        assert wrappers_mod.d1_null(0) == 0
+        assert boundary_mod.d1_null("hello") == "hello"
+        assert boundary_mod.d1_null(42) == 42
+        assert boundary_mod.d1_null(0) == 0
 
 
 # =========================================================================
@@ -214,56 +210,56 @@ class TestToPySafeFFI:
     def test_jsproxy_dict_converted(self, pyodide_fakes: FakeJsModule) -> None:
         """JsProxy wrapping a dict is converted to a plain Python dict."""
         proxy = FakeJsProxy({"title": "Test", "id": "abc123"})
-        result = wrappers_mod._to_py_safe(proxy)
+        result = boundary_mod._to_py_safe(proxy)
         assert result == {"title": "Test", "id": "abc123"}
         assert isinstance(result, dict)
 
     def test_jsproxy_list_converted(self, pyodide_fakes: FakeJsModule) -> None:
         proxy = FakeJsProxy([1, 2, 3])
-        result = wrappers_mod._to_py_safe(proxy)
+        result = boundary_mod._to_py_safe(proxy)
         assert result == [1, 2, 3]
         assert isinstance(result, list)
 
     def test_nested_jsnull_scrubbed_from_dict(self, pyodide_fakes: FakeJsModule) -> None:
         """JsNull values inside a converted dict become Python None."""
         proxy = FakeJsProxy({"title": "Test", "author": JsNull()})
-        result = wrappers_mod._to_py_safe(proxy)
+        result = boundary_mod._to_py_safe(proxy)
         assert result == {"title": "Test", "author": None}
 
     def test_nested_jsnull_scrubbed_from_list(self, pyodide_fakes: FakeJsModule) -> None:
         proxy = FakeJsProxy(["a", JsNull(), "b"])
-        result = wrappers_mod._to_py_safe(proxy)
+        result = boundary_mod._to_py_safe(proxy)
         assert result == ["a", None, "b"]
 
     def test_js_undefined_becomes_none(self, pyodide_fakes: FakeJsModule) -> None:
-        result = wrappers_mod._to_py_safe(pyodide_fakes.undefined)
+        result = boundary_mod._to_py_safe(pyodide_fakes.undefined)
         assert result is None
 
     def test_jsnull_becomes_none(self, pyodide_fakes: FakeJsModule) -> None:
-        result = wrappers_mod._to_py_safe(JsNull())
+        result = boundary_mod._to_py_safe(JsNull())
         assert result is None
 
     def test_plain_dict_with_jsnull_scrubbed(self, pyodide_fakes: FakeJsModule) -> None:
         """Plain dicts (not JsProxy) may contain JsNull from .to_py() recursion."""
         data = {"name": "Test", "value": JsNull()}
-        result = wrappers_mod._to_py_safe(data)
+        result = boundary_mod._to_py_safe(data)
         assert result == {"name": "Test", "value": None}
 
     def test_plain_list_with_jsnull_scrubbed(self, pyodide_fakes: FakeJsModule) -> None:
         data = ["a", JsNull(), "c"]
-        result = wrappers_mod._to_py_safe(data)
+        result = boundary_mod._to_py_safe(data)
         assert result == ["a", None, "c"]
 
     def test_depth_limit_returns_value_as_is(self, pyodide_fakes: FakeJsModule) -> None:
         proxy = FakeJsProxy({"key": "value"})
-        result = wrappers_mod._to_py_safe(proxy, depth=wrappers_mod.MAX_CONVERSION_DEPTH + 1)
+        result = boundary_mod._to_py_safe(proxy, depth=boundary_mod.MAX_CONVERSION_DEPTH + 1)
         assert result is proxy
 
     def test_deeply_nested_jsproxy(self, pyodide_fakes: FakeJsModule) -> None:
         """Nested JsProxy inside a converted dict is recursively converted."""
         inner = FakeJsProxy({"nested": True})
         outer = FakeJsProxy({"id": "1", "meta": inner})
-        result = wrappers_mod._to_py_safe(outer)
+        result = boundary_mod._to_py_safe(outer)
         assert result == {"id": "1", "meta": {"nested": True}}
 
     def test_jsproxy_to_py_error_returns_none(self, pyodide_fakes: FakeJsModule) -> None:
@@ -273,7 +269,7 @@ class TestToPySafeFFI:
             def to_py(self) -> Any:
                 raise RuntimeError("conversion failed")
 
-        result = wrappers_mod._to_py_safe(BadProxy())
+        result = boundary_mod._to_py_safe(BadProxy())
         assert result is None
 
 
@@ -285,32 +281,32 @@ class TestToPySafeFFI:
 class TestD1FirstFFI:
     def test_jsnull_returns_none(self, pyodide_fakes: FakeJsModule) -> None:
         """D1 .first() returns JsNull when no rows match → must become None."""
-        result = wrappers_mod.d1_first(JsNull())
+        result = boundary_mod.d1_first(JsNull())
         assert result is None
 
     def test_jsproxy_row_converted_to_dict(self, pyodide_fakes: FakeJsModule) -> None:
         proxy = FakeJsProxy({"id": "abc", "title": "Test Article"})
-        result = wrappers_mod.d1_first(proxy)
+        result = boundary_mod.d1_first(proxy)
         assert result == {"id": "abc", "title": "Test Article"}
 
     def test_nested_jsnull_in_row_fields(self, pyodide_fakes: FakeJsModule) -> None:
         """Row fields that are JS null must become Python None."""
         proxy = FakeJsProxy({"id": "abc", "author": JsNull(), "excerpt": JsNull()})
-        result = wrappers_mod.d1_first(proxy)
+        result = boundary_mod.d1_first(proxy)
         assert result == {"id": "abc", "author": None, "excerpt": None}
 
     def test_js_undefined_returns_none(self, pyodide_fakes: FakeJsModule) -> None:
-        result = wrappers_mod.d1_first(pyodide_fakes.undefined)
+        result = boundary_mod.d1_first(pyodide_fakes.undefined)
         assert result is None
 
     def test_python_none_returns_none(self, pyodide_fakes: FakeJsModule) -> None:
-        result = wrappers_mod.d1_first(None)
+        result = boundary_mod.d1_first(None)
         assert result is None
 
     def test_empty_dict_returns_none(self, pyodide_fakes: FakeJsModule) -> None:
         """An empty dict from .first() means no useful data."""
         proxy = FakeJsProxy({})
-        result = wrappers_mod.d1_first(proxy)
+        result = boundary_mod.d1_first(proxy)
         assert result is None
 
     def test_result_wrapper_unwrapped(self, pyodide_fakes: FakeJsModule) -> None:
@@ -322,17 +318,17 @@ class TestD1FirstFFI:
                 "meta": {},
             }
         )
-        result = wrappers_mod.d1_first(proxy)
+        result = boundary_mod.d1_first(proxy)
         assert result == {"id": "abc", "title": "Test"}
 
 
 class TestD1RowsFFI:
     def test_jsnull_returns_empty_list(self, pyodide_fakes: FakeJsModule) -> None:
-        result = wrappers_mod.d1_rows(JsNull())
+        result = boundary_mod.d1_rows(JsNull())
         assert result == []
 
     def test_js_undefined_returns_empty_list(self, pyodide_fakes: FakeJsModule) -> None:
-        result = wrappers_mod.d1_rows(pyodide_fakes.undefined)
+        result = boundary_mod.d1_rows(pyodide_fakes.undefined)
         assert result == []
 
     def test_jsproxy_result_set_converted(self, pyodide_fakes: FakeJsModule) -> None:
@@ -345,26 +341,26 @@ class TestD1RowsFFI:
                 ]
             }
         )
-        result = wrappers_mod.d1_rows(proxy)
+        result = boundary_mod.d1_rows(proxy)
         assert len(result) == 2
         assert result[0] == {"id": "1", "title": "First"}
         assert result[1] == {"id": "2", "title": "Second"}
 
     def test_jsnull_in_row_fields_scrubbed(self, pyodide_fakes: FakeJsModule) -> None:
         proxy = FakeJsProxy({"results": [{"id": "1", "author": JsNull()}]})
-        result = wrappers_mod.d1_rows(proxy)
+        result = boundary_mod.d1_rows(proxy)
         assert result == [{"id": "1", "author": None}]
 
     def test_none_rows_filtered(self, pyodide_fakes: FakeJsModule) -> None:
         """None entries in results list are filtered out."""
         proxy = FakeJsProxy({"results": [{"id": "1"}, None, {"id": "2"}]})
-        result = wrappers_mod.d1_rows(proxy)
+        result = boundary_mod.d1_rows(proxy)
         assert len(result) == 2
 
     def test_bare_list_result(self, pyodide_fakes: FakeJsModule) -> None:
         """Some D1 paths return a bare list without the results wrapper."""
         proxy = FakeJsProxy([{"id": "1"}, {"id": "2"}])
-        result = wrappers_mod.d1_rows(proxy)
+        result = boundary_mod.d1_rows(proxy)
         assert len(result) == 2
 
 
@@ -376,26 +372,26 @@ class TestD1RowsFFI:
 class TestToJsValueFFI:
     def test_dict_converted_with_fromEntries(self, pyodide_fakes: FakeJsModule) -> None:
         """Dicts use dict_converter=Object.fromEntries (not Map)."""
-        result = wrappers_mod._to_js_value({"type": "article", "id": "abc"})
+        result = boundary_mod._to_js_value({"type": "article", "id": "abc"})
         assert isinstance(result, dict)
         assert result == {"type": "article", "id": "abc"}
 
     def test_list_converted(self, pyodide_fakes: FakeJsModule) -> None:
-        result = wrappers_mod._to_js_value([1, 2, 3])
+        result = boundary_mod._to_js_value([1, 2, 3])
         assert result == [1, 2, 3]
 
     def test_tuple_converted(self, pyodide_fakes: FakeJsModule) -> None:
-        result = wrappers_mod._to_js_value((1, 2))
+        result = boundary_mod._to_js_value((1, 2))
         assert result == [1, 2]
 
     def test_none_returns_none(self, pyodide_fakes: FakeJsModule) -> None:
         """None passes through (becomes JS undefined on the FFI)."""
-        assert wrappers_mod._to_js_value(None) is None
+        assert boundary_mod._to_js_value(None) is None
 
     def test_primitives_pass_through(self, pyodide_fakes: FakeJsModule) -> None:
-        assert wrappers_mod._to_js_value("hello") == "hello"
-        assert wrappers_mod._to_js_value(42) == 42
-        assert wrappers_mod._to_js_value(True) is True
+        assert boundary_mod._to_js_value("hello") == "hello"
+        assert boundary_mod._to_js_value(42) == 42
+        assert boundary_mod._to_js_value(True) is True
 
 
 # =========================================================================
@@ -406,15 +402,15 @@ class TestToJsValueFFI:
 class TestToJsBytesFFI:
     def test_bytes_converted_to_jsproxy(self, pyodide_fakes: FakeJsModule) -> None:
         """The historical bug: bytes → PyProxy breaks R2. Must convert via to_js()."""
-        result = wrappers_mod.to_js_bytes(b"hello")
+        result = boundary_mod.to_js_bytes(b"hello")
         assert isinstance(result, FakeJsProxy)
 
     def test_bytearray_converted(self, pyodide_fakes: FakeJsModule) -> None:
-        result = wrappers_mod.to_js_bytes(bytearray(b"data"))
+        result = boundary_mod.to_js_bytes(bytearray(b"data"))
         assert isinstance(result, FakeJsProxy)
 
     def test_memoryview_converted(self, pyodide_fakes: FakeJsModule) -> None:
-        result = wrappers_mod.to_js_bytes(memoryview(b"view"))
+        result = boundary_mod.to_js_bytes(memoryview(b"view"))
         assert isinstance(result, FakeJsProxy)
 
 
@@ -422,21 +418,21 @@ class TestToPyBytesFFI:
     def test_jsproxy_bytes_converted(self, pyodide_fakes: FakeJsModule) -> None:
         """JsProxy wrapping bytes (from Uint8Array.to_py()) → Python bytes."""
         proxy = FakeJsProxy(b"audio data")
-        result = wrappers_mod.to_py_bytes(proxy)
+        result = boundary_mod.to_py_bytes(proxy)
         assert result == b"audio data"
         assert isinstance(result, bytes)
 
     def test_jsproxy_memoryview_converted(self, pyodide_fakes: FakeJsModule) -> None:
         proxy = FakeJsProxy(memoryview(b"chunk"))
-        result = wrappers_mod.to_py_bytes(proxy)
+        result = boundary_mod.to_py_bytes(proxy)
         assert result == b"chunk"
         assert isinstance(result, bytes)
 
     def test_none_returns_empty_bytes(self, pyodide_fakes: FakeJsModule) -> None:
-        assert wrappers_mod.to_py_bytes(None) == b""
+        assert boundary_mod.to_py_bytes(None) == b""
 
     def test_plain_bytes_pass_through(self, pyodide_fakes: FakeJsModule) -> None:
-        assert wrappers_mod.to_py_bytes(b"plain") == b"plain"
+        assert boundary_mod.to_py_bytes(b"plain") == b"plain"
 
 
 # =========================================================================
@@ -447,19 +443,19 @@ class TestToPyBytesFFI:
 class TestGetR2SizeFFI:
     def test_jsnull_size_returns_none(self, pyodide_fakes: FakeJsModule) -> None:
         r2_obj = SimpleNamespace(size=JsNull())
-        assert wrappers_mod.get_r2_size(r2_obj) is None
+        assert boundary_mod.get_r2_size(r2_obj) is None
 
     def test_undefined_size_returns_none(self, pyodide_fakes: FakeJsModule) -> None:
         r2_obj = SimpleNamespace(size=pyodide_fakes.undefined)
-        assert wrappers_mod.get_r2_size(r2_obj) is None
+        assert boundary_mod.get_r2_size(r2_obj) is None
 
     def test_valid_size_returned(self, pyodide_fakes: FakeJsModule) -> None:
         r2_obj = SimpleNamespace(size=12345)
-        assert wrappers_mod.get_r2_size(r2_obj) == 12345
+        assert boundary_mod.get_r2_size(r2_obj) == 12345
 
     def test_missing_size_returns_none(self, pyodide_fakes: FakeJsModule) -> None:
         r2_obj = SimpleNamespace()
-        assert wrappers_mod.get_r2_size(r2_obj) is None
+        assert boundary_mod.get_r2_size(r2_obj) is None
 
 
 # =========================================================================
@@ -477,7 +473,7 @@ class TestSafeD1FFI:
                 captured_args.extend(args)
                 return self
 
-        stmt = wrappers_mod.SafeD1Statement(FakeStmt())
+        stmt = boundary_mod.SafeD1Statement(FakeStmt())
         stmt.bind("value", None, 42, None)
         assert captured_args[0] == "value"
         assert type(captured_args[1]).__name__ == "JsNull"
@@ -493,7 +489,7 @@ class TestSafeD1FFI:
             async def first(self) -> Any:
                 return row
 
-        stmt = wrappers_mod.SafeD1Statement(FakeStmt())
+        stmt = boundary_mod.SafeD1Statement(FakeStmt())
         result = await stmt.first()
         assert result == {"id": "abc", "title": "Test"}
 
@@ -505,7 +501,7 @@ class TestSafeD1FFI:
             async def first(self) -> Any:
                 return JsNull()
 
-        stmt = wrappers_mod.SafeD1Statement(FakeStmt())
+        stmt = boundary_mod.SafeD1Statement(FakeStmt())
         result = await stmt.first()
         assert result is None
 
@@ -518,7 +514,7 @@ class TestSafeD1FFI:
             async def all(self) -> Any:
                 return rows
 
-        stmt = wrappers_mod.SafeD1Statement(FakeStmt())
+        stmt = boundary_mod.SafeD1Statement(FakeStmt())
         result = await stmt.all()
         assert result == [{"id": "1"}, {"id": "2"}]
 
@@ -529,7 +525,7 @@ class TestSafeD1FFI:
             async def all(self) -> Any:
                 return JsNull()
 
-        stmt = wrappers_mod.SafeD1Statement(FakeStmt())
+        stmt = boundary_mod.SafeD1Statement(FakeStmt())
         result = await stmt.all()
         assert result == []
 
@@ -538,9 +534,9 @@ class TestSafeD1FFI:
             def prepare(self, sql: str) -> Any:
                 return SimpleNamespace(sql=sql)
 
-        db = wrappers_mod.SafeD1(FakeDB())
+        db = boundary_mod.SafeD1(FakeDB())
         stmt = db.prepare("SELECT * FROM articles")
-        assert isinstance(stmt, wrappers_mod.SafeD1Statement)
+        assert isinstance(stmt, boundary_mod.SafeD1Statement)
 
 
 # =========================================================================
@@ -559,7 +555,7 @@ class TestSafeR2FFI:
                 captured["key"] = key
                 captured["data"] = data
 
-        r2 = wrappers_mod.SafeR2(FakeR2())
+        r2 = boundary_mod.SafeR2(FakeR2())
         await r2.put("articles/123/content.html", b"<h1>Hello</h1>")
         assert captured["key"] == "articles/123/content.html"
         assert isinstance(captured["data"], FakeJsProxy)
@@ -573,7 +569,7 @@ class TestSafeR2FFI:
             async def put(self, key: str, data: Any, **kw: Any) -> None:
                 captured["data"] = data
 
-        r2 = wrappers_mod.SafeR2(FakeR2())
+        r2 = boundary_mod.SafeR2(FakeR2())
         await r2.put("key", "string data")
         assert captured["data"] == "string data"
 
@@ -585,7 +581,7 @@ class TestSafeR2FFI:
             async def get(self, key: str) -> Any:
                 return JsNull()
 
-        r2 = wrappers_mod.SafeR2(FakeR2())
+        r2 = boundary_mod.SafeR2(FakeR2())
         result = await r2.get("missing/key")
         assert result is None
 
@@ -596,7 +592,7 @@ class TestSafeR2FFI:
             async def get(self, key: str) -> Any:
                 return pyodide_fakes.undefined
 
-        r2 = wrappers_mod.SafeR2(FakeR2())
+        r2 = boundary_mod.SafeR2(FakeR2())
         result = await r2.get("missing/key")
         assert result is None
 
@@ -608,7 +604,7 @@ class TestSafeR2FFI:
             async def get(self, key: str) -> Any:
                 return r2_obj
 
-        r2 = wrappers_mod.SafeR2(FakeR2())
+        r2 = boundary_mod.SafeR2(FakeR2())
         result = await r2.get("articles/123/content.html")
         assert result is r2_obj
 
@@ -620,7 +616,7 @@ class TestSafeR2FFI:
             async def list(self, **kw: Any) -> Any:
                 return list_result
 
-        r2 = wrappers_mod.SafeR2(FakeR2())
+        r2 = boundary_mod.SafeR2(FakeR2())
         result = await r2.list(prefix="articles/")
         assert isinstance(result, dict)
         assert result["objects"] == [{"key": "a"}, {"key": "b"}]
@@ -639,7 +635,7 @@ class TestSafeKVFFI:
             async def get(self, key: str, **kw: Any) -> Any:
                 return JsNull()
 
-        kv = wrappers_mod.SafeKV(FakeKV())
+        kv = boundary_mod.SafeKV(FakeKV())
         result = await kv.get("missing-session")
         assert result is None
 
@@ -650,7 +646,7 @@ class TestSafeKVFFI:
             async def get(self, key: str, **kw: Any) -> Any:
                 return pyodide_fakes.undefined
 
-        kv = wrappers_mod.SafeKV(FakeKV())
+        kv = boundary_mod.SafeKV(FakeKV())
         result = await kv.get("missing-session")
         assert result is None
 
@@ -661,7 +657,7 @@ class TestSafeKVFFI:
             async def get(self, key: str, **kw: Any) -> Any:
                 return '{"user_id": "u1"}'
 
-        kv = wrappers_mod.SafeKV(FakeKV())
+        kv = boundary_mod.SafeKV(FakeKV())
         result = await kv.get("session-abc")
         assert result == '{"user_id": "u1"}'
 
@@ -681,7 +677,7 @@ class TestSafeQueueFFI:
             async def send(self, message: Any, **kw: Any) -> None:
                 captured.append(message)
 
-        q = wrappers_mod.SafeQueue(FakeQueue())
+        q = boundary_mod.SafeQueue(FakeQueue())
         await q.send({"type": "process_article", "article_id": "abc"})
         assert isinstance(captured[0], dict)
         assert captured[0]["type"] == "process_article"
@@ -703,7 +699,7 @@ class TestSafeAIFFI:
                 captured["inputs"] = inputs
                 return FakeJsProxy(b"audio bytes")
 
-        ai = wrappers_mod.SafeAI(FakeAI())
+        ai = boundary_mod.SafeAI(FakeAI())
         await ai.run("@cf/meta/m2m100", {"text": "Hello", "source_lang": "en"})
         assert captured["model"] == "@cf/meta/m2m100"
         assert isinstance(captured["inputs"], dict)
@@ -715,7 +711,7 @@ class TestSafeAIFFI:
             async def run(self, model: str, inputs: Any, **kw: Any) -> Any:
                 return JsNull()
 
-        ai = wrappers_mod.SafeAI(FakeAI())
+        ai = boundary_mod.SafeAI(FakeAI())
         result = await ai.run("@cf/meta/m2m100", {"text": "Hello"})
         assert result is None
 
@@ -726,7 +722,7 @@ class TestSafeAIFFI:
             async def run(self, model: str, inputs: Any, **kw: Any) -> Any:
                 return pyodide_fakes.undefined
 
-        ai = wrappers_mod.SafeAI(FakeAI())
+        ai = boundary_mod.SafeAI(FakeAI())
         result = await ai.run("@cf/meta/m2m100", {})
         assert result is None
 
@@ -752,7 +748,7 @@ class TestSafeReadabilityFFI:
             async def parse(self, html: str, url: str) -> Any:
                 return result_proxy
 
-        r = wrappers_mod.SafeReadability(FakeBinding())
+        r = boundary_mod.SafeReadability(FakeBinding())
         result = await r.parse("<html>...</html>", "https://example.com")
         assert result == {
             "title": "Test Article",
@@ -777,7 +773,7 @@ class TestSafeReadabilityFFI:
             async def parse(self, html: str, url: str) -> Any:
                 return result_proxy
 
-        r = wrappers_mod.SafeReadability(FakeBinding())
+        r = boundary_mod.SafeReadability(FakeBinding())
         result = await r.parse("<html>...</html>", "https://example.com")
         assert result["excerpt"] is None
         assert result["byline"] is None
@@ -792,6 +788,6 @@ class TestSafeEnvFFI:
     def test_get_undefined_returns_default(self, pyodide_fakes: FakeJsModule) -> None:
         """get() with js.undefined value returns the default."""
         raw = SimpleNamespace(OPTIONAL_VAR=pyodide_fakes.undefined)
-        env = wrappers_mod.SafeEnv(raw)
+        env = boundary_mod.SafeEnv(raw)
         assert env.get("OPTIONAL_VAR") is None
         assert env.get("OPTIONAL_VAR", "fallback") == "fallback"

@@ -115,7 +115,7 @@ class TestDevUserReturnsCopy:
     async def test_returns_different_dict_objects(self) -> None:
         """Each call to _get_or_create_dev_user returns a distinct dict (copy)."""
         from src.auth.dependencies import _get_or_create_dev_user
-        from src.wrappers import SafeEnv
+        from src.boundary import SafeEnv
 
         env = MockEnv(disable_auth="true", site_url="http://localhost:8787")
         safe_env = SafeEnv(env)
@@ -130,7 +130,7 @@ class TestDevUserReturnsCopy:
     async def test_mutation_does_not_affect_cache(self) -> None:
         """Mutating the returned dev user dict does not affect the cached version."""
         from src.auth.dependencies import _get_or_create_dev_user
-        from src.wrappers import SafeEnv
+        from src.boundary import SafeEnv
 
         env = MockEnv(disable_auth="true", site_url="http://localhost:8787")
         safe_env = SafeEnv(env)

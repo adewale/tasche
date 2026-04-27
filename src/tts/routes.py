@@ -154,7 +154,7 @@ async def get_audio(
     # Cloudflare Workers ASGI adapter only consumes the FIRST yielded chunk
     # from the generator, silently truncating the response.  Instead, read
     # the full body via consume_readable_stream and return as a single Response.
-    from wrappers import consume_readable_stream
+    from src.boundary import consume_readable_stream
 
     body = getattr(audio_obj, "body", audio_obj)
     audio_bytes = await consume_readable_stream(body)
@@ -206,7 +206,7 @@ async def get_audio_timing(
     if timing_obj is None:
         raise HTTPException(status_code=404, detail="No audio timing available")
 
-    from wrappers import consume_readable_stream
+    from src.boundary import consume_readable_stream
 
     body = getattr(timing_obj, "body", timing_obj)
     timing_bytes = await consume_readable_stream(body)

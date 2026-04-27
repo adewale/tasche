@@ -540,7 +540,7 @@ def _make_test_app(env: Any, *routers: tuple[Any, str]) -> FastAPI:
             env, (tags_router, "/api/tags"), (article_tags_router, "/api/articles"),
         )
     """
-    from src.wrappers import SafeEnv
+    from src.boundary import SafeEnv
 
     test_app = FastAPI()
     safe_env = SafeEnv(env)
@@ -622,7 +622,7 @@ def _make_mock_response(
     headers: dict[str, str] | None = None,
 ) -> MagicMock:
     """Create a mock HTTP response compatible with HttpResponse interface."""
-    from src.wrappers import HttpError
+    from src.boundary import HttpError
 
     resp = MagicMock()
     resp.status_code = status_code

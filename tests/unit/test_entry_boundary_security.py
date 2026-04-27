@@ -1,4 +1,4 @@
-"""Tests for audit fixes across entry.py, wrappers.py, observability.py, and security.py.
+"""Tests for audit fixes across entry.py, boundary, observability.py, and security.py.
 
 Covers:
 - Issue 2:  /api/health/config requires authentication
@@ -7,8 +7,8 @@ Covers:
 - Issue 7:  CSP unsafe-inline is documented
 - Issue 32: Timeout support in Pyodide js.fetch() path
 - Issue 61: _serve_audio auth extracted into shared helper
-- Issue 66: HAS_PYODIDE imported from wrappers (not redefined in entry)
-- Issue 67: is_js_null canonical utility in wrappers.py
+- Issue 66: HAS_PYODIDE imported from boundary (not redefined in entry)
+- Issue 67: is_js_null canonical utility in boundary
 - Issue 74: _serve_audio uses is_js_null instead of ad-hoc type checks
 """
 
@@ -25,34 +25,34 @@ from fastapi.testclient import TestClient
 from tests.conftest import MockEnv
 
 # =========================================================================
-# Issue 66: HAS_PYODIDE is imported from wrappers, not redefined in entry
+# Issue 66: HAS_PYODIDE is imported from boundary, not redefined in entry
 # =========================================================================
 
 
 class TestHasPyodideDedup:
-    """HAS_PYODIDE should be defined in wrappers.py and imported in entry.py."""
+    """HAS_PYODIDE should be defined in boundary and imported in entry.py."""
 
     def test_entry_does_not_duplicate_has_pyodide(self) -> None:
-        """entry.py should not define its own HAS_PYODIDE — wrappers.py is canonical."""
-        import src.wrappers as wrappers_mod
+        """entry.py should not define its own HAS_PYODIDE — boundary is canonical."""
+        import src.boundary as boundary_mod
 
-        # wrappers is the single source of truth
-        assert hasattr(wrappers_mod, "HAS_PYODIDE")
+        # boundary is the single source of truth
+        assert hasattr(boundary_mod, "HAS_PYODIDE")
 
     def test_entry_does_not_define_has_pyodide(self) -> None:
-        """entry.py should import HAS_PYODIDE from wrappers, not define it locally."""
+        """entry.py should import HAS_PYODIDE from boundary, not define it locally."""
         source = inspect.getsource(importlib.import_module("src.entry"))
         # Should not have a local assignment like "HAS_PYODIDE = False" or "HAS_PYODIDE = True"
         import re
 
         local_assignments = re.findall(r"^HAS_PYODIDE\s*=", source, re.MULTILINE)
         assert len(local_assignments) == 0, (
-            "entry.py should not assign HAS_PYODIDE — it should import it from wrappers"
+            "entry.py should not assign HAS_PYODIDE — it should import it from boundary"
         )
 
-    def test_wrappers_defines_has_pyodide(self) -> None:
-        """wrappers.py should be the canonical definition of HAS_PYODIDE."""
-        from src.wrappers import HAS_PYODIDE
+    def test_boundary_defines_has_pyodide(self) -> None:
+        """boundary should be the canonical definition of HAS_PYODIDE."""
+        from src.boundary import HAS_PYODIDE
 
         # In test environment, Pyodide is not available
         assert HAS_PYODIDE is False
@@ -64,23 +64,23 @@ class TestHasPyodideDedup:
 
 
 class TestIsJsNull:
-    """The canonical is_js_null() utility should be in wrappers.py."""
+    """The canonical is_js_null() utility should be in boundary."""
 
-    def test_is_js_null_exists_in_wrappers(self) -> None:
-        """is_js_null should be importable from wrappers."""
-        from src.wrappers import is_js_null
+    def test_is_js_null_exists_in_boundary(self) -> None:
+        """is_js_null should be importable from boundary."""
+        from src.boundary import is_js_null
 
         assert callable(is_js_null)
 
     def test_is_js_null_returns_true_for_none_outside_pyodide(self) -> None:
         """Outside Pyodide, None is treated as JS null."""
-        from src.wrappers import is_js_null
+        from src.boundary import is_js_null
 
         assert is_js_null(None) is True
 
     def test_is_js_null_returns_false_for_values(self) -> None:
         """Non-null values should return False."""
-        from src.wrappers import is_js_null
+        from src.boundary import is_js_null
 
         assert is_js_null("hello") is False
         assert is_js_null(0) is False
@@ -90,17 +90,17 @@ class TestIsJsNull:
 
     def test_backward_compat_alias_exists(self) -> None:
         """_is_js_null_or_undefined should still be importable as an alias."""
-        from src.wrappers import _is_js_null_or_undefined, is_js_null
+        from src.boundary import _is_js_null_or_undefined, is_js_null
 
         assert _is_js_null_or_undefined is is_js_null
 
     def test_entry_imports_is_js_null(self) -> None:
-        """entry.py should import is_js_null from wrappers."""
+        """entry.py should import is_js_null from boundary."""
         source = inspect.getsource(importlib.import_module("src.entry"))
         # Verify is_js_null appears in the imports at the top of the module
         assert "is_js_null" in source
-        # It should be imported from wrappers, not defined locally
-        assert "from wrappers import" in source or "from src.wrappers import" in source
+        # It should be imported from boundary, not defined locally
+        assert "from src.boundary import" in source or "from src.boundary import" in source
 
 
 # =========================================================================
@@ -112,8 +112,8 @@ class TestHealthConfigAuth:
     """The /api/health/config endpoint must require authentication."""
 
     def _make_client(self, env: MockEnv) -> TestClient:
+        from src.boundary import SafeEnv
         from src.entry import app
-        from src.wrappers import SafeEnv
 
         safe_env = SafeEnv(env)
         test_app = FastAPI()
@@ -143,8 +143,8 @@ class TestHealthConfigAuth:
     async def test_authenticated_returns_config(self) -> None:
         """With a valid session, /api/health/config returns binding checks."""
         from src.auth.session import COOKIE_NAME, create_session
+        from src.boundary import SafeEnv
         from src.entry import app
-        from src.wrappers import SafeEnv
 
         env = MockEnv()
         env.SITE_URL = "https://tasche.example.com"
@@ -186,8 +186,8 @@ class TestHealthConfigAuth:
     async def test_config_no_longer_exposes_environment(self) -> None:
         """The response should not include an 'environment' field."""
         from src.auth.session import COOKIE_NAME, create_session
+        from src.boundary import SafeEnv
         from src.entry import app
-        from src.wrappers import SafeEnv
 
         env = MockEnv()
         env.SITE_URL = "https://tasche.example.com"
@@ -311,14 +311,14 @@ class TestFetchTimeout:
 
     def test_pyodide_path_uses_asyncio_wait_for(self) -> None:
         """The Pyodide fetch path should use asyncio.wait_for for timeout."""
-        source = inspect.getsource(importlib.import_module("src.wrappers"))
+        source = inspect.getsource(importlib.import_module("src.boundary"))
         assert "asyncio.wait_for" in source
 
     async def test_cpython_path_raises_timeout_error(self) -> None:
         """In CPython (test env), httpx TimeoutException is converted to TimeoutError."""
         import httpx
 
-        from src.wrappers import http_fetch
+        from src.boundary import http_fetch
 
         # Patch httpx.AsyncClient at the point of use (inside the function)
         mock_client = AsyncMock()
