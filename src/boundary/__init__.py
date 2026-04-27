@@ -22,7 +22,8 @@ from __future__ import annotations
 # move to CFBoundary incrementally; application-specific binding names remain here.
 import time
 from dataclasses import dataclass
-from typing import Any
+from importlib import import_module
+from typing import Any, cast
 
 import cfboundary.ffi as cf_boundary
 
@@ -35,13 +36,12 @@ import cfboundary.ffi as cf_boundary
 HAS_PYODIDE = False
 
 try:
-    import js  # type: ignore[import-not-found]
-
+    js: Any = import_module("js")
     HAS_PYODIDE = True
 except ModuleNotFoundError as exc:
     if exc.name != "js":
         raise
-    js = None  # type: ignore[assignment]
+    js: Any = None
 
 JsException = cf_boundary.JsException
 
@@ -668,7 +668,8 @@ async def http_fetch(
             js_opts = _to_js_value(opts)
 
             try:
-                response = await asyncio.wait_for(js.fetch(url, js_opts), timeout=timeout)
+                js_module = cast(Any, js)
+                response = await asyncio.wait_for(js_module.fetch(url, js_opts), timeout=timeout)
             except TimeoutError as exc:
                 raise TimeoutError(f"Request timed out after {timeout}s") from exc
             except Exception as exc:
@@ -682,7 +683,7 @@ async def http_fetch(
 
             # Convert JS Headers to a Python dict
             try:
-                headers_obj = js.Object.fromEntries(response.headers.entries())
+                headers_obj = js_module.Object.fromEntries(response.headers.entries())
                 resp_headers = _to_py_safe(headers_obj) or {}
             except Exception:
                 resp_headers = {}
