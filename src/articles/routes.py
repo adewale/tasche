@@ -58,7 +58,7 @@ async def _serve_r2_object(
 ) -> Response:
     """Serve an R2 object as an HTTP response.
 
-    Reads the full body via :func:`wrappers.consume_readable_stream` and
+    Reads the full body via :func:`src.boundary.consume_readable_stream` and
     returns a plain ``Response``.  ``StreamingResponse`` with async generators
     is broken in the Python Workers ASGI adapter (it truncates after the
     first chunk), so we must read the full body into memory.
