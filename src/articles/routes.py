@@ -30,22 +30,36 @@ from wrappers import consume_readable_stream, get_r2_size
 router = APIRouter()
 
 
+# Rollback statements per status field — full literal SQL so no field name
+# is ever interpolated into a query (even from trusted constants).
+_ENQUEUE_ROLLBACK_SQL: dict[str, str] = {
+    "status": ("UPDATE articles SET status = ?, updated_at = ? WHERE id = ? AND user_id = ?"),
+    "audio_status": (
+        "UPDATE articles SET audio_status = ?, updated_at = ? WHERE id = ? AND user_id = ?"
+    ),
+}
+
+
 async def _enqueue_or_fail(
     env: Any,
     db: Any,
     message: dict,
     article_id: str,
+    user_id: str,
     status_field: str = "status",
     rollback_value: str | None = "failed",
 ) -> None:
-    """Send a message to ARTICLE_QUEUE, rolling back on failure."""
+    """Send a message to ARTICLE_QUEUE, rolling back on failure.
+
+    ``status_field`` must be a key of ``_ENQUEUE_ROLLBACK_SQL``.
+    """
     try:
         await env.ARTICLE_QUEUE.send(message)
     except Exception:
         now = now_iso()
         await (
-            db.prepare(f"UPDATE articles SET {status_field} = ?, updated_at = ? WHERE id = ?")
-            .bind(rollback_value, now, article_id)
+            db.prepare(_ENQUEUE_ROLLBACK_SQL[status_field])
+            .bind(rollback_value, now, article_id, user_id)
             .run()
         )
         raise HTTPException(status_code=503, detail="Failed to enqueue processing job")
@@ -54,7 +68,7 @@ async def _enqueue_or_fail(
 async def _serve_r2_object(
     r2_obj: Any,
     media_type: str,
-    cache_control: str = "public, max-age=86400",
+    cache_control: str = "private, max-age=86400",
 ) -> Response:
     """Serve an R2 object as an HTTP response.
 
@@ -64,7 +78,8 @@ async def _serve_r2_object(
     first chunk), so we must read the full body into memory.
 
     These are bounded-size objects (thumbnails <= 2 MB, images <= 2 MB)
-    so reading into memory is safe.
+    so reading into memory is safe.  Cache-Control defaults to ``private``
+    because everything served from R2 is session-gated user content.
     """
     body = await consume_readable_stream(r2_obj)
     headers: dict[str, str] = {"Cache-Control": cache_control}
@@ -253,8 +268,8 @@ async def create_article(
                 "audio_status = NULL, audio_key = NULL, "
                 "audio_duration_seconds = NULL"
             )
-        update_sql += ", updated_at = ? WHERE id = ?"
-        await db.prepare(update_sql).bind(now, article_id).run()
+        update_sql += ", updated_at = ? WHERE id = ? AND user_id = ?"
+        await db.prepare(update_sql).bind(now, article_id, user_id).run()
     else:
         article_id = generate_id()
         domain = extract_domain(url)
@@ -337,7 +352,7 @@ async def create_article(
         message["requeue_tts"] = True
         message["tts_voice"] = pref.get("tts_voice") if pref else "athena"
 
-    await _enqueue_or_fail(env, db, message, article_id)
+    await _enqueue_or_fail(env, db, message, article_id, user_id)
 
     result: dict[str, Any] = {"id": article_id, "status": "pending", "created_at": now}
     if is_update:
@@ -898,7 +913,7 @@ async def get_article_image(
     response = await _serve_r2_object(
         obj,
         media_type=media_type,
-        cache_control="public, max-age=31536000, immutable",
+        cache_control="private, max-age=31536000, immutable",
     )
 
     # SVG files can contain embedded JavaScript — serve with protective
@@ -1062,15 +1077,18 @@ async def retry_article(
                 "UPDATE articles SET status = 'pending', "
                 "audio_status = 'pending', audio_key = NULL, "
                 "audio_duration_seconds = NULL, updated_at = ? "
-                "WHERE id = ?"
+                "WHERE id = ? AND user_id = ?"
             )
-            .bind(now, article_id)
+            .bind(now, article_id, user_id)
             .run()
         )
     else:
         await (
-            db.prepare("UPDATE articles SET status = 'pending', updated_at = ? WHERE id = ?")
-            .bind(now, article_id)
+            db.prepare(
+                "UPDATE articles SET status = 'pending', updated_at = ? "
+                "WHERE id = ? AND user_id = ?"
+            )
+            .bind(now, article_id, user_id)
             .run()
         )
 
@@ -1091,7 +1109,7 @@ async def retry_article(
         message["requeue_tts"] = True
         message["tts_voice"] = pref.get("tts_voice") if pref else "athena"
 
-    await _enqueue_or_fail(env, db, message, article_id)
+    await _enqueue_or_fail(env, db, message, article_id, user_id)
 
     return {"id": article_id, "status": "pending"}
 

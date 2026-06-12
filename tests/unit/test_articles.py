@@ -1456,7 +1456,7 @@ class TestGetArticleThumbnail:
 
         assert resp.status_code == 200
         assert resp.headers["content-type"] == "image/webp"
-        assert resp.headers["cache-control"] == "public, max-age=86400"
+        assert resp.headers["cache-control"] == "private, max-age=86400"
         assert resp.content == b"\x00WEBP_IMAGE_DATA"
 
     async def test_returns_404_when_no_thumbnail_key(self) -> None:
@@ -1535,7 +1535,7 @@ class TestGetArticleImage:
 
         assert resp.status_code == 200
         assert resp.headers["content-type"] == "image/webp"
-        assert resp.headers["cache-control"] == "public, max-age=31536000, immutable"
+        assert resp.headers["cache-control"] == "private, max-age=31536000, immutable"
         assert resp.content == b"\x00WEBP_IMAGE_DATA"
 
     async def test_returns_jpeg_image(self) -> None:

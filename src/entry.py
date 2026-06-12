@@ -12,13 +12,65 @@ from __future__ import annotations
 
 import json
 import re
+import uuid
 
 from wide_event import begin_event, current_event, emit_event
-from wrappers import SafeEnv, _to_py_safe, is_js_null
+from wrappers import SafeEnv, _to_js_value, _to_py_safe, is_js_null
 
 # Audio path pattern — matched before ASGI routing so large R2 objects
 # are streamed directly without loading into Python memory.
 _AUDIO_PATH_RE = re.compile(r"^/api/articles/([A-Za-z0-9_-]+)/audio$")
+
+
+def _parse_range_header(value: str | None) -> dict | None:
+    """Parse a single-range HTTP ``Range`` header into an R2 range dict.
+
+    Returns one of ``{"offset", "length"}`` (bytes=a-b), ``{"offset"}``
+    (bytes=a-), or ``{"suffix"}`` (bytes=-n).  Returns ``None`` for absent,
+    malformed, or multi-range headers — RFC 9110 permits ignoring the header,
+    in which case callers serve the full body with status 200.
+    """
+    if not value:
+        return None
+    value = value.strip()
+    if not value.lower().startswith("bytes="):
+        return None
+    spec = value[len("bytes=") :].strip()
+    if "," in spec or "-" not in spec:
+        return None  # multi-range unsupported; serve full body
+    first, _, last = spec.partition("-")
+    first, last = first.strip(), last.strip()
+    if not first:
+        # Suffix range: last N bytes
+        if not last.isdigit() or int(last) == 0:
+            return None
+        return {"suffix": int(last)}
+    if not first.isdigit():
+        return None
+    offset = int(first)
+    if not last:
+        return {"offset": offset}
+    if not last.isdigit() or int(last) < offset:
+        return None
+    return {"offset": offset, "length": int(last) - offset + 1}
+
+
+def _with_security_headers(js_mod: object, resp: object, *, https: bool) -> object:
+    """Return a copy of a JS Response with the standard security headers set.
+
+    Static assets are served outside the ASGI app, so
+    ``SecurityHeadersMiddleware`` never sees them.  This applies the same
+    canonical headers (``security.SECURITY_HEADERS``) to asset responses —
+    most importantly the CSP on ``index.html``, the document that renders
+    saved-article content.
+    """
+    out = js_mod.Response.new(resp.body, resp)
+    for name, value in SECURITY_HEADERS:
+        out.headers.set(name, value)
+    if https:
+        out.headers.set(HSTS_HEADER[0], HSTS_HEADER[1])
+    return out
+
 
 # ---------------------------------------------------------------------------
 # Pyodide guard — HAS_PYODIDE is the single source of truth defined in
@@ -47,11 +99,17 @@ from fastapi import FastAPI, Request  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
 from observability import ObservabilityMiddleware  # noqa: E402
-from security import SecurityHeadersMiddleware  # noqa: E402
+from security import HSTS_HEADER, SECURITY_HEADERS, SecurityHeadersMiddleware  # noqa: E402
 
 # Disable interactive docs (/docs, /redoc, /openapi.json) outside dev mode.
 # In the Workers runtime WORKER_ENV is set via wrangler.jsonc; in local dev
 # or tests it is typically absent or set to "development".
+#
+# os.environ (not the env binding) is used deliberately: this runs at module
+# import time, before any request exists, so no env binding is available.
+# Python Workers populate os.environ from plain-text vars.  Note these paths
+# are only reachable via ASGI (unit tests / local TestClient) — in deployment
+# they don't start with /api/ and never reach FastAPI.
 _worker_env = _os.environ.get("WORKER_ENV", "")
 _is_production = _worker_env == "production"
 
@@ -78,14 +136,16 @@ app = FastAPI(
 # ---------------------------------------------------------------------------
 
 # 3. CORSMiddleware (innermost) — local dev only; production requests
-#    are same-origin (bookmarklet uses window.open popup on Tasche's origin).
-app.add_middleware(
-    CORSMiddleware,
-    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PATCH", "DELETE"],
-    allow_headers=["Content-Type"],
-)
+#    are same-origin (bookmarklet uses window.open popup on Tasche's origin),
+#    so the middleware is not added at all when WORKER_ENV=production.
+if not _is_production:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PATCH", "DELETE"],
+        allow_headers=["Content-Type"],
+    )
 
 # 2. SecurityHeadersMiddleware — appends security headers to all responses.
 app.add_middleware(SecurityHeadersMiddleware)
@@ -245,7 +305,7 @@ async def _handle_article_processing(message_body: dict, env: object) -> None:
             evt.set("skip_reason", "missing article_id or url")
         return
 
-    await process_article(article_id, original_url, env)
+    await process_article(article_id, original_url, env, user_id=message_body.get("user_id"))
 
     # Chain TTS generation after successful text processing
     if message_body.get("requeue_tts"):
@@ -291,6 +351,43 @@ QUEUE_HANDLERS: dict[str, object] = {
     "tts_generation": _handle_tts_generation,
 }
 
+# A message is delivered at most 1 + max_retries times (max_retries is 3 in
+# wrangler.jsonc, matching the platform default).  On the final permitted
+# delivery a failure is terminal: the queue will never redeliver, so the
+# article must be flipped to 'failed' instead of being left stuck in a
+# transient state ('processing' / 'generating') forever.
+_MAX_QUEUE_DELIVERIES = 4
+
+
+async def _mark_terminal_failure(body: dict | None, env: object) -> None:
+    """Best-effort: mark the affected article 'failed' when retries are exhausted.
+
+    ``article_processing`` failures set ``status='failed'``;
+    ``tts_generation`` failures set ``audio_status='failed'`` (the TTS
+    pipeline usually does this itself before re-raising, so this is a
+    safety net and is idempotent).
+    """
+    from utils import now_iso
+
+    if not isinstance(body, dict):
+        return
+    article_id = body.get("article_id")
+    if not article_id:
+        return
+
+    if body.get("type") == "tts_generation":
+        sql = "UPDATE articles SET audio_status = 'failed', updated_at = ? WHERE id = ?"
+    else:
+        sql = "UPDATE articles SET status = 'failed', updated_at = ? WHERE id = ?"
+    params: list[object] = [now_iso(), article_id]
+
+    user_id = body.get("user_id")
+    if user_id:
+        sql += " AND user_id = ?"
+        params.append(user_id)
+
+    await env.DB.prepare(sql).bind(*params).run()
+
 
 # ---------------------------------------------------------------------------
 # Worker entrypoint
@@ -315,6 +412,7 @@ class Default(WorkerEntrypoint):
         streamed directly as JS Responses to avoid loading into Python
         memory across the Pyodide FFI boundary.
         """
+        import js  # type: ignore[import-not-found]
         from js import URL  # type: ignore[import-not-found]
         from js import Request as JsRequest  # type: ignore[import-not-found]
 
@@ -330,16 +428,23 @@ class Default(WorkerEntrypoint):
         if path.startswith("/api/"):
             return await asgi.fetch(app, request.js_object, SafeEnv(self.env))
 
-        # Static assets → ASSETS binding with SPA fallback
+        # Static assets → ASSETS binding with SPA fallback.  Asset responses
+        # bypass the ASGI middleware stack, so security headers (CSP etc.)
+        # are applied here via _with_security_headers.
+        https = str(request.url).startswith("https://")
         asset_resp = await self.env.ASSETS.fetch(request.js_object)
         if asset_resp.status != 404:
-            return asset_resp
+            return _with_security_headers(js, asset_resp, https=https)
 
-        # SPA fallback: serve index.html for unmatched paths
+        # SPA fallback: serve the index document body for unmatched paths.
+        # Fetch "/" rather than "/index.html" — Workers Assets canonicalises
+        # /index.html with a 307 redirect to /, while "/" serves the content
+        # directly (no extra round-trip).
         # Construct a proper Request to preserve headers (e.g. Accept, cookies)
-        index_url = URL.new("/index.html", request.url)
+        index_url = URL.new("/", request.url)
         index_request = JsRequest.new(index_url, request.js_object)
-        return await self.env.ASSETS.fetch(index_request)
+        index_resp = await self.env.ASSETS.fetch(index_request)
+        return _with_security_headers(js, index_resp, https=https)
 
     async def _authenticate_raw_request(
         self, request: object, env: SafeEnv
@@ -354,11 +459,11 @@ class Default(WorkerEntrypoint):
         tuple[str | None, str | None]
             ``(user_id, None)`` on success, or ``(None, error_detail)`` on failure.
         """
-        from auth.session import COOKIE_NAME, get_session
+        from auth.session import COOKIE_NAME, dev_bypass_allowed, get_session
 
         disable_auth = getattr(self.env, "DISABLE_AUTH", None)
         raw_worker_env = getattr(self.env, "WORKER_ENV", None)
-        if str(disable_auth) == "true" and str(raw_worker_env) != "production":
+        if dev_bypass_allowed(disable_auth, raw_worker_env):
             return ("dev", None)
 
         cookie_raw = request.headers.get("cookie")
@@ -388,78 +493,150 @@ class Default(WorkerEntrypoint):
         crashes the Worker.  This handler passes the R2 ReadableStream
         directly to a JS Response — the audio data never enters Python.
 
+        Single-range ``Range`` requests are honoured via R2 range reads
+        (206 Partial Content) — iOS Safari in particular relies on Range
+        support for audio seeking.  Multi-range and malformed headers fall
+        back to the full body (200), which RFC 9110 permits.
+
         Auth is delegated to ``_authenticate_raw_request`` which shares
         the same session logic as ``auth.dependencies.get_current_user``.
         The FastAPI handler in ``tts.routes`` still exists for unit tests
         (which run in CPython via TestClient and never hit this code path).
+
+        Because this path bypasses ASGI, the observability middleware never
+        sees it — a wide event is built and emitted here directly.
         """
         import js  # type: ignore[import-not-found]
 
         env = SafeEnv(self.env)
 
+        cf_ray = request.headers.get("cf-ray")
+        evt = begin_event(
+            "http",
+            request_id=str(cf_ray) if cf_ray and not is_js_null(cf_ray) else str(uuid.uuid4()),
+            method="GET",
+            path=f"/api/articles/{article_id}/audio",
+            article_id=article_id,
+        )
+        status_code = 500
+
         def _json_resp(detail: str, status: int) -> object:
+            nonlocal status_code
+            status_code = status
             h = js.Headers.new()
             h.set("Content-Type", "application/json")
+            h.set("X-Content-Type-Options", "nosniff")
             init = js.Object.new()
             init.status = status
             init.headers = h
             return js.Response.new(json.dumps({"detail": detail}), init)
 
-        # --- Auth (shared helper) ---
-        user_id, auth_error = await self._authenticate_raw_request(request, env)
-        if auth_error:
-            status = 401
-            return _json_resp(auth_error, status)
+        try:
+            # --- Auth (shared helper) ---
+            user_id, auth_error = await self._authenticate_raw_request(request, env)
+            if auth_error:
+                return _json_resp(auth_error, 401)
+            evt.set("user.id", user_id)
 
-        # --- Article lookup ---
-        article = await (
-            env.DB.prepare(
-                "SELECT audio_status, audio_key FROM articles WHERE id = ? AND user_id = ?"
+            # --- Article lookup ---
+            article = await (
+                env.DB.prepare(
+                    "SELECT audio_status, audio_key FROM articles WHERE id = ? AND user_id = ?"
+                )
+                .bind(article_id, user_id)
+                .first()
             )
-            .bind(article_id, user_id)
-            .first()
-        )
 
-        if not article:
-            return _json_resp("Article not found", 404)
+            if not article:
+                return _json_resp("Article not found", 404)
 
-        audio_status = article.get("audio_status")
-        if audio_status != "ready":
-            if audio_status in ("pending", "generating"):
-                return _json_resp("Audio is still being generated", 409)
-            return _json_resp("No audio available for this article", 404)
+            audio_status = article.get("audio_status")
+            if audio_status != "ready":
+                if audio_status in ("pending", "generating"):
+                    return _json_resp("Audio is still being generated", 409)
+                return _json_resp("No audio available for this article", 404)
 
-        audio_key = article.get("audio_key")
-        if not audio_key:
-            return _json_resp("No audio available for this article", 404)
+            audio_key = article.get("audio_key")
+            if not audio_key:
+                return _json_resp("No audio available for this article", 404)
 
-        # --- R2 stream (raw binding — preserves JS ReadableStream) ---
-        # We use the raw R2 binding here intentionally: SafeR2.get() would
-        # pull the body into Python memory, but audio files can be 49 MB+.
-        # The raw binding lets us pass the R2 ReadableStream directly to a
-        # JS Response without the data ever entering Python.
-        r2_obj = await self.env.CONTENT.get(audio_key)
-        if r2_obj is None or is_js_null(r2_obj):
-            return _json_resp("Audio file not found", 404)
+            # --- R2 stream (raw binding — preserves JS ReadableStream) ---
+            # We use the raw R2 binding here intentionally: SafeR2.get() would
+            # pull the body into Python memory, but audio files can be 49 MB+.
+            # The raw binding lets us pass the R2 ReadableStream directly to a
+            # JS Response without the data ever entering Python.
+            range_header = request.headers.get("range")
+            r2_range = _parse_range_header(
+                str(range_header) if range_header and not is_js_null(range_header) else None
+            )
 
-        if audio_key.endswith(".ogg"):
-            media_type = "audio/ogg"
-        elif audio_key.endswith(".wav"):
-            media_type = "audio/wav"
-        else:
-            media_type = "audio/mpeg"
+            if r2_range is not None:
+                try:
+                    r2_obj = await self.env.CONTENT.get(
+                        audio_key, _to_js_value({"range": r2_range})
+                    )
+                except Exception:
+                    # R2 throws when the range is unsatisfiable (offset >= size)
+                    return _json_resp("Requested range not satisfiable", 416)
+            else:
+                r2_obj = await self.env.CONTENT.get(audio_key)
 
-        h = js.Headers.new()
-        h.set("Content-Type", media_type)
-        h.set("Cache-Control", "public, max-age=86400, immutable")
-        r2_size = getattr(r2_obj, "size", None)
-        if r2_size is not None and not is_js_null(r2_size):
-            h.set("Content-Length", str(int(r2_size)))
+            if r2_obj is None or is_js_null(r2_obj):
+                return _json_resp("Audio file not found", 404)
 
-        init = js.Object.new()
-        init.status = 200
-        init.headers = h
-        return js.Response.new(r2_obj.body, init)
+            if audio_key.endswith(".ogg"):
+                media_type = "audio/ogg"
+            elif audio_key.endswith(".wav"):
+                media_type = "audio/wav"
+            else:
+                media_type = "audio/mpeg"
+
+            h = js.Headers.new()
+            h.set("Content-Type", media_type)
+            # 'private': this content is session-gated — it must not be
+            # stored by shared caches, only the user's own browser cache.
+            h.set("Cache-Control", "private, max-age=86400, immutable")
+            h.set("Accept-Ranges", "bytes")
+            h.set("X-Content-Type-Options", "nosniff")
+
+            r2_size = getattr(r2_obj, "size", None)
+            total = int(r2_size) if r2_size is not None and not is_js_null(r2_size) else None
+
+            # R2 reflects the applied range on the returned object — use it
+            # to build the 206 response headers.
+            applied = getattr(r2_obj, "range", None) if r2_range is not None else None
+            if applied is not None and not is_js_null(applied):
+                suffix = getattr(applied, "suffix", None)
+                if suffix is not None and not is_js_null(suffix) and total is not None:
+                    length: int | None = int(suffix)
+                    offset = total - int(suffix)
+                else:
+                    raw_offset = getattr(applied, "offset", None)
+                    offset = int(raw_offset) if raw_offset and not is_js_null(raw_offset) else 0
+                    raw_length = getattr(applied, "length", None)
+                    if raw_length is not None and not is_js_null(raw_length):
+                        length = int(raw_length)
+                    else:
+                        length = (total - offset) if total is not None else None
+                status_code = 206
+                if length is not None:
+                    h.set("Content-Length", str(length))
+                    end = offset + length - 1
+                    total_str = str(total) if total is not None else "*"
+                    h.set("Content-Range", f"bytes {offset}-{end}/{total_str}")
+            else:
+                status_code = 200
+                if total is not None:
+                    h.set("Content-Length", str(total))
+
+            init = js.Object.new()
+            init.status = status_code
+            init.headers = h
+            return js.Response.new(r2_obj.body, init)
+        finally:
+            evt.set("status_code", status_code)
+            evt.set("outcome", "success" if status_code < 400 else "error")
+            emit_event(evt)
 
     async def queue(self, batch: object, env: object = None, ctx: object = None) -> None:  # type: ignore[override]
         """Handle a batch of queue messages.
@@ -484,6 +661,7 @@ class Default(WorkerEntrypoint):
 
         for message in batch.messages:  # type: ignore[attr-defined]
             evt = None
+            body: dict | None = None
             try:
                 raw_body = message.body
                 body = _to_py_safe(raw_body)
@@ -518,11 +696,30 @@ class Default(WorkerEntrypoint):
                 message.ack()
 
             except Exception as exc:
+                attempts = getattr(message, "attempts", 1) or 1
+                terminal = attempts >= _MAX_QUEUE_DELIVERIES
                 if evt:
                     evt.set("outcome", "error")
                     evt.set("error.type", type(exc).__name__)
                     evt.set("error.message", str(exc)[:500])
-                message.retry()
+                    evt.set("queue.attempts", attempts)
+                    evt.set("queue.terminal_failure", terminal)
+                if terminal:
+                    # Final permitted delivery — retrying would silently drop
+                    # the message.  Mark the article failed so the UI offers a
+                    # retry button, then ack to consume the message.
+                    try:
+                        await _mark_terminal_failure(body, worker_env)
+                    except Exception as mark_exc:
+                        if evt:
+                            evt.set("error.terminal_mark_failed", str(mark_exc)[:200])
+                    message.ack()
+                else:
+                    # Exponential backoff between retries (30s/60s/120s) so
+                    # transient upstream failures (Workers AI, network) have
+                    # time to recover before the next delivery.
+                    delay = min(30 * (2 ** (attempts - 1)), 300)
+                    message.retry(_to_js_value({"delaySeconds": delay}))
             finally:
                 if evt:
                     emit_event(evt)

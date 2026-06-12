@@ -1,5 +1,10 @@
 # Tasche Codebase & Documentation Audit — 2026-06-12
 
+> **Status: all findings addressed** in the follow-up commit on this branch
+> (see CHANGELOG `[Unreleased]`). H2 is mitigated in-Worker (terminal-failure
+> marking + explicit `max_retries` + retry backoff) rather than with a
+> dead-letter queue, so no new infrastructure needs provisioning.
+
 **Scope:** Full repository — backend (`src/`, ~7k lines), frontend (`frontend/`, ~16k lines),
 tests (~24k lines, 1,243 unit tests), migrations, CI, Makefile, `readability-worker/`,
 scripts, and all documentation (`README.md`, `CLAUDE.md`, `docs/`, `specs/`).

@@ -17,6 +17,7 @@ from fastapi import HTTPException, Request
 from auth.session import (
     COOKIE_NAME,
     delete_session,
+    dev_bypass_allowed,
     get_session,
     parse_allowed_emails,
     refresh_session,
@@ -92,14 +93,19 @@ async def get_current_user(request: Request) -> dict[str, Any]:
     """
     env = request.scope["env"]
 
-    # Auth bypass — return dev user without any session or OAuth.
+    # Auth bypass — return dev user without any session or OAuth.  Only
+    # honoured when WORKER_ENV is explicitly development/staging; production
+    # and the default (env-less) deployment are never eligible.
     if env.get("DISABLE_AUTH") == "true":
         worker_env = env.get("WORKER_ENV", "")
-        if worker_env == "production":
+        if not dev_bypass_allowed("true", worker_env):
             print(json.dumps({"event": "disable_auth_blocked", "worker_env": worker_env}))
             raise HTTPException(
                 status_code=500,
-                detail="DISABLE_AUTH cannot be used in production",
+                detail=(
+                    "DISABLE_AUTH requires WORKER_ENV=development or WORKER_ENV=staging "
+                    "(refusing to bypass auth on a production/default deployment)"
+                ),
             )
         user_data = await _get_or_create_dev_user(env.DB)
         request.state.user_id = user_data["user_id"]

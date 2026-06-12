@@ -22,21 +22,6 @@
   </div>
   <noscript>Tasche requires JavaScript to run.</noscript>
   <script type="module" src="/src/main.jsx"></script>
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', function () {
-        var reloading = false;
-        navigator.serviceWorker.register('/sw.js').catch(function (err) {
-          console.warn('Service Worker registration failed:', err);
-        });
-        navigator.serviceWorker.addEventListener('controllerchange', function () {
-          if (!reloading) {
-            reloading = true;
-            window.location.reload();
-          }
-        });
-      });
-    }
-  </script>
+  <script defer src="/sw-register.js"></script>
 </body>
 </html>

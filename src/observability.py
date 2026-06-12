@@ -3,9 +3,9 @@
 Emits one wide event (canonical log line) per request as JSON to stdout.
 Workers Logs captures stdout, so this is the primary observability mechanism.
 
-Tail sampling is applied after the request completes — errors, slow requests,
-and server errors are always emitted, while successful fast requests are
-sampled at a low rate to control log volume.
+Every request emits exactly one event — no sampling is applied here.
+Log-volume control is delegated to Workers Logs head sampling
+(``observability.logs.head_sampling_rate`` in ``wrangler.jsonc``).
 
 Infrastructure hop timing (D1, R2, KV, Queue, AI, HTTP) is captured
 automatically by the Safe* wrappers in ``wrappers.py`` via a ``WideEvent``

@@ -1,8 +1,8 @@
 """URL health checker for original article URLs.
 
-Periodically checks whether the original URL for a saved article is still
-accessible.  Uses HEAD requests with SSRF protection to classify the URL
-into one of five states defined in spec section 7.7:
+Checks on demand (from the article routes) whether the original URL for a
+saved article is still accessible.  Uses HEAD requests with SSRF protection
+to classify the URL into one of five states defined in spec section 7.7:
 
 - ``available``   -- Original still accessible (2xx)
 - ``paywalled``   -- Returns 401/403 (requires login/subscription)

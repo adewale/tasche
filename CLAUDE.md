@@ -58,7 +58,7 @@ uv run pytest tests/unit/test_articles.py::TestClassName::test_method_name -x -q
 
 ## Configuration
 
-All config lives in `wrangler.jsonc`. Auth secrets (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`) are set via `wrangler secret put`.
+All config lives in `wrangler.jsonc`. Required secrets, set via `wrangler secret put`: `ALLOWED_EMAILS` (the GitHub email(s) allowed to log in — auth hard-fails without it), `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`. Optional: `SITE_URL` (auto-detected from the request `Host` header when unset). `DISABLE_AUTH=true` bypasses auth only when `WORKER_ENV` is explicitly `development` or `staging` — never in production or on the default (env-less) deployment; local dev gets `WORKER_ENV=development` via `.dev.vars`.
 
 ## Observability
 
@@ -79,8 +79,12 @@ Wide events pattern: emit one JSON log line per request (not many small lines). 
 
 ## Skills
 
-Use these skills when working on this project:
+In this repo (`.claude/skills/`):
 
-- **`/cloudflare`** — General Cloudflare platform reference (Workers, D1, R2, KV, Queues, AI, Browser Rendering, etc.). Covers configuration, patterns, and decision trees for all Cloudflare services. Source: [dmmulroy/cloudflare-skill](https://github.com/dmmulroy/cloudflare-skill)
-- **Python Workers skill** — Python/Pyodide-specific reference for Cloudflare Workers. Covers the JS/Python FFI boundary, JsProxy conversion, async constraints, package compatibility, and testing strategies. Draft at: [planet_cf PR #7](https://github.com/adewale/planet_cf/pull/7) (files under `docs/tmp/`)
+- **`implement-then-audit`** — workflow for implementing a change and then auditing it
+
+External skills (NOT bundled in this repo — install separately if available; skip if not):
+
+- **`/cloudflare`** — General Cloudflare platform reference (Workers, D1, R2, KV, Queues, AI, Browser Rendering, etc.). Source: [dmmulroy/cloudflare-skill](https://github.com/dmmulroy/cloudflare-skill)
+- **Python Workers skill** — Python/Pyodide-specific reference (FFI boundary, JsProxy conversion, async constraints). Draft at: [planet_cf PR #7](https://github.com/adewale/planet_cf/pull/7) (files under `docs/tmp/`)
 - **`logging-best-practices`** — Wide events / canonical log lines pattern for observability

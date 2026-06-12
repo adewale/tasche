@@ -21,16 +21,19 @@ from tests.conftest import MockEnv
 class _MockMessage:
     """Simulates a single queue message with ack/retry controls."""
 
-    def __init__(self, body: Any) -> None:
+    def __init__(self, body: Any, attempts: int = 1) -> None:
         self.body = body
+        self.attempts = attempts
         self.acked = False
         self.retried = False
+        self.retry_options: Any = None
 
     def ack(self) -> None:
         self.acked = True
 
-    def retry(self) -> None:
+    def retry(self, options: Any = None) -> None:
         self.retried = True
+        self.retry_options = options
 
 
 class _MockBatch:
@@ -207,6 +210,103 @@ class TestQueueHandlerException:
         output = capsys.readouterr().out
         assert '"outcome": "error"' in output
 
+    async def test_retry_uses_exponential_backoff_delay(self, capsys: Any) -> None:
+        """Retries pass increasing delaySeconds based on the attempt number."""
+        from entry import Default
+
+        worker = Default()
+        worker.env = MockEnv()
+
+        msg1 = _MockMessage(
+            {"type": "article_processing", "article_id": "a1", "url": "https://x.test/1"},
+            attempts=1,
+        )
+        msg2 = _MockMessage(
+            {"type": "article_processing", "article_id": "a2", "url": "https://x.test/2"},
+            attempts=2,
+        )
+
+        with patch(
+            "articles.processing.process_article",
+            side_effect=RuntimeError("boom"),
+        ):
+            await worker.queue(_MockBatch([msg1, msg2]))
+
+        assert msg1.retry_options == {"delaySeconds": 30}
+        assert msg2.retry_options == {"delaySeconds": 60}
+
+    async def test_terminal_failure_marks_article_failed_and_acks(self, capsys: Any) -> None:
+        """On the final permitted delivery, the article is marked failed and acked."""
+        from entry import _MAX_QUEUE_DELIVERIES, Default
+        from tests.conftest import TrackingD1
+
+        db = TrackingD1()
+        worker = Default()
+        worker.env = MockEnv(db=db)
+
+        msg = _MockMessage(
+            {
+                "type": "article_processing",
+                "article_id": "art_term",
+                "url": "https://example.com/page",
+                "user_id": "user_001",
+            },
+            attempts=_MAX_QUEUE_DELIVERIES,
+        )
+
+        with patch(
+            "articles.processing.process_article",
+            side_effect=RuntimeError("still failing"),
+        ):
+            await worker.queue(_MockBatch([msg]))
+
+        assert msg.acked is True
+        assert msg.retried is False
+
+        failed_updates = [
+            (sql, params)
+            for sql, params in db.executed
+            if "status = 'failed'" in sql and "audio_status" not in sql
+        ]
+        assert failed_updates, f"No terminal-failure UPDATE found in {db.executed}"
+        sql, params = failed_updates[-1]
+        assert "user_id = ?" in sql
+        assert params[-2:] == ["art_term", "user_001"]
+
+        output = capsys.readouterr().out
+        assert '"queue.terminal_failure": true' in output
+
+    async def test_terminal_tts_failure_marks_audio_status_failed(self, capsys: Any) -> None:
+        """tts_generation terminal failures set audio_status='failed'."""
+        from entry import _MAX_QUEUE_DELIVERIES, Default
+        from tests.conftest import TrackingD1
+
+        db = TrackingD1()
+        worker = Default()
+        worker.env = MockEnv(db=db)
+
+        msg = _MockMessage(
+            {
+                "type": "tts_generation",
+                "article_id": "art_tts_term",
+                "user_id": "user_001",
+            },
+            attempts=_MAX_QUEUE_DELIVERIES + 1,
+        )
+
+        with patch(
+            "tts.processing.process_tts",
+            side_effect=RuntimeError("AI down"),
+        ):
+            await worker.queue(_MockBatch([msg]))
+
+        assert msg.acked is True
+        assert msg.retried is False
+        audio_updates = [
+            (sql, params) for sql, params in db.executed if "audio_status = 'failed'" in sql
+        ]
+        assert audio_updates, f"No audio_status terminal UPDATE found in {db.executed}"
+
 
 # ---------------------------------------------------------------------------
 # Queue dispatch — body.to_py() conversion path
@@ -289,7 +389,7 @@ class TestSPAFallbackRouting:
         assert result == mock_response
 
     async def test_non_api_routes_go_to_assets(self, monkeypatch) -> None:
-        """Non-/api/ requests are served from the ASSETS binding."""
+        """Non-/api/ requests are served from the ASSETS binding with security headers."""
         from entry import Default
 
         worker = Default()
@@ -320,16 +420,28 @@ class TestSPAFallbackRouting:
         result = await worker.fetch(mock_request)
 
         mock_assets.fetch.assert_called_once_with(mock_request.js_object)
-        assert result == asset_response
+        # The asset response is wrapped in a new Response carrying the
+        # canonical security headers (assets bypass the ASGI middleware).
+        mock_js.Response.new.assert_called_once_with(asset_response.body, asset_response)
+        assert result == mock_js.Response.new.return_value
+        set_headers = {call.args[0] for call in result.headers.set.call_args_list}
+        assert "content-security-policy" in set_headers
+        assert "x-frame-options" in set_headers
+        # HTTPS request → HSTS applied to the asset response
+        assert "strict-transport-security" in set_headers
 
-    async def test_404_falls_back_to_index_html(self, monkeypatch) -> None:
-        """When ASSETS returns 404, the SPA fallback serves /index.html."""
+    async def test_404_falls_back_to_index_document(self, monkeypatch) -> None:
+        """When ASSETS returns 404, the SPA fallback serves the "/" document.
+
+        Fetching "/" (not "/index.html") avoids the 307 redirect Workers
+        Assets issues when canonicalising /index.html.
+        """
         from entry import Default
 
         worker = Default()
         env = MockEnv()
 
-        # First fetch returns 404, second (index.html) returns 200
+        # First fetch returns 404, second (the "/" document) returns 200
         asset_404 = MagicMock()
         asset_404.status = 404
         index_response = MagicMock()
@@ -362,9 +474,13 @@ class TestSPAFallbackRouting:
 
         result = await worker.fetch(mock_request)
 
-        # Second call should be the index.html fallback
+        # Second call should be the SPA fallback, requesting "/"
         assert mock_assets.fetch.call_count == 2
-        assert result == index_response
+        fallback_url_call = mock_URL_cls.new.call_args_list[1]
+        assert fallback_url_call.args[0] == "/"
+        # Fallback response is wrapped with security headers too
+        mock_js.Response.new.assert_called_once_with(index_response.body, index_response)
+        assert result == mock_js.Response.new.return_value
 
 
 # ---------------------------------------------------------------------------
@@ -381,8 +497,10 @@ class TestConfigCheck:
 
         from entry import app
 
-        # Enable dev auth so the config endpoint is accessible
+        # Enable dev auth so the config endpoint is accessible — the bypass
+        # requires an explicit non-production WORKER_ENV.
         env.DISABLE_AUTH = "true"
+        env.WORKER_ENV = "development"
 
         # Clone the app's routes into a test app with env injection
         test_app = FastAPI()
@@ -526,12 +644,29 @@ class TestDisableAuthGuard:
         resp = client.get("/api/articles")
         assert resp.status_code == 200
 
-    def test_disable_auth_allowed_without_worker_env(self) -> None:
-        """DISABLE_AUTH without WORKER_ENV is allowed (local dev)."""
+    def test_disable_auth_allowed_in_development(self) -> None:
+        """DISABLE_AUTH + WORKER_ENV=development is allowed (local dev)."""
+        env = MockEnv(
+            disable_auth="true",
+            worker_env="development",
+            site_url="http://localhost:8787",
+        )
+        client = self._make_client(env)
+        resp = client.get("/api/articles")
+        assert resp.status_code == 200
+
+    def test_disable_auth_blocked_without_worker_env(self) -> None:
+        """DISABLE_AUTH without an explicit WORKER_ENV is refused.
+
+        The default deploy path (deploy-button / `wrangler deploy` without
+        --env) sets no WORKER_ENV — it must never run with auth disabled.
+        Local dev gets WORKER_ENV=development via .dev.vars.
+        """
         env = MockEnv(
             disable_auth="true",
             site_url="http://localhost:8787",
         )
         client = self._make_client(env)
         resp = client.get("/api/articles")
-        assert resp.status_code == 200
+        assert resp.status_code == 500
+        assert "WORKER_ENV" in resp.json()["detail"]

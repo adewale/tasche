@@ -569,7 +569,8 @@ class SafeQueue:
             if isinstance(message, dict):
                 from datetime import UTC, datetime
 
-                message["enqueued_at"] = datetime.now(UTC).isoformat()
+                # Copy before injecting so the caller's dict is not mutated.
+                message = {**message, "enqueued_at": datetime.now(UTC).isoformat()}
                 message = _to_js_value(message)
             await self._queue.send(message, **kwargs)
         finally:
@@ -881,9 +882,16 @@ async def http_fetch(
                 opts["redirect"] = "manual"
             js_opts = _to_js_value(opts)
 
+            # AbortController so a timeout actually cancels the underlying JS
+            # fetch — asyncio.wait_for alone only abandons the Python await,
+            # leaving the request running in the background.
+            controller = js.AbortController.new()
+            js_opts.signal = controller.signal
+
             try:
                 response = await asyncio.wait_for(js.fetch(url, js_opts), timeout=timeout)
             except TimeoutError as exc:
+                controller.abort()
                 raise TimeoutError(f"Request timed out after {timeout}s") from exc
             except Exception as exc:
                 msg = str(exc)

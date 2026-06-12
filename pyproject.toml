@@ -18,6 +18,11 @@ test = [
     "ruff>=0.8",
 ]
 
+# Install test + workers groups by default so a fresh clone can run
+# `make test` (pytest/ruff) and `make dev` (pywrangler) after plain `uv sync`.
+[tool.uv]
+default-groups = ["test", "workers"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
