@@ -101,6 +101,79 @@ class TestAssetSecurityHeaders:
         assert "x-frame-options" in names
         assert "x-content-type-options" in names
 
+    def test_csp_allows_blob_media_for_audio_player(self) -> None:
+        """media-src must allow blob: — the audio player plays a blob: URL.
+
+        AudioPlayer fetches /audio and assigns URL.createObjectURL(blob) to an
+        <audio> element; without media-src blob: the strict CSP blocks playback.
+        """
+        from security import SECURITY_HEADERS
+
+        csp = dict(SECURITY_HEADERS)["content-security-policy"]
+        assert "media-src 'self' blob:" in csp, csp
+
+    def test_csp_img_src_covers_thumbnails_favicons_canvas(self) -> None:
+        """img-src must cover same-origin thumbnails, data: canvas output, favicons."""
+        from security import SECURITY_HEADERS
+
+        csp = dict(SECURITY_HEADERS)["content-security-policy"]
+        assert "img-src 'self' data: https://www.google.com" in csp, csp
+
+
+# =========================================================================
+# entry._authenticate_raw_request — audio path mirrors the loud 500 guard
+# =========================================================================
+
+
+class _FakeHeaders:
+    def __init__(self, cookie: str | None = None) -> None:
+        self._cookie = cookie
+
+    def get(self, name: str):
+        return self._cookie if name == "cookie" else None
+
+
+class _FakeRequest:
+    def __init__(self, cookie: str | None = None) -> None:
+        self.headers = _FakeHeaders(cookie)
+
+
+class TestRawRequestAuthGuard:
+    """The raw audio auth path must behave like get_current_user for DISABLE_AUTH."""
+
+    def _worker(self, **env_kwargs):
+        from src.entry import Default
+        from src.wrappers import SafeEnv
+
+        worker = Default()
+        env = MockEnv(**env_kwargs)
+        worker.env = env
+        return worker, SafeEnv(env)
+
+    async def test_misconfigured_disable_auth_returns_500(self) -> None:
+        """DISABLE_AUTH=true with no WORKER_ENV → 500, not a silent 401."""
+        worker, safe_env = self._worker(disable_auth="true", worker_env=None)
+        user_id, error, status = await worker._authenticate_raw_request(_FakeRequest(), safe_env)
+        assert user_id is None
+        assert status == 500
+        assert "WORKER_ENV" in error
+
+    async def test_production_disable_auth_returns_500(self) -> None:
+        worker, safe_env = self._worker(disable_auth="true", worker_env="production")
+        _uid, _error, status = await worker._authenticate_raw_request(_FakeRequest(), safe_env)
+        assert status == 500
+
+    async def test_eligible_env_bypasses_to_dev_user(self) -> None:
+        worker, safe_env = self._worker(disable_auth="true", worker_env="staging")
+        user_id, error, status = await worker._authenticate_raw_request(_FakeRequest(), safe_env)
+        assert (user_id, error, status) == ("dev", None, 200)
+
+    async def test_no_cookie_is_401(self) -> None:
+        worker, safe_env = self._worker(disable_auth=None, worker_env="production")
+        _uid, error, status = await worker._authenticate_raw_request(_FakeRequest(), safe_env)
+        assert status == 401
+        assert error == "Not authenticated"
+
 
 # =========================================================================
 # auth.session.dev_bypass_allowed — hardened DISABLE_AUTH guard
@@ -275,3 +348,41 @@ class TestProcessingUserScoping:
         assert "user_id" not in sql
         assert params[0] == "failed"
         assert params[2] == "art_9"
+
+    async def test_auto_enqueue_tts_update_scopes_by_user_id(self) -> None:
+        """The atomic pending->generating TTS update is scoped by user_id."""
+        from src.articles.processing import process_article
+        from src.wrappers import SafeEnv
+
+        ready_article = {
+            "id": "art_tts",
+            "user_id": "user_001",
+            "audio_status": "pending",
+            "status": "ready",
+            "markdown_content": "# Hi\n\nbody",
+        }
+
+        def execute(sql, params):
+            # The pre-supplied raw.html lookup and content fetch return nothing;
+            # the auto-enqueue SELECT returns a pending article owned by user_001.
+            if "SELECT audio_status, user_id" in sql:
+                return [ready_article]
+            return []
+
+        db = TrackingD1(result_fn=execute)
+        env = SafeEnv(MockEnv(db=db))
+
+        # Pre-supply raw HTML so the pipeline skips the network fetch entirely.
+        await env.CONTENT.put("articles/art_tts/raw.html", b"<article><p>hello world</p></article>")
+
+        await process_article("art_tts", "https://example.com/x", env, user_id="user_001")
+
+        # The atomic pending->generating guard binds (generating, id, user_id,
+        # pending) — find it by its exact parameter signature.
+        guard = [
+            (sql, params)
+            for sql, params in db.executed
+            if params == ["generating", "art_tts", "user_001", "pending"]
+        ]
+        assert guard, f"user_id-scoped atomic TTS guard UPDATE not found in {db.executed}"
+        assert "user_id = ?" in guard[-1][0]

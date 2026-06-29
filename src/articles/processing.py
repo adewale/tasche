@@ -329,12 +329,16 @@ async def process_article(
                 .first()
             )
             if art_row and art_row.get("audio_status") == "pending":
-                # Atomically set to 'generating' to prevent double-enqueue
+                # Atomically set to 'generating' to prevent double-enqueue.
+                # Scope by user_id (defense-in-depth, consistent with every
+                # other article write) using the owner from the row above.
+                row_user_id = art_row.get("user_id")
                 await (
                     db.prepare(
-                        "UPDATE articles SET audio_status = ? WHERE id = ? AND audio_status = ?"
+                        "UPDATE articles SET audio_status = ? "
+                        "WHERE id = ? AND user_id = ? AND audio_status = ?"
                     )
-                    .bind("generating", article_id, "pending")
+                    .bind("generating", article_id, row_user_id, "pending")
                     .run()
                 )
                 await env.ARTICLE_QUEUE.send(

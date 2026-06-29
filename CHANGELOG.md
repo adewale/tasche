@@ -5,7 +5,7 @@ All notable changes to Tasche are documented in this file.
 ## [Unreleased]
 
 ### Security
-- **Security headers on all responses** — CSP, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy (and HSTS over HTTPS) are now applied to static assets and the SPA `index.html`, not just `/api/*` responses.
+- **Security headers on all responses** — CSP, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy (and HSTS over HTTPS) are now applied to static assets and the SPA `index.html`, not just `/api/*` responses. The CSP includes `media-src 'self' blob:` so the audio player (which plays a `blob:` URL) keeps working, and the raw audio endpoint emits the same loud 500 as other endpoints when `DISABLE_AUTH` is set in an ineligible environment.
 - **`DISABLE_AUTH` guard hardened** — the auth bypass now requires `WORKER_ENV` to be explicitly `development` or `staging`. Production and the default (env-less) deploy path can never run with auth disabled. Local dev: `make setup` adds `WORKER_ENV=development` to `.dev.vars` automatically.
 - **Authenticated content is `Cache-Control: private`** — audio, audio-timing, images, and thumbnails no longer carry `public`, keeping session-gated content out of shared caches.
 - **Defense-in-depth SQL scoping** — all article UPDATE statements (queue pipeline included) now filter by `user_id`; the enqueue rollback helper uses whitelisted literal SQL instead of field-name interpolation.

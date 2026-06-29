@@ -30,7 +30,7 @@ test-e2e:
 		sleep 3; \
 	done
 	@echo "Running E2E tests..."
-	@trap '$(MAKE) restore-staging-auth; exit 130' INT TERM; \
+	@trap '$(MAKE) restore-staging-auth && exit 130 || exit 1' INT TERM; \
 		RUN_E2E_TESTS=1 uv run pytest tests/e2e/ -x -q; \
 		TEST_EXIT=$$?; \
 		trap - INT TERM; \
@@ -87,7 +87,7 @@ verify-staging: smoke-staging
 		sleep 3; \
 	done
 	@echo "Running E2E + Playwright tests..."
-	@trap '$(MAKE) restore-staging-auth; exit 130' INT TERM; \
+	@trap '$(MAKE) restore-staging-auth && exit 130 || exit 1' INT TERM; \
 		RUN_E2E_TESTS=1 uv run pytest tests/e2e/ -x -q; \
 		PYTEST_EXIT=$$?; \
 		(cd frontend && E2E_BASE_URL=https://tasche-staging.adewale-883.workers.dev npx playwright test); \

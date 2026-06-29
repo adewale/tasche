@@ -1,9 +1,17 @@
 # Tasche Codebase & Documentation Audit — 2026-06-12
 
-> **Status: all findings addressed** in the follow-up commit on this branch
+> **Status: all findings addressed** in the follow-up commits on this branch
 > (see CHANGELOG `[Unreleased]`). H2 is mitigated in-Worker (terminal-failure
 > marking + explicit `max_retries` + retry backoff) rather than with a
 > dead-letter queue, so no new infrastructure needs provisioning.
+>
+> A subsequent adversarial verification pass (24 agents) re-checked every
+> finding and hunted for regressions. It caught one the first round missed:
+> the new strict CSP omitted `media-src`, which would have blocked the audio
+> player's `blob:` source — fixed by adding `media-src 'self' blob:`. It also
+> tightened M3 (the raw audio auth path now emits the same loud 500 as other
+> endpoints on `DISABLE_AUTH` misconfiguration) and closed the last
+> unscoped article UPDATE (the atomic TTS pending→generating guard) for L1.
 
 **Scope:** Full repository — backend (`src/`, ~7k lines), frontend (`frontend/`, ~16k lines),
 tests (~24k lines, 1,243 unit tests), migrations, CI, Makefile, `readability-worker/`,

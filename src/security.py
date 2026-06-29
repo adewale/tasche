@@ -17,6 +17,9 @@ from typing import Any
 # external files (sw-register.js, bookmarklet-page.js, design-language.js).
 # img-src allows https://www.google.com for the favicon service used by
 # the article cards (InkFavicon falls back to generated art when blocked).
+# media-src allows blob: because the audio player fetches the audio file
+# and hands it to an <audio> element via URL.createObjectURL (a blob: URL);
+# without this the "Listen later" feature would not play.
 SECURITY_HEADERS: list[tuple[str, str]] = [
     ("x-content-type-options", "nosniff"),
     ("x-frame-options", "DENY"),
@@ -25,8 +28,8 @@ SECURITY_HEADERS: list[tuple[str, str]] = [
     (
         "content-security-policy",
         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';"
-        " img-src 'self' data: https://www.google.com; connect-src 'self';"
-        " font-src 'self'",
+        " img-src 'self' data: https://www.google.com; media-src 'self' blob:;"
+        " connect-src 'self'; font-src 'self'",
     ),
 ]
 

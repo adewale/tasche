@@ -673,6 +673,16 @@ class TestAudioStreaming:
         assert resp.status_code == 206
         assert resp.content == full[offset:]
 
+        # Suffix range (bytes=-N): last N bytes, exercises the R2 suffix→offset
+        # conversion path in _serve_audio against real R2.
+        resp = await http_client.get(
+            f"/api/articles/{article_id}/audio",
+            headers={"Range": "bytes=-50"},
+        )
+        assert resp.status_code == 206, f"{resp.status_code} {resp.text[:200]}"
+        assert resp.content == full[-50:]
+        assert resp.headers.get("content-range", "").endswith(f"/{len(full)}")
+
         # Unsatisfiable range: 416
         resp = await http_client.get(
             f"/api/articles/{article_id}/audio",

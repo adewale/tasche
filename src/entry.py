@@ -448,7 +448,7 @@ class Default(WorkerEntrypoint):
 
     async def _authenticate_raw_request(
         self, request: object, env: SafeEnv
-    ) -> tuple[str | None, str | None]:
+    ) -> tuple[str | None, str | None, int]:
         """Authenticate a raw JS request outside the ASGI boundary.
 
         Reuses ``auth.session`` logic (same as ``auth.dependencies.get_current_user``)
@@ -456,15 +456,29 @@ class Default(WorkerEntrypoint):
 
         Returns
         -------
-        tuple[str | None, str | None]
-            ``(user_id, None)`` on success, or ``(None, error_detail)`` on failure.
+        tuple[str | None, str | None, int]
+            ``(user_id, None, 200)`` on success, or ``(None, error_detail, status)``
+            on failure, where ``status`` is 401 for a normal auth failure and 500
+            when ``DISABLE_AUTH`` is set but the environment is not eligible — the
+            same loud-misconfiguration behaviour as ``get_current_user``.
         """
         from auth.session import COOKIE_NAME, dev_bypass_allowed, get_session
 
         disable_auth = getattr(self.env, "DISABLE_AUTH", None)
         raw_worker_env = getattr(self.env, "WORKER_ENV", None)
-        if dev_bypass_allowed(disable_auth, raw_worker_env):
-            return ("dev", None)
+        if str(disable_auth) == "true":
+            # Mirror get_current_user: DISABLE_AUTH outside an eligible env is a
+            # misconfiguration, not a quiet fall-through to cookie auth.
+            if not dev_bypass_allowed(disable_auth, raw_worker_env):
+                print(
+                    json.dumps({"event": "disable_auth_blocked", "worker_env": str(raw_worker_env)})
+                )
+                return (
+                    None,
+                    "DISABLE_AUTH requires WORKER_ENV=development or WORKER_ENV=staging",
+                    500,
+                )
+            return ("dev", None, 200)
 
         cookie_raw = request.headers.get("cookie")
         cookie_header = str(cookie_raw) if cookie_raw else ""
@@ -476,13 +490,13 @@ class Default(WorkerEntrypoint):
                 break
 
         if not session_id:
-            return (None, "Not authenticated")
+            return (None, "Not authenticated", 401)
 
         user_data = await get_session(env.SESSIONS, session_id)
         if user_data is None:
-            return (None, "Invalid or expired session")
+            return (None, "Invalid or expired session", 401)
 
-        return (user_data.get("user_id"), None)
+        return (user_data.get("user_id"), None, 200)
 
     async def _serve_audio(self, request: object, article_id: str) -> object:
         """Stream audio from R2, bypassing ASGI.
@@ -533,9 +547,9 @@ class Default(WorkerEntrypoint):
 
         try:
             # --- Auth (shared helper) ---
-            user_id, auth_error = await self._authenticate_raw_request(request, env)
+            user_id, auth_error, auth_status = await self._authenticate_raw_request(request, env)
             if auth_error:
-                return _json_resp(auth_error, 401)
+                return _json_resp(auth_error, auth_status)
             evt.set("user.id", user_id)
 
             # --- Article lookup ---
