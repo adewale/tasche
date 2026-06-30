@@ -174,6 +174,7 @@ async def get_audio(
         headers={
             "Cache-Control": "private, max-age=86400, immutable",
             "Content-Length": str(len(audio_bytes)),
+            "X-Content-Type-Options": "nosniff",
         },
     )
 
@@ -217,5 +218,6 @@ async def get_audio_timing(
         media_type="application/json",
         headers={
             "Cache-Control": "private, max-age=86400, immutable",
+            "X-Content-Type-Options": "nosniff",
         },
     )

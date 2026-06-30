@@ -29,7 +29,7 @@ SECURITY_HEADERS: list[tuple[str, str]] = [
         "content-security-policy",
         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';"
         " img-src 'self' data: https://www.google.com; media-src 'self' blob:;"
-        " connect-src 'self'; font-src 'self'",
+        " connect-src 'self'; font-src 'self'; frame-ancestors 'none'",
     ),
 ]
 
@@ -65,7 +65,13 @@ class SecurityHeadersMiddleware:
                 headers = list(message.get("headers", []))
                 headers.extend(_SECURITY_HEADERS)
 
-                # Add HSTS only for HTTPS origins
+                # Add HSTS only for HTTPS origins.  This (API) path keys off
+                # SITE_URL; the static-asset path in entry._with_security_headers
+                # keys off the actual request scheme instead.  Same header, two
+                # triggers — both mean "served over HTTPS".  The asset/document
+                # path is the one that matters for the browser caching HSTS, so
+                # a workers.dev deploy with SITE_URL unset still gets HSTS on the
+                # document even though API responses here would not.
                 env = scope.get("env")
                 if env:
                     from wrappers import SafeEnv

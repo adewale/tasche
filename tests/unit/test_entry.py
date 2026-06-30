@@ -307,6 +307,76 @@ class TestQueueHandlerException:
         ]
         assert audio_updates, f"No audio_status terminal UPDATE found in {db.executed}"
 
+    async def test_terminal_failure_without_user_id_uses_id_only_scope(self, capsys: Any) -> None:
+        """Legacy messages with no user_id still mark the article failed (id-only)."""
+        from entry import _MAX_QUEUE_DELIVERIES, Default
+        from tests.conftest import TrackingD1
+
+        db = TrackingD1()
+        worker = Default()
+        worker.env = MockEnv(db=db)
+
+        msg = _MockMessage(
+            {"type": "article_processing", "article_id": "art_legacy", "url": "https://x.test/1"},
+            attempts=_MAX_QUEUE_DELIVERIES,
+        )
+
+        with patch(
+            "articles.processing.process_article",
+            side_effect=RuntimeError("still failing"),
+        ):
+            await worker.queue(_MockBatch([msg]))
+
+        assert msg.acked is True
+        failed = [
+            (sql, params)
+            for sql, params in db.executed
+            if "status = 'failed'" in sql and "audio_status" not in sql
+        ]
+        assert failed, f"No terminal-failure UPDATE found in {db.executed}"
+        sql, params = failed[-1]
+        assert "user_id" not in sql
+        assert params[-1] == "art_legacy"
+
+
+# ---------------------------------------------------------------------------
+# Queue dispatch — requeue_tts chaining (happy path)
+# ---------------------------------------------------------------------------
+
+
+class TestRequeueTtsChaining:
+    async def test_successful_processing_chains_tts_generation(self) -> None:
+        """When requeue_tts is set, a tts_generation message is enqueued after success."""
+        from unittest.mock import AsyncMock
+
+        from entry import Default
+        from tests.conftest import MockQueue
+
+        queue = MockQueue()
+        worker = Default()
+        worker.env = MockEnv(article_queue=queue)
+
+        msg = _MockMessage(
+            {
+                "type": "article_processing",
+                "article_id": "art_chain",
+                "url": "https://example.com/page",
+                "user_id": "user_001",
+                "requeue_tts": True,
+                "tts_voice": "zeus",
+            }
+        )
+
+        with patch("articles.processing.process_article", new=AsyncMock(return_value=None)):
+            await worker.queue(_MockBatch([msg]))
+
+        assert msg.acked is True
+        tts_msgs = [m for m in queue.messages if m.get("type") == "tts_generation"]
+        assert len(tts_msgs) == 1, f"expected one chained tts_generation, got {queue.messages}"
+        assert tts_msgs[0]["article_id"] == "art_chain"
+        assert tts_msgs[0]["user_id"] == "user_001"
+        assert tts_msgs[0]["tts_voice"] == "zeus"
+
 
 # ---------------------------------------------------------------------------
 # Queue dispatch — body.to_py() conversion path

@@ -55,6 +55,51 @@ def _parse_range_header(value: str | None) -> dict | None:
     return {"offset": offset, "length": int(last) - offset + 1}
 
 
+def _opt_int(value: object) -> int | None:
+    """Return ``int(value)`` unless it is ``None`` or JS ``null``/``undefined``."""
+    if value is None or is_js_null(value):
+        return None
+    return int(value)
+
+
+def _partial_content_fields(
+    total: int | None,
+    suffix: int | None,
+    offset: int | None,
+    length: int | None,
+) -> tuple[int, str | None, str | None]:
+    """Compute ``(status, Content-Length, Content-Range)`` for an audio response.
+
+    ``total`` is the full object size (R2 ``size``); ``suffix`` / ``offset`` /
+    ``length`` are the range R2 reflected as *applied* (``suffix`` for
+    ``bytes=-n``; ``offset`` (+ ``length``) for ``bytes=a-b`` / ``a-``), already
+    converted to plain ints or ``None``.
+
+    Returns a 206 with a complete byte-range descriptor when one can be
+    computed, otherwise falls back to 200 with the full ``Content-Length``.  We
+    never emit a 206 lacking both ``Content-Range`` and ``Content-Length``.
+    """
+    start: int | None = None
+    count: int | None = None
+    if suffix is not None and total is not None:
+        # bytes=-n: last n bytes (clamped to the object size).
+        count = min(suffix, total)
+        start = total - count
+    elif offset is not None:
+        start = offset
+        if length is not None:
+            count = length
+        elif total is not None:
+            count = total - offset
+
+    if start is not None and count is not None and total is not None:
+        end = start + count - 1
+        return 206, str(count), f"bytes {start}-{end}/{total}"
+
+    # No describable partial range (or none requested) → serve the full body.
+    return 200, (str(total) if total is not None else None), None
+
+
 def _with_security_headers(js_mod: object, resp: object, *, https: bool) -> object:
     """Return a copy of a JS Response with the standard security headers set.
 
@@ -67,6 +112,10 @@ def _with_security_headers(js_mod: object, resp: object, *, https: bool) -> obje
     out = js_mod.Response.new(resp.body, resp)
     for name, value in SECURITY_HEADERS:
         out.headers.set(name, value)
+    # HSTS keys off the actual request scheme here (the asset/document path is
+    # the load-bearing one for the browser to cache the policy).  The ASGI
+    # SecurityHeadersMiddleware keys off SITE_URL instead — same header, two
+    # triggers, both meaning "served over HTTPS"; see security.py.
     if https:
         out.headers.set(HSTS_HEADER[0], HSTS_HEADER[1])
     return out
@@ -113,6 +162,18 @@ from security import HSTS_HEADER, SECURITY_HEADERS, SecurityHeadersMiddleware  #
 _worker_env = _os.environ.get("WORKER_ENV", "")
 _is_production = _worker_env == "production"
 
+
+def _cors_allowed(worker_env: str) -> bool:
+    """Whether the dev CORS middleware should be installed for *worker_env*.
+
+    Production is same-origin (the bookmarklet popup runs on Tasche's origin),
+    so credentialed cross-origin CORS is disabled there.  Extracted as a pure
+    predicate so the production gate is unit-testable (the module-level
+    ``_is_production`` is fixed at import time).
+    """
+    return worker_env != "production"
+
+
 app = FastAPI(
     title="Tasche",
     description="A self-hosted read-it-later service on Cloudflare Workers",
@@ -138,7 +199,7 @@ app = FastAPI(
 # 3. CORSMiddleware (innermost) — local dev only; production requests
 #    are same-origin (bookmarklet uses window.open popup on Tasche's origin),
 #    so the middleware is not added at all when WORKER_ENV=production.
-if not _is_production:
+if _cors_allowed(_worker_env):
     app.add_middleware(
         CORSMiddleware,
         allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
@@ -613,35 +674,26 @@ class Default(WorkerEntrypoint):
             h.set("Accept-Ranges", "bytes")
             h.set("X-Content-Type-Options", "nosniff")
 
-            r2_size = getattr(r2_obj, "size", None)
-            total = int(r2_size) if r2_size is not None and not is_js_null(r2_size) else None
+            total = _opt_int(getattr(r2_obj, "size", None))
 
-            # R2 reflects the applied range on the returned object — use it
-            # to build the 206 response headers.
-            applied = getattr(r2_obj, "range", None) if r2_range is not None else None
-            if applied is not None and not is_js_null(applied):
-                suffix = getattr(applied, "suffix", None)
-                if suffix is not None and not is_js_null(suffix) and total is not None:
-                    length: int | None = int(suffix)
-                    offset = total - int(suffix)
-                else:
-                    raw_offset = getattr(applied, "offset", None)
-                    offset = int(raw_offset) if raw_offset and not is_js_null(raw_offset) else 0
-                    raw_length = getattr(applied, "length", None)
-                    if raw_length is not None and not is_js_null(raw_length):
-                        length = int(raw_length)
-                    else:
-                        length = (total - offset) if total is not None else None
-                status_code = 206
-                if length is not None:
-                    h.set("Content-Length", str(length))
-                    end = offset + length - 1
-                    total_str = str(total) if total is not None else "*"
-                    h.set("Content-Range", f"bytes {offset}-{end}/{total_str}")
-            else:
-                status_code = 200
-                if total is not None:
-                    h.set("Content-Length", str(total))
+            # Extract the range R2 actually applied (authoritative for the body
+            # bytes) into plain ints, then compute the response fields in a
+            # pure, unit-tested helper so the math is covered in CI.
+            suffix = offset = length = None
+            if r2_range is not None:
+                applied = getattr(r2_obj, "range", None)
+                if applied is not None and not is_js_null(applied):
+                    suffix = _opt_int(getattr(applied, "suffix", None))
+                    offset = _opt_int(getattr(applied, "offset", None))
+                    length = _opt_int(getattr(applied, "length", None))
+
+            status_code, content_length, content_range = _partial_content_fields(
+                total, suffix, offset, length
+            )
+            if content_length is not None:
+                h.set("Content-Length", content_length)
+            if content_range is not None:
+                h.set("Content-Range", content_range)
 
             init = js.Object.new()
             init.status = status_code

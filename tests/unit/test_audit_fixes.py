@@ -62,6 +62,85 @@ class TestParseRangeHeader:
 
 
 # =========================================================================
+# entry._partial_content_fields — 206/200 header math (CI-covers the part of
+# _serve_audio that otherwise only runs in the gated e2e suite)
+# =========================================================================
+
+
+class TestPartialContentFields:
+    def _fields(self, total, suffix=None, offset=None, length=None):
+        from entry import _partial_content_fields
+
+        return _partial_content_fields(total, suffix, offset, length)
+
+    def test_no_range_serves_full_body(self) -> None:
+        assert self._fields(1000) == (200, "1000", None)
+
+    def test_no_range_unknown_total(self) -> None:
+        assert self._fields(None) == (200, None, None)
+
+    def test_bounded_range(self) -> None:
+        # bytes=0-99 → R2 applies offset=0,length=100
+        assert self._fields(1000, offset=0, length=100) == (206, "100", "bytes 0-99/1000")
+
+    def test_offset_zero_is_honored_not_treated_as_falsy(self) -> None:
+        # Regression: offset 0 must not be coerced away.
+        status, _cl, cr = self._fields(1000, offset=0, length=10)
+        assert status == 206
+        assert cr == "bytes 0-9/1000"
+
+    def test_open_ended_range_derives_count_from_total(self) -> None:
+        # bytes=500- → offset=500, length not reflected → count = total-offset
+        assert self._fields(1000, offset=500) == (206, "500", "bytes 500-999/1000")
+
+    def test_suffix_range(self) -> None:
+        # bytes=-50 → R2 reflects suffix=50
+        assert self._fields(1000, suffix=50) == (206, "50", "bytes 950-999/1000")
+
+    def test_suffix_larger_than_object_clamps_to_whole(self) -> None:
+        assert self._fields(1000, suffix=5000) == (206, "1000", "bytes 0-999/1000")
+
+    def test_suffix_without_total_falls_back_to_200_not_malformed_206(self) -> None:
+        # The bug this guards: a 206 with neither Content-Range nor
+        # Content-Length must never be produced.
+        status, cl, cr = self._fields(None, suffix=50)
+        assert status == 200
+        assert cr is None
+
+    def test_offset_without_total_or_length_falls_back_to_200(self) -> None:
+        status, cl, cr = self._fields(None, offset=10)
+        assert status == 200
+        assert cr is None
+
+    def test_206_always_has_both_headers(self) -> None:
+        # Whenever status is 206, both Content-Length and Content-Range are set.
+        for kwargs in ({"offset": 0, "length": 100}, {"suffix": 50}, {"offset": 500}):
+            status, cl, cr = self._fields(1000, **kwargs)
+            if status == 206:
+                assert cl is not None and cr is not None
+
+
+# =========================================================================
+# entry._cors_allowed — production CORS gate (the wiring uses import-time
+# _is_production, so the decision predicate is what we can unit-test)
+# =========================================================================
+
+
+class TestCorsAllowed:
+    def test_production_disables_cors(self) -> None:
+        from entry import _cors_allowed
+
+        assert _cors_allowed("production") is False
+
+    def test_dev_and_staging_allow_cors(self) -> None:
+        from entry import _cors_allowed
+
+        assert _cors_allowed("development") is True
+        assert _cors_allowed("staging") is True
+        assert _cors_allowed("") is True
+
+
+# =========================================================================
 # entry._with_security_headers — static assets get the canonical headers
 # =========================================================================
 
