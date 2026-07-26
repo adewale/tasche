@@ -21,7 +21,6 @@ Exit code 0 if audio is proportional to text, 1 if truncated.
 
 from __future__ import annotations
 
-import json
 import os
 import sys
 import uuid
@@ -138,7 +137,8 @@ def main() -> int:
                     audio_bytes = cd.get("audio_bytes", 0)
                     ratio = f"{audio_bytes / text_len:.1f}" if text_len > 0 else "N/A"
                     print(
-                        f"  {cd.get('index', '?'):>5}  {text_len:>12}  {audio_bytes:>13}  {ratio:>8}"
+                        f"  {cd.get('index', '?'):>5}  {text_len:>12}  "
+                        f"{audio_bytes:>13}  {ratio:>8}"
                     )
 
             # -------------------------------------------------------
