@@ -588,3 +588,104 @@ class TestD1FTS5Search:
         resp = await http_client.get("/api/articles", params={"q": "   "})
         assert resp.status_code == 200
         print("  Whitespace query → 200 (returns all articles)")
+
+
+# =========================================================================
+# Audio streaming — the raw-JS _serve_audio path in entry.py
+# =========================================================================
+
+
+class TestAudioStreaming:
+    """Exercise the non-ASGI audio handler (entry._serve_audio) on staging.
+
+    In deployment, /api/articles/{id}/audio is intercepted BEFORE the ASGI
+    app and served by entry._serve_audio (R2 streaming + Range support).
+    Unit tests cannot cross the FFI boundary, so this is the only place
+    that code path actually runs.
+    """
+
+    async def _article_with_audio(
+        self,
+        http_client: httpx.AsyncClient,
+        cleanup_articles: list[str],
+    ) -> str:
+        """Create an article, process it, generate TTS, return its ID."""
+        test_id = uuid.uuid4().hex[:8]
+        resp = await http_client.post(
+            "/api/articles",
+            json={
+                "url": f"https://example.com?e2e=audio-stream-{test_id}",
+                "title": f"Audio Streaming Test {test_id}",
+            },
+        )
+        assert resp.status_code == 201, f"Create failed: {resp.text}"
+        article_id = resp.json()["id"]
+        cleanup_articles.append(article_id)
+
+        resp = await http_client.post(f"/api/articles/{article_id}/process-now", timeout=60.0)
+        assert resp.status_code == 200, f"Process-now failed: {resp.text}"
+
+        resp = await http_client.post(f"/api/articles/{article_id}/listen-later", timeout=30.0)
+        assert resp.status_code in (200, 202), f"listen-later failed: {resp.text}"
+
+        for _ in range(24):
+            await asyncio.sleep(5)
+            resp = await http_client.get(f"/api/articles/{article_id}")
+            assert resp.status_code == 200
+            status = resp.json().get("audio_status")
+            if status == "ready":
+                return article_id
+            if status == "failed":
+                pytest.fail("TTS generation failed — cannot test audio streaming")
+        pytest.fail("TTS did not complete within 120s")
+
+    async def test_full_download_then_range_requests(
+        self,
+        http_client: httpx.AsyncClient,
+        cleanup_articles: list[str],
+    ) -> None:
+        article_id = await self._article_with_audio(http_client, cleanup_articles)
+
+        # Full download: 200 with range/caching headers
+        resp = await http_client.get(f"/api/articles/{article_id}/audio")
+        assert resp.status_code == 200, f"{resp.status_code} {resp.text[:200]}"
+        assert resp.headers.get("accept-ranges") == "bytes"
+        assert "private" in resp.headers.get("cache-control", "")
+        full = resp.content
+        assert len(full) > 1000, f"Audio is only {len(full)} bytes"
+
+        # Bounded range: 206 with correct slice
+        resp = await http_client.get(
+            f"/api/articles/{article_id}/audio",
+            headers={"Range": "bytes=0-99"},
+        )
+        assert resp.status_code == 206, f"{resp.status_code} {resp.text[:200]}"
+        assert resp.headers.get("content-range", "").startswith("bytes 0-99/")
+        assert len(resp.content) == 100
+        assert resp.content == full[:100]
+
+        # Open-ended range: 206 with the tail of the file
+        offset = len(full) - 50
+        resp = await http_client.get(
+            f"/api/articles/{article_id}/audio",
+            headers={"Range": f"bytes={offset}-"},
+        )
+        assert resp.status_code == 206
+        assert resp.content == full[offset:]
+
+        # Suffix range (bytes=-N): last N bytes, exercises the R2 suffix→offset
+        # conversion path in _serve_audio against real R2.
+        resp = await http_client.get(
+            f"/api/articles/{article_id}/audio",
+            headers={"Range": "bytes=-50"},
+        )
+        assert resp.status_code == 206, f"{resp.status_code} {resp.text[:200]}"
+        assert resp.content == full[-50:]
+        assert resp.headers.get("content-range", "").endswith(f"/{len(full)}")
+
+        # Unsatisfiable range: 416
+        resp = await http_client.get(
+            f"/api/articles/{article_id}/audio",
+            headers={"Range": f"bytes={len(full) + 10}-"},
+        )
+        assert resp.status_code == 416

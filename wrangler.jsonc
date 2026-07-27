@@ -18,7 +18,10 @@
   "kv_namespaces": [{ "binding": "SESSIONS", "id": "7ca9ebd65b3e40638ec32f5c635483de" }],
   "queues": {
     "producers": [{ "binding": "ARTICLE_QUEUE", "queue": "tasche-articles" }],
-    "consumers": [{ "queue": "tasche-articles", "max_batch_size": 10, "max_batch_timeout": 60 }]
+    // max_retries must stay in sync with _MAX_QUEUE_DELIVERIES in src/entry.py
+    // (deliveries = 1 + max_retries); the final failed delivery marks the
+    // article 'failed' instead of letting the message drop silently.
+    "consumers": [{ "queue": "tasche-articles", "max_batch_size": 10, "max_batch_timeout": 60, "max_retries": 3 }]
   },
   "observability": {
     "enabled": true,
@@ -42,7 +45,7 @@
       "kv_namespaces": [{ "binding": "SESSIONS", "id": "35956dabdaa04208a7770dee68c24a53" }],
       "queues": {
         "producers": [{ "binding": "ARTICLE_QUEUE", "queue": "tasche-articles-prod" }],
-        "consumers": [{ "queue": "tasche-articles-prod", "max_batch_size": 10, "max_batch_timeout": 60 }]
+        "consumers": [{ "queue": "tasche-articles-prod", "max_batch_size": 10, "max_batch_timeout": 60, "max_retries": 3 }]
       }
     },
     "staging": {
@@ -55,7 +58,7 @@
       "kv_namespaces": [{ "binding": "SESSIONS", "id": "c14befabaecf4b758d28952cb60b9860" }],
       "queues": {
         "producers": [{ "binding": "ARTICLE_QUEUE", "queue": "tasche-articles-staging" }],
-        "consumers": [{ "queue": "tasche-articles-staging", "max_batch_size": 10, "max_batch_timeout": 60 }]
+        "consumers": [{ "queue": "tasche-articles-staging", "max_batch_size": 10, "max_batch_timeout": 60, "max_retries": 3 }]
       }
     }
   }

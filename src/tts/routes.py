@@ -99,6 +99,7 @@ async def listen_later(
             "tts_voice": tts_voice,
         },
         article_id,
+        user_id,
         status_field="audio_status",
         rollback_value=None,
     )
@@ -171,8 +172,9 @@ async def get_audio(
         content=audio_bytes,
         media_type=media_type,
         headers={
-            "Cache-Control": "public, max-age=86400, immutable",
+            "Cache-Control": "private, max-age=86400, immutable",
             "Content-Length": str(len(audio_bytes)),
+            "X-Content-Type-Options": "nosniff",
         },
     )
 
@@ -215,6 +217,7 @@ async def get_audio_timing(
         content=timing_bytes,
         media_type="application/json",
         headers={
-            "Cache-Control": "public, max-age=86400, immutable",
+            "Cache-Control": "private, max-age=86400, immutable",
+            "X-Content-Type-Options": "nosniff",
         },
     )

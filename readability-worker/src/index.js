@@ -1,28 +1,19 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
-import { Readability } from '@mozilla/readability';
-import { parseHTML } from 'linkedom';
+import { extractArticle } from './extract.js';
 
 export class ReadabilityService extends WorkerEntrypoint {
   /**
    * Extract article content from raw HTML using Mozilla Readability.
+   *
+   * Delegates to extractArticle (src/extract.js), which is pure and
+   * Node-testable; this class only provides the Workers RPC surface.
    *
    * @param {string} html - Raw HTML of the fetched page
    * @param {string} url  - Final URL after redirects (for resolving relative URLs)
    * @returns {{ title: string, html: string, excerpt: string, byline: string|null }}
    */
   async parse(html, url) {
-    const { document } = parseHTML(html);
-    const reader = new Readability(document, { url });
-    const article = reader.parse();
-    if (!article) {
-      return { title: '', html: '', excerpt: '', byline: null };
-    }
-    return {
-      title: article.title || '',
-      html: article.content || '',
-      excerpt: article.excerpt || '',
-      byline: article.byline || null,
-    };
+    return extractArticle(html, url);
   }
 }
 

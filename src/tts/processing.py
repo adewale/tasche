@@ -12,7 +12,9 @@ Steps:
  1. Update ``audio_status`` to ``'generating'`` in D1
  2. Fetch ``markdown_content`` from D1
  3. Call Workers AI with the configured TTS model
- 4. Store the audio result to R2 at ``articles/{article_id}/audio.mp3``
+ 4. Store the audio result to R2 at ``articles/{article_id}/audio.{ext}``
+    where ``ext`` is detected from magic bytes — ``ogg`` (Opus, the
+    aura-2 default), ``wav``, or ``mp3``
  5. Update D1: ``audio_key``, ``audio_duration_seconds``, ``audio_status = 'ready'``
  6. On failure: set ``audio_status = 'failed'``
 """

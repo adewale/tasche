@@ -22,8 +22,14 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: |
+            frontend/package-lock.json
+            readability-worker/package-lock.json
 
       - run: cd frontend && npm ci
 
+      - run: cd readability-worker && npm ci --omit=dev
+
       - run: make check
+
+      - run: cd readability-worker && npm test

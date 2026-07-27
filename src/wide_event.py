@@ -217,5 +217,7 @@ def emit_event(event: WideEvent) -> None:
         The WideEvent to emit.
     """
     data = event.finalize()
-    print(json.dumps(data))
+    # default=str: emission runs in `finally` blocks — a stray
+    # non-serialisable field (e.g. a leaked JsProxy) must never raise here.
+    print(json.dumps(data, default=str))
     _current_event.set(None)

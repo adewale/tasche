@@ -8,3 +8,8 @@
 # GITHUB_CLIENT_ID=your_github_client_id
 # GITHUB_CLIENT_SECRET=your_github_client_secret
 # ALLOWED_EMAILS=your@email.com
+
+# Marks this as a local dev environment — required for DISABLE_AUTH to take
+# effect (the bypass refuses to run unless WORKER_ENV is explicitly
+# development or staging).  Never deployed; .dev.vars is local-only.
+WORKER_ENV=development

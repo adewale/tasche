@@ -32,15 +32,24 @@ describe('getBookmarkletCode', () => {
 });
 
 // ---------------------------------------------------------------------------
-// bookmarklet.html inline script — core logic tests
+// bookmarklet popup page — markup (bookmarklet.html) and logic
+// (bookmarklet-page.js, external so the strict CSP applies to the page)
 // ---------------------------------------------------------------------------
 
 describe('bookmarklet.html', () => {
   let html;
+  let pageScript;
 
   beforeEach(() => {
     const htmlPath = resolve(__dirname, '../../public/bookmarklet.html');
     html = readFileSync(htmlPath, 'utf-8');
+    const scriptPath = resolve(__dirname, '../../public/bookmarklet-page.js');
+    pageScript = readFileSync(scriptPath, 'utf-8');
+  });
+
+  it('loads its logic from an external script (CSP: no inline scripts)', () => {
+    expect(html).toContain('src="/bookmarklet-page.js"');
+    expect(html).not.toContain('<script>');
   });
 
   it('contains a form with title input', () => {
@@ -59,29 +68,29 @@ describe('bookmarklet.html', () => {
   });
 
   it('fetches /api/tags for autocomplete', () => {
-    expect(html).toContain("fetch('/api/tags'");
+    expect(pageScript).toContain("fetch('/api/tags'");
   });
 
   it('fetches /api/tag-rules for suggestions', () => {
-    expect(html).toContain("fetch('/api/tag-rules'");
+    expect(pageScript).toContain("fetch('/api/tag-rules'");
   });
 
   it('sends tag_ids in the POST body', () => {
-    expect(html).toContain('body.tag_ids = selectedTagIds');
+    expect(pageScript).toContain('body.tag_ids = selectedTagIds');
   });
 
   it('sends listen_later when Save audio is clicked', () => {
-    expect(html).toContain('body.listen_later = true');
+    expect(pageScript).toContain('body.listen_later = true');
   });
 
   it('handles 401 by redirecting to main app', () => {
-    expect(html).toContain('r.status === 401');
-    expect(html).toContain("window.location.href = '/?url='");
+    expect(pageScript).toContain('r.status === 401');
+    expect(pageScript).toContain("window.location.href = '/?url='");
   });
 
   it('handles 409 duplicate gracefully', () => {
-    expect(html).toContain('r.status === 409');
-    expect(html).toContain('Already saved.');
+    expect(pageScript).toContain('r.status === 409');
+    expect(pageScript).toContain('Already saved.');
   });
 
   it('supports dark mode via CSS variables', () => {
@@ -89,17 +98,17 @@ describe('bookmarklet.html', () => {
   });
 
   it('implements domain rule matching', () => {
-    expect(html).toContain("rule.match_type === 'domain'");
-    expect(html).toContain("rule.match_type === 'title_contains'");
-    expect(html).toContain("rule.match_type === 'url_contains'");
+    expect(pageScript).toContain("rule.match_type === 'domain'");
+    expect(pageScript).toContain("rule.match_type === 'title_contains'");
+    expect(pageScript).toContain("rule.match_type === 'url_contains'");
   });
 
   it('closes on Escape key', () => {
-    expect(html).toContain("e.key === 'Escape'");
-    expect(html).toContain('window.close()');
+    expect(pageScript).toContain("e.key === 'Escape'");
+    expect(pageScript).toContain('window.close()');
   });
 
   it('supports Ctrl/Cmd+Enter for save audio', () => {
-    expect(html).toContain('e.ctrlKey || e.metaKey');
+    expect(pageScript).toContain('e.ctrlKey || e.metaKey');
   });
 });

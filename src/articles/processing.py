@@ -41,7 +41,22 @@ from wide_event import current_event
 from wrappers import HttpError, SafeEnv, http_fetch
 
 
-async def _mark_failed(db: object, article_id: str) -> None:
+async def _set_status(db: object, article_id: str, status: str, user_id: str | None) -> None:
+    """Update an article's status, scoping by user_id when available.
+
+    Queue messages carry ``user_id``; messages enqueued before that field
+    existed may not, so the ownership filter is appended conditionally
+    (constant SQL fragments only — no value interpolation).
+    """
+    sql = "UPDATE articles SET status = ?, updated_at = ? WHERE id = ?"
+    params: list[object] = [status, now_iso(), article_id]
+    if user_id:
+        sql += " AND user_id = ?"
+        params.append(user_id)
+    await db.prepare(sql).bind(*params).run()
+
+
+async def _mark_failed(db: object, article_id: str, user_id: str | None = None) -> None:
     """Log the error and set article status to 'failed' in D1."""
     evt = current_event()
     if evt:
@@ -52,18 +67,16 @@ async def _mark_failed(db: object, article_id: str) -> None:
             }
         )
     try:
-        await (
-            db.prepare("UPDATE articles SET status = ?, updated_at = ? WHERE id = ?")
-            .bind("failed", now_iso(), article_id)
-            .run()
-        )
+        await _set_status(db, article_id, "failed", user_id)
     except Exception:
         evt = current_event()
         if evt:
             evt.set("status_update_error", traceback.format_exc()[-500:])
 
 
-async def process_article(article_id: str, original_url: str, env: object) -> None:
+async def process_article(
+    article_id: str, original_url: str, env: object, user_id: str | None = None
+) -> None:
     """Process a single article through the full content pipeline.
 
     This is the main entry point called by the queue handler.  On success,
@@ -105,11 +118,7 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
 
     try:
         # Step 1: Update status to 'processing'
-        await (
-            db.prepare("UPDATE articles SET status = ?, updated_at = ? WHERE id = ?")
-            .bind("processing", now_iso(), article_id)
-            .run()
-        )
+        await _set_status(db, article_id, "processing", user_id)
 
         # Check if raw HTML was pre-supplied (e.g. bookmarklet content capture).
         # If so, skip the HTTP fetch and use the pre-supplied content.
@@ -255,10 +264,9 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
             },
         )
 
-        # Step 13: Update D1 with all metadata
-        await (
-            db.prepare(
-                """UPDATE articles SET
+        # Step 13: Update D1 with all metadata (scoped by user_id when the
+        # queue message carried one — constant SQL fragment, no interpolation)
+        metadata_sql = """UPDATE articles SET
                 title = ?,
                 excerpt = ?,
                 author = ?,
@@ -275,27 +283,28 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
                 status = ?,
                 updated_at = ?
             WHERE id = ?"""
-            )
-            .bind(
-                title,
-                excerpt,
-                author,
-                word_count,
-                reading_time,
-                domain,
-                final_url,
-                canonical_url,
-                html_key,
-                thumbnail_key,
-                original_key,
-                len(image_map),
-                markdown,
-                "ready",
-                now_iso(),
-                article_id,
-            )
-            .run()
-        )
+        metadata_params: list[object] = [
+            title,
+            excerpt,
+            author,
+            word_count,
+            reading_time,
+            domain,
+            final_url,
+            canonical_url,
+            html_key,
+            thumbnail_key,
+            original_key,
+            len(image_map),
+            markdown,
+            "ready",
+            now_iso(),
+            article_id,
+        ]
+        if user_id:
+            metadata_sql += " AND user_id = ?"
+            metadata_params.append(user_id)
+        await db.prepare(metadata_sql).bind(*metadata_params).run()
 
         # Step 14: FTS5 indexing is handled by D1 triggers automatically.
 
@@ -320,12 +329,16 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
                 .first()
             )
             if art_row and art_row.get("audio_status") == "pending":
-                # Atomically set to 'generating' to prevent double-enqueue
+                # Atomically set to 'generating' to prevent double-enqueue.
+                # Scope by user_id (defense-in-depth, consistent with every
+                # other article write) using the owner from the row above.
+                row_user_id = art_row.get("user_id")
                 await (
                     db.prepare(
-                        "UPDATE articles SET audio_status = ? WHERE id = ? AND audio_status = ?"
+                        "UPDATE articles SET audio_status = ? "
+                        "WHERE id = ? AND user_id = ? AND audio_status = ?"
                     )
-                    .bind("generating", article_id, "pending")
+                    .bind("generating", article_id, row_user_id, "pending")
                     .run()
                 )
                 await env.ARTICLE_QUEUE.send(
@@ -370,7 +383,7 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
                 )
             raise
         # Client errors (4xx) are permanent — mark as failed
-        await _mark_failed(db, article_id)
+        await _mark_failed(db, article_id, user_id)
     except Exception:
         if in_storage_phase:
             # R2/D1 errors are transient — let propagate for queue retry
@@ -385,7 +398,7 @@ async def process_article(article_id: str, original_url: str, env: object) -> No
                 )
             raise
         # Content extraction errors are permanent — mark as failed
-        await _mark_failed(db, article_id)
+        await _mark_failed(db, article_id, user_id)
 
 
 async def _fetch_page(

@@ -4,16 +4,36 @@ All notable changes to Tasche are documented in this file.
 
 ## [Unreleased]
 
+### Security
+- **Security headers on all responses** — CSP, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy (and HSTS over HTTPS) are now applied to static assets and the SPA `index.html`, not just `/api/*` responses. The CSP includes `media-src 'self' blob:` so the audio player (which plays a `blob:` URL) keeps working, and the raw audio endpoint emits the same loud 500 as other endpoints when `DISABLE_AUTH` is set in an ineligible environment.
+- **`DISABLE_AUTH` guard hardened** — the auth bypass now requires `WORKER_ENV` to be explicitly `development` or `staging`. Production and the default (env-less) deploy path can never run with auth disabled. Local dev: `make setup` adds `WORKER_ENV=development` to `.dev.vars` automatically.
+- **Authenticated content is `Cache-Control: private`** — audio, audio-timing, images, and thumbnails no longer carry `public`, keeping session-gated content out of shared caches.
+- **Defense-in-depth SQL scoping** — all article UPDATE statements (queue pipeline included) now filter by `user_id`; the enqueue rollback helper uses whitelisted literal SQL instead of field-name interpolation.
+
+### Fixed
+- **Queue messages can no longer vanish silently** — consumers set explicit `max_retries: 3`; on the final failed delivery the article is marked `failed` (instead of being stuck `processing`/`generating` forever) and retries use exponential backoff (30s/60s/120s).
+- **Audio endpoint supports HTTP Range requests** — single-range requests get 206 partial responses via R2 range reads (fixes audio seeking, notably on iOS Safari). Audio requests are now also logged as wide events.
+- **`make test` works on a fresh clone** — `[tool.uv] default-groups` now installs the `test` and `workers` dependency groups on plain `uv sync`.
+- **Staging auth restore is interrupt-safe** — `make test-e2e`/`verify-staging` restore `DISABLE_AUTH` via an INT/TERM trap, verify staging returns 401 afterwards, and fail loudly if the restore doesn't stick.
+- **SPA fallback serves `/` directly** — unmatched paths no longer bounce through a 307 redirect from `/index.html` canonicalisation.
+- **Fetch timeouts abort the underlying request** — `http_fetch` wires an `AbortController` so a timed-out fetch is cancelled instead of left running.
+- **`SafeQueue.send` no longer mutates the caller's message dict**; wide-event emission uses `json.dumps(..., default=str)` so a non-serialisable field can't crash a `finally` block.
+
 ### Changed
 - **Bookmarklet rewritten** — replaced cross-origin `fetch()` with a `window.open()` popup backed by a dedicated `/bookmarklet` page. The popup makes a same-origin request, shows "Saved!", and auto-closes. No more CORS issues with `SameSite=Lax` cookies.
-- **CORS locked down to localhost** — production requests are now same-origin (via the bookmarklet popup), so CORS is restricted to `localhost` and `127.0.0.1` for local dev only.
+- **CORS locked down to localhost** — production requests are now same-origin (via the bookmarklet popup), so CORS is restricted to `localhost` and `127.0.0.1` for local dev only, and the middleware is omitted entirely when `WORKER_ENV=production`.
 - **README simplified** — deploy-button flow now leads with dashboard-only steps (no CLI needed). Screenshot added.
+- **Docs corrected** — `docs/tts-models.md` now reflects the shipped `aura-2-en` (Opus/OGG) default; CLAUDE.md documents the required `ALLOWED_EMAILS` secret and marks external skills as not bundled; stale "tail sampling" and "periodic health check" docstrings removed.
 
 ### Removed
 - **Browser extension deleted** — the `extension/` directory is gone. The bookmarklet popup replaces it with zero maintenance burden.
 
 ### Added
 - **Deploy guide** (`docs/deploy-guide.md`) — operational reference for what's auto-created vs auto-detected vs manual in the deploy flow.
+- **Codebase audit report** (`docs/codebase-audit-2026-06-12.md`) — full audit of code, docs, tests, CI, and infra; this release fixes all of its findings.
+- **Readability worker tests** — the extraction contract (`title`/`html`/`excerpt`/`byline`) is now covered by `node --test` tests, run in CI.
+- **Mobile-first responsive design** with bottom navigation (post-0.3.0, previously unlisted).
+- **Unified search/tagging UX** — search moved into the header, URL-driven library state, tagging overhaul (post-0.3.0, previously unlisted).
 
 ## [0.3.0] - 2026-03-02
 

@@ -100,6 +100,26 @@ async def delete_session(kv: Any, session_id: str) -> None:
     await kv.delete(key)
 
 
+# Environments where the DISABLE_AUTH bypass is permitted.  The bypass
+# requires an EXPLICIT non-production WORKER_ENV: the default deploy path
+# (deploy-button / `wrangler deploy` without --env) sets no WORKER_ENV, and
+# treating "unset" as non-production would leave real instances one secret
+# away from running with auth disabled.
+_DEV_BYPASS_ENVS = {"development", "staging"}
+
+
+def dev_bypass_allowed(disable_auth: object, worker_env: object) -> bool:
+    """Return ``True`` if the DISABLE_AUTH bypass may be honoured.
+
+    Requires ``DISABLE_AUTH == "true"`` AND ``WORKER_ENV`` explicitly set to
+    one of ``development`` / ``staging``.  Local dev gets
+    ``WORKER_ENV=development`` via ``.dev.vars``; staging sets it in
+    ``wrangler.jsonc``.  Production and the default (env-less) deployment
+    never qualify.
+    """
+    return str(disable_auth) == "true" and str(worker_env) in _DEV_BYPASS_ENVS
+
+
 def parse_allowed_emails(raw: str) -> set[str]:
     """Parse a comma-separated list of allowed emails into a set.
 
