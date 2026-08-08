@@ -8,7 +8,7 @@ Checks:
   1. Sync route handlers (must be async def -- sync causes RuntimeError)
   2. eval() or Function() calls (blocked in Workers V8 isolates)
   3. Module-level PRNG usage (breaks Wasm snapshot for fast cold starts)
-  4. Direct 'import js' outside boundary modules (should go through wrappers.py)
+  4. Direct 'import js' outside boundary modules (should go through boundary)
   5. Threading/multiprocessing imports (unavailable in Pyodide)
   6. C-extension library imports (incompatible with Pyodide/WebAssembly)
   7. Sync HTTP libraries (requests, urllib3 -- must use async httpx or HttpClient)
@@ -28,7 +28,7 @@ SRC_DIR = PROJECT_ROOT / "src"
 
 # Files allowed to use 'import js' directly
 JS_IMPORT_ALLOWED = {
-    SRC_DIR / "wrappers.py",
+    SRC_DIR / "boundary",
     SRC_DIR / "entry.py",
 }
 
@@ -178,8 +178,8 @@ def scan_file(path: Path) -> list[Violation]:
             if path.resolve() not in {f.resolve() for f in JS_IMPORT_ALLOWED}:
                 violations.append(Violation(
                     path, lineno, "DIRECT_JS_IMPORT",
-                    "Direct 'import js' should only appear in wrappers.py and entry.py -- "
-                    "use Safe* wrappers or http_fetch() from wrappers.py instead",
+                    "Direct 'import js' should only appear in boundary and entry.py -- "
+                    "use Safe* wrappers or http_fetch() from boundary instead",
                     stripped,
                 ))
 
@@ -206,7 +206,7 @@ def scan_file(path: Path) -> list[Violation]:
             violations.append(Violation(
                 path, lineno, "SYNC_HTTP",
                 "Sync HTTP libraries (requests, urllib3) don't work in Pyodide -- "
-                "use HttpClient from wrappers.py or async httpx",
+                "use HttpClient from boundary or async httpx",
                 stripped,
             ))
 

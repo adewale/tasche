@@ -387,7 +387,7 @@ class TestConfigCheck:
         # Clone the app's routes into a test app with env injection
         test_app = FastAPI()
 
-        from src.wrappers import SafeEnv
+        from src.boundary import SafeEnv
 
         safe_env = SafeEnv(env)
 
@@ -490,7 +490,7 @@ class TestDisableAuthGuard:
         from fastapi.testclient import TestClient as TC
 
         from entry import app
-        from src.wrappers import SafeEnv
+        from src.boundary import SafeEnv
 
         safe_env = SafeEnv(env)
         test_app = FastAPI()

@@ -16,7 +16,7 @@ from __future__ import annotations
 from urllib.parse import urlparse
 
 from articles.urls import _is_private_hostname
-from wrappers import http_fetch
+from src.boundary import http_fetch
 
 # Timeout for health check requests (seconds).
 _HEALTH_CHECK_TIMEOUT = 10.0

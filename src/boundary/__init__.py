@@ -7,46 +7,43 @@ module is unavailable.
 
 Key design decisions
 --------------------
-* **HAS_PYODIDE guard** – a single ``try/except ImportError`` at module level
-  determines whether we are running inside Pyodide.  All JS-specific code is
-  gated behind this flag.
+* **HAS_PYODIDE guard** – local JS-specific HTTP code is gated behind this flag.
 * **No module-level PRNG** – calling ``random`` or ``secrets`` at import time
   would break the Wasm snapshot that Workers uses for fast cold starts.
-* **``to_py()`` is a method on JsProxy** – it is *not* a standalone function.
-* **``to_js()`` needs ``dict_converter=Object.fromEntries``** for dicts,
-  otherwise Python dicts become JS ``Map`` objects instead of plain Objects.
-* **Python ``None`` maps to JS ``undefined``** (not ``null``).  When a real
-  JSON ``null`` is needed, use ``js.JSON.parse("null")``.
+* Generic JS/Python conversion is delegated to CFBoundary.
 """
 
 from __future__ import annotations
 
+# NOTE: This file is intentionally retained as Tasche's application compatibility
+# layer during the CFBoundary migration.  It preserves Tasche's historical wrapper
+# API (SafeReadability, HttpResponse shape, observability hooks, and binding-name
+# properties) while CFBoundary stabilizes its generic API.  Generic behavior should
+# move to CFBoundary incrementally; application-specific binding names remain here.
 import time
 from dataclasses import dataclass
-from typing import Any
+from importlib import import_module
+from typing import Any, cast
+
+import cfboundary.ffi as cf_boundary
 
 # ---------------------------------------------------------------------------
 # Pyodide detection
 # ---------------------------------------------------------------------------
 
+# App-local JS runtime flag used only for Tasche-specific JS APIs such as
+# ``safe_http_fetch``. Generic FFI conversion runtime state lives in CFBoundary.
 HAS_PYODIDE = False
 
 try:
-    import js  # type: ignore[import-not-found]
-    from pyodide.ffi import (  # type: ignore[import-not-found]
-        JsException,
-        JsProxy,
-        to_js,
-    )
-
+    js: Any = import_module("js")
     HAS_PYODIDE = True
-except ImportError:
-    js = None  # type: ignore[assignment]
-    JsProxy = None  # type: ignore[assignment, misc]
-    to_js = None  # type: ignore[assignment]
+except ModuleNotFoundError as exc:
+    if exc.name != "js":
+        raise
+    js: Any = None
 
-    class JsException(Exception):  # type: ignore[no-redef]
-        """Stub that never matches outside Pyodide."""
+JsException = cf_boundary.JsException
 
 
 # ---------------------------------------------------------------------------
@@ -63,9 +60,7 @@ def get_js_null() -> Any:
     Called as a function (not a module-level constant) to avoid executing JS
     code during the Wasm snapshot phase.
     """
-    if HAS_PYODIDE:
-        return js.JSON.parse("null")
-    return None
+    return cf_boundary.js_null()
 
 
 def d1_null(value: Any) -> Any:
@@ -77,121 +72,28 @@ def d1_null(value: Any) -> Any:
 
     Outside Pyodide, returns the value unchanged.
     """
-    if value is None:
-        return get_js_null()
-    return value
+    return cf_boundary.d1_null(value)
 
 
 async def consume_readable_stream(value: Any) -> bytes:
-    """Consume a JS ReadableStream (or ArrayBuffer) into Python bytes.
-
-    Workers AI and R2 may return ReadableStream objects that need to be
-    consumed via the ``getReader()`` / ``read()`` protocol, or via
-    ``.arrayBuffer()``, before conversion to Python bytes.  This helper
-    handles the detection and consumption so callers don't need to
-    duck-type JS objects directly.
-
-    **Important:** ``getReader()`` is preferred over ``.arrayBuffer()``
-    for ReadableStream objects.  In Pyodide, ``await stream.arrayBuffer()``
-    may only capture the first buffered chunk of a ReadableStream, silently
-    truncating multi-chunk responses (e.g. Workers AI TTS audio).  The
-    reader path reads ALL chunks sequentially and is the reliable way to
-    fully consume a stream across the FFI boundary.
-
-    Outside Pyodide, passes the value through ``to_py_bytes()`` directly.
-    """
-    if value is not None and hasattr(value, "getReader"):
-        # Prefer getReader() — reads ALL chunks sequentially.
-        # arrayBuffer() on a ReadableStream in Pyodide may only return
-        # the first buffered chunk, silently truncating the data.
-        reader = value.getReader()
-        parts: list[bytes] = []
-        try:
-            while True:
-                result = await reader.read()
-                done = getattr(result, "done", True)
-                if done:
-                    break
-                chunk = getattr(result, "value", None)
-                if chunk is not None:
-                    parts.append(to_py_bytes(chunk))
-        finally:
-            reader.releaseLock()
-        return b"".join(parts)
-    elif value is not None and hasattr(value, "arrayBuffer"):
-        # Fallback for Response objects or ArrayBuffer-like values
-        # that don't expose getReader().
-        value = await value.arrayBuffer()
-    return to_py_bytes(value)
+    """Consume a JS ReadableStream or ArrayBuffer into Python bytes."""
+    return await cf_boundary.consume_readable_stream(value)
 
 
 async def stream_r2_body(r2_obj: Any) -> Any:
-    """Yield Python bytes chunks from an R2 object's ReadableStream body.
-
-    This is the **only** place that should interact with ReadableStream's
-    ``getReader()`` / ``read()`` / ``releaseLock()`` protocol.  Business
-    logic should call this async generator instead of manipulating JS
-    ReadableStream objects directly.
-
-    Falls back to loading the entire buffer via ``consume_readable_stream``
-    when no streaming interface is available (e.g. in tests with mocks).
-    """
-    body = getattr(r2_obj, "body", None)
-
-    if body is not None and hasattr(body, "getReader"):
-        reader = body.getReader()
-        try:
-            while True:
-                result = await reader.read()
-                done = getattr(result, "done", True)
-                if done:
-                    break
-                chunk = getattr(result, "value", None)
-                if chunk is not None:
-                    yield to_py_bytes(chunk)
-        finally:
-            reader.releaseLock()
-    else:
-        # Fallback: load entire buffer
-        data = await consume_readable_stream(r2_obj)
-        yield data
+    """Yield Python byte chunks from an R2 object's body."""
+    async for chunk in cf_boundary.stream_r2_body(r2_obj):
+        yield chunk
 
 
 def get_r2_size(r2_obj: Any) -> int | None:
-    """Extract the ``size`` property from an R2 object.
-
-    Returns ``None`` if the property is missing or represents JS
-    ``undefined`` / ``null``.
-    """
-    size = getattr(r2_obj, "size", None)
-    if size is None or is_js_null(size):
-        return None
-    return int(size)
+    """Extract the size property from an R2 object."""
+    return cf_boundary.get_r2_size(r2_obj)
 
 
 def to_js_bytes(data: bytes | bytearray | memoryview) -> Any:
-    """Convert Python bytes to a JS ``Uint8Array`` for R2 / Workers AI.
-
-    R2's ``.put()`` and Workers AI ``.run()`` reject Python ``bytes``
-    because the Pyodide FFI does not automatically convert them to a JS
-    buffer type.  This helper converts explicitly via ``to_js()``.
-
-    ``to_js(bytes)`` creates a ``Uint8Array`` *view* into Wasm linear
-    memory.  In theory, ``memory.grow()`` could detach the backing
-    ``ArrayBuffer`` during async operations.  In practice, Python yields
-    to JS during ``await``, so no Python allocations (and thus no
-    ``memory.grow()``) occur while JS APIs like ``r2.put()`` are in
-    flight.  Empirically tested on staging: removing ``.slice()`` caused
-    zero corruption across content writes and TTS audio (2026-02-25).
-
-    ``str`` values are accepted natively by R2 — do NOT use this helper
-    for string payloads.
-
-    Outside Pyodide, returns the data unchanged (for test mocks).
-    """
-    if not HAS_PYODIDE:
-        return data
-    return to_js(data)
+    """Convert Python bytes-like values to a JS Uint8Array in Workers."""
+    return cf_boundary.to_js_bytes(data)
 
 
 # ---------------------------------------------------------------------------
@@ -202,93 +104,13 @@ MAX_CONVERSION_DEPTH = 20
 
 
 def _to_py_safe(value: Any, depth: int = 0) -> Any:
-    """Recursively convert a JsProxy value into native Python types.
-
-    Handles nested objects, arrays, ``null``, and ``undefined`` gracefully.
-    Falls through to returning the original value when it is already a Python
-    primitive or when we are not running in Pyodide.
-
-    Parameters
-    ----------
-    value:
-        The value to convert.  May be a JsProxy, a Python primitive, or
-        ``None``.
-    depth:
-        Current recursion depth.  Conversion stops at ``MAX_CONVERSION_DEPTH``
-        to prevent infinite loops on circular references.
-    """
-    if depth > MAX_CONVERSION_DEPTH:
-        return value
-
-    # None / non-Pyodide fast path
-    if value is None or not HAS_PYODIDE:
-        return value
-
-    # Check for JS null and undefined
-    if is_js_null(value):
-        return None
-
-    # JsProxy objects need conversion
-    if isinstance(value, JsProxy):
-        # Use the built-in .to_py() first — it handles most cases.
-        try:
-            converted = value.to_py()
-        except Exception as exc:
-            import json as _json
-
-            print(_json.dumps({"event": "ffi_conversion_error", "error": str(exc)[:200]}))
-            return None
-
-        # to_py() may return nested JsProxy objects inside dicts/lists;
-        # recurse to clean them up.
-        if isinstance(converted, dict):
-            return {k: _to_py_safe(v, depth + 1) for k, v in converted.items()}
-        if isinstance(converted, list):
-            return [_to_py_safe(item, depth + 1) for item in converted]
-        return converted
-
-    # Plain dicts/lists may still contain JsNull values from .to_py()
-    # recursion — scrub them.
-    if isinstance(value, dict):
-        return {k: _to_py_safe(v, depth + 1) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_to_py_safe(item, depth + 1) for item in value]
-
-    # Already a Python type
-    return value
+    """Recursively convert JsProxy/null/undefined values to native Python."""
+    return cf_boundary.to_py(value) if depth <= MAX_CONVERSION_DEPTH else value
 
 
 def to_py_bytes(value: Any) -> bytes:
-    """Convert a JS buffer (ArrayBuffer, Uint8Array) to Python ``bytes``.
-
-    This is the **only** place that should call ``.to_py()`` on raw byte
-    buffers from JS.  All R2 ReadableStream chunks, ``arrayBuffer()``
-    results, and Workers AI audio outputs should use this helper.
-
-    Outside Pyodide the value is passed through ``bytes()`` directly.
-    """
-    if value is None:
-        return b""
-    if HAS_PYODIDE and isinstance(value, JsProxy):
-        # Try .to_py() first — works for Uint8Array → memoryview.
-        # Some JS types (e.g. raw ArrayBuffer) produce a JsProxy from
-        # .to_py() that bytes() can't handle directly; fall back to
-        # reading via Uint8Array constructor.
-        converted = value.to_py()
-        if isinstance(converted, (bytes, bytearray, memoryview)):
-            return bytes(converted)
-        # Fallback: wrap in JS Uint8Array, then .to_py()
-        try:
-            import js  # type: ignore[import-not-found]
-
-            uint8 = js.Uint8Array.new(value)
-            return bytes(uint8.to_py())
-        except Exception:
-            pass
-        return bytes(converted)
-    if isinstance(value, bytes):
-        return value
-    return bytes(value)
+    """Convert a JS buffer to Python bytes."""
+    return cf_boundary.to_py_bytes(value)
 
 
 # ---------------------------------------------------------------------------
@@ -307,21 +129,11 @@ def is_js_null(value: Any) -> bool:
     ``null`` is a ``JsNull`` type that is **not** Python ``None``.
     Outside Pyodide we simply check for ``None``.
     """
-    if not HAS_PYODIDE:
+    if not cf_boundary.is_pyodide_runtime():
         return value is None
-
-    # Pyodide exposes js.undefined as the singleton for JS undefined.
-    try:
-        if value is js.undefined:
-            return True
-    except AttributeError:
-        pass
-
-    # JS null becomes JsNull in Pyodide — not Python None.
-    if type(value).__name__ == "JsNull":
-        return True
-
-    return False
+    if value is None:
+        return False
+    return cf_boundary.is_js_missing(value)
 
 
 # Backward-compatible alias for code that imported the private name.
@@ -334,14 +146,11 @@ def _is_js_undefined(value: Any) -> bool:
     In Pyodide, ``undefined`` is exposed as a special singleton on the ``js``
     module.  Outside Pyodide we simply check for ``None``.
     """
-    if not HAS_PYODIDE:
+    if not cf_boundary.is_pyodide_runtime():
         return value is None
-
-    # Pyodide exposes js.undefined as the singleton for JS undefined.
-    try:
-        return value is js.undefined
-    except AttributeError:
+    if value is None:
         return False
+    return cf_boundary.is_js_missing(value) and not cf_boundary.is_js_null(value)
 
 
 # ---------------------------------------------------------------------------
@@ -350,25 +159,8 @@ def _is_js_undefined(value: Any) -> bool:
 
 
 def _to_js_value(value: Any) -> Any:
-    """Convert a Python value to a JS-compatible representation.
-
-    When running in Pyodide, dicts are converted with
-    ``dict_converter=Object.fromEntries`` so they become plain JS Objects
-    rather than ``Map`` instances.
-
-    Outside Pyodide the value is returned unchanged (useful for tests).
-    """
-    if not HAS_PYODIDE or value is None:
-        return value
-
-    if isinstance(value, dict):
-        return to_js(value, dict_converter=js.Object.fromEntries)
-
-    if isinstance(value, (list, tuple)):
-        return to_js(value, dict_converter=js.Object.fromEntries)
-
-    # Primitives (str, int, float, bool) cross the FFI boundary as-is.
-    return value
+    """Convert a Python value to a JS-compatible representation."""
+    return cf_boundary.to_js(value)
 
 
 # ---------------------------------------------------------------------------
@@ -711,10 +503,7 @@ def d1_rows(results: Any) -> list[dict[str, Any]]:
     if results is None or is_js_null(results):
         return []
 
-    if HAS_PYODIDE:
-        converted = _to_py_safe(results)
-    else:
-        converted = results
+    converted = _to_py_safe(results)
 
     # Handle both attribute access (.results) and dict access (["results"])
     if isinstance(converted, list):
@@ -745,10 +534,7 @@ def d1_first(results: Any) -> dict[str, Any] | None:
     if results is None or is_js_null(results):
         return None
 
-    if HAS_PYODIDE:
-        converted = _to_py_safe(results)
-    else:
-        converted = results
+    converted = _to_py_safe(results)
 
     if converted is None:
         return None
@@ -882,7 +668,8 @@ async def http_fetch(
             js_opts = _to_js_value(opts)
 
             try:
-                response = await asyncio.wait_for(js.fetch(url, js_opts), timeout=timeout)
+                js_module = cast(Any, js)
+                response = await asyncio.wait_for(js_module.fetch(url, js_opts), timeout=timeout)
             except TimeoutError as exc:
                 raise TimeoutError(f"Request timed out after {timeout}s") from exc
             except Exception as exc:
@@ -896,7 +683,7 @@ async def http_fetch(
 
             # Convert JS Headers to a Python dict
             try:
-                headers_obj = js.Object.fromEntries(response.headers.entries())
+                headers_obj = js_module.Object.fromEntries(response.headers.entries())
                 resp_headers = _to_py_safe(headers_obj) or {}
             except Exception:
                 resp_headers = {}

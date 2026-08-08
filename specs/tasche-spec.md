@@ -1432,7 +1432,7 @@ Each milestone is a **vertical slice** — it delivers a complete, end-to-end us
 
 | Phase | Name | Vertical Slice | Done |
 |-------|------|---------------|------|
-| 1 | Foundation | Project setup, FFI boundary layer (`wrappers.py`), D1 schema, entry point, test infrastructure | ✅ |
+| 1 | Foundation | Project setup, FFI boundary layer (`boundary`), D1 schema, entry point, test infrastructure | ✅ |
 | 2 | Authentication | GitHub OAuth login → KV session → protected API routes → login/logout UI | ✅ |
 | 3 | Save & Read | POST URL → article created in D1 → queue message → list articles → view article in browser | ✅ |
 | 4 | Content Pipeline | Queue consumer fetches page → readability extraction → images to WebP → HTML+MD in R2 → FTS5 index → article displays in reader | ✅ |

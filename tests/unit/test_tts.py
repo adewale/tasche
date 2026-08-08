@@ -1247,21 +1247,21 @@ class TestConsumeReadableStream:
 
     async def test_plain_bytes_passthrough(self) -> None:
         """Plain bytes pass through unchanged."""
-        from wrappers import consume_readable_stream
+        from src.boundary import consume_readable_stream
 
         result = await consume_readable_stream(b"hello world")
         assert result == b"hello world"
 
     async def test_none_returns_empty_bytes(self) -> None:
         """None input returns empty bytes."""
-        from wrappers import consume_readable_stream
+        from src.boundary import consume_readable_stream
 
         result = await consume_readable_stream(None)
         assert result == b""
 
     async def test_multi_chunk_reader(self) -> None:
         """A ReadableStream with multiple chunks returns all data concatenated."""
-        from wrappers import consume_readable_stream
+        from src.boundary import consume_readable_stream
 
         chunks = [b"chunk1-", b"chunk2-", b"chunk3"]
 
@@ -1295,7 +1295,7 @@ class TestConsumeReadableStream:
 
     async def test_getReader_preferred_over_arrayBuffer(self) -> None:
         """When both getReader and arrayBuffer exist, getReader is used."""
-        from wrappers import consume_readable_stream
+        from src.boundary import consume_readable_stream
 
         class MockReadResult:
             def __init__(self, done, value=None):
@@ -1331,7 +1331,7 @@ class TestConsumeReadableStream:
 
     async def test_arrayBuffer_fallback(self) -> None:
         """When only arrayBuffer exists (no getReader), use it as fallback."""
-        from wrappers import consume_readable_stream
+        from src.boundary import consume_readable_stream
 
         class MockArrayBufferOnly:
             async def arrayBuffer(self):

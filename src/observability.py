@@ -8,7 +8,7 @@ and server errors are always emitted, while successful fast requests are
 sampled at a low rate to control log volume.
 
 Infrastructure hop timing (D1, R2, KV, Queue, AI, HTTP) is captured
-automatically by the Safe* wrappers in ``wrappers.py`` via a ``WideEvent``
+automatically by the Safe* wrappers in ``boundary`` via a ``WideEvent``
 context variable.  This middleware creates the event and emits it.
 
 Implemented as a pure ASGI middleware (no BaseHTTPMiddleware) to avoid

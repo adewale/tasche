@@ -24,8 +24,8 @@ from articles.storage import (
 )
 from articles.urls import check_duplicate, extract_domain, validate_url
 from auth.dependencies import get_current_user
+from src.boundary import consume_readable_stream, get_r2_size
 from utils import generate_id, get_user_entity, now_iso
-from wrappers import consume_readable_stream, get_r2_size
 
 router = APIRouter()
 
@@ -58,7 +58,7 @@ async def _serve_r2_object(
 ) -> Response:
     """Serve an R2 object as an HTTP response.
 
-    Reads the full body via :func:`wrappers.consume_readable_stream` and
+    Reads the full body via :func:`src.boundary.consume_readable_stream` and
     returns a plain ``Response``.  ``StreamingResponse`` with async generators
     is broken in the Python Workers ASGI adapter (it truncates after the
     first chunk), so we must read the full body into memory.

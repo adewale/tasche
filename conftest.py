@@ -1,7 +1,7 @@
 """Root conftest — ensures ``src/`` is importable during tests.
 
 The Cloudflare Python Workers runtime treats ``src/`` as the module root, so
-application code uses bare imports like ``from wrappers import ...`` and
+application code uses bare imports like ``from src.boundary import ...`` and
 ``from auth.session import ...``.  This conftest adds ``src/`` to
 ``sys.path`` so that those same imports resolve correctly under pytest.
 """

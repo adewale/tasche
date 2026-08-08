@@ -1,4 +1,4 @@
-"""Tests for src/wrappers.py — the FFI boundary layer.
+"""Tests for src/boundary/__init__.py — the FFI boundary layer.
 
 These tests run under standard CPython (pytest) where Pyodide is NOT
 available.  They verify that every helper degrades gracefully and that
@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.wrappers import (
+from src.boundary import (
     HAS_PYODIDE,
     HttpError,
     HttpResponse,

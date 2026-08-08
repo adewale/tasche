@@ -69,7 +69,7 @@ Because the first request "worked" and the second "failed" with the same headers
 
 ## The Fix
 
-The fix in `src/wrappers.py` is to bypass the bundled httpx transport entirely and call `js.fetch()` directly in Pyodide. This avoids the `HEADERS_TO_IGNORE` filter:
+The fix in `src/boundary/__init__.py` is to bypass the bundled httpx transport entirely and call `js.fetch()` directly in Pyodide. This avoids the `HEADERS_TO_IGNORE` filter:
 
 ```python
 if HAS_PYODIDE:
@@ -90,7 +90,7 @@ A simpler alternative: patch `python_modules/httpx/_transports/jsfetch.py` line 
 
 ## Affected Code
 
-The `http_fetch()` wrapper in `src/wrappers.py` bypasses httpx in Pyodide for all outbound HTTP. This covers:
+The `http_fetch()` wrapper in `src/boundary/__init__.py` bypasses httpx in Pyodide for all outbound HTTP. This covers:
 
 - **Auth flows** (`src/auth/routes.py`) -- GitHub API calls that require `User-Agent`
 - **Article fetching** (`src/articles/processing.py`) -- `_fetch_page()` sets a `User-Agent`

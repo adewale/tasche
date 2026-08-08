@@ -81,7 +81,7 @@ Initial release of Tasche — a self-hosted read-it-later service on Cloudflare 
 **Core**
 - GitHub OAuth authentication with KV sessions (7-day TTL)
 - `ALLOWED_EMAILS` whitelist with per-request re-validation and session revocation
-- FFI boundary layer (`src/wrappers.py`) for safe JsProxy conversion at D1/R2/KV/Queue boundaries
+- FFI boundary layer (`src/boundary/__init__.py`) for safe JsProxy conversion at D1/R2/KV/Queue boundaries
 
 **Articles**
 - Save articles by URL with automatic content processing via Queues

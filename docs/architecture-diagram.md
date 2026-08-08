@@ -38,7 +38,7 @@ flowchart TB
                 Auth --> Routes
             end
 
-            FFI["wrappers.py · FFI Boundary · SafeEnv"]
+            FFI["boundary · FFI Boundary · SafeEnv"]
             FastAPI --> FFI
             QueueHandler --> FFI
         end

@@ -33,7 +33,7 @@ Patterns observed in [adewale/planet_cf](https://github.com/adewale/planet_cf) t
 
 2. **Type assertions at the FFI boundary** — `SafeD1.first()` asserts result is `dict|None`, `SafeAI.run()` asserts result is `dict`, etc. Violations emit a structured log event (`boundary_type_violation`) instead of crashing. Catches conversion bugs before they propagate to business logic.
 
-3. **Pyodide FFI fakes for testing** — monkeypatch `HAS_PYODIDE=True` in CPython tests and inject fake JsNull/JsUndefined/FakeJsProxy classes. This catches the `JsNull is not None` class of bugs that regular mock-based testing misses. Tasche documents this gotcha in MEMORY.md but has no regression tests for it.
+3. **Pyodide FFI fakes for testing** — install a fake CFBoundary Pyodide runtime in CPython tests and inject fake JsNull/JsUndefined/FakeJsProxy classes. This catches the `JsNull is not None` class of bugs that regular mock-based testing misses. Tasche documents this gotcha in MEMORY.md but has no regression tests for it.
 
 4. **D1 query counting** — increment a counter in `SafeD1.prepare()` and include it in the wide event. Makes N+1 query patterns visible in production logs without profiling.
 

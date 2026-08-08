@@ -57,9 +57,9 @@ Each message is processed individually within a batch. On success: `message.ack(
 
 ## 3. The FFI Boundary
 
-**File:** `src/wrappers.py`
+**File:** `src/boundary/__init__.py`
 
-All JavaScript↔Python conversion is centralized in this single module. Application code never touches `JsProxy` directly. The module detects Pyodide at import time (`HAS_PYODIDE` flag) and falls back to pass-through behavior for CPython unit tests.
+Tasche keeps its historical `src/boundary/__init__.py` compatibility API, but generic JavaScript↔Python conversion is delegated to CFBoundary. Application code never touches `JsProxy` directly. Tasche-local `HAS_PYODIDE` is only used for app-specific JS APIs such as outbound `js.fetch`; conversion runtime state and test fakes live in CFBoundary.
 
 ### SafeEnv
 
@@ -94,7 +94,7 @@ SafeEnv(env)
 - Thin passthrough with null/undefined detection on `get()`
 
 **SafeQueue:**
-- `send(message)` → converts Python dict to JS Object via `_to_js_value()` with `dict_converter=Object.fromEntries` (without this, dicts become JS `Map` objects)
+- `send(message)` → converts Python dict to a JS-compatible object through CFBoundary via `_to_js_value()`
 
 **SafeAI:**
 - `run(model, inputs)` → converts inputs dict to JS Object, checks for null/undefined result
@@ -116,13 +116,13 @@ SafeEnv(env)
 
 | Function | Direction | Purpose |
 |----------|-----------|---------|
-| `_to_py_safe(value)` | JS → Python | Recursive JsProxy→dict/list, scrubs JsNull |
-| `_to_js_value(value)` | Python → JS | Dict→Object via `Object.fromEntries` |
+| `_to_py_safe(value)` | JS → Python | Compatibility wrapper around CFBoundary recursive conversion |
+| `_to_js_value(value)` | Python → JS | Compatibility wrapper around CFBoundary Python→JS conversion |
 | `d1_first(results)` | JS → Python | Unwrap `.first()` result wrapper |
 | `d1_rows(results)` | JS → Python | Extract `.results` from `.all()` |
-| `to_js_bytes(data)` | Python → JS | bytes → Uint8Array (Wasm view) |
-| `to_py_bytes(value)` | JS → Python | ArrayBuffer/Uint8Array → bytes |
-| `consume_readable_stream(value)` | JS → Python | ReadableStream → bytes via `getReader()` |
+| `to_js_bytes(data)` | Python → JS | Delegates bytes-like conversion to CFBoundary |
+| `to_py_bytes(value)` | JS → Python | Delegates ArrayBuffer/Uint8Array conversion to CFBoundary |
+| `consume_readable_stream(value)` | JS → Python | Delegates ReadableStream consumption to CFBoundary |
 
 ### ReadableStream Consumption
 

@@ -26,9 +26,9 @@ import struct
 import traceback
 
 from articles.storage import article_key
+from src.boundary import consume_readable_stream
 from utils import now_iso
 from wide_event import current_event
-from wrappers import consume_readable_stream
 
 
 class _RetryableError(RuntimeError):
@@ -863,7 +863,7 @@ async def process_tts(
 
         # Verify the R2 write by reading back the object size
         verify_obj = await r2.get(audio_r2_key)
-        from wrappers import get_r2_size
+        from src.boundary import get_r2_size
 
         verify_size = get_r2_size(verify_obj) if verify_obj else -1
         r2_write_verified = verify_size == audio_data_len
