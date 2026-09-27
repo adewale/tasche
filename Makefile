@@ -48,7 +48,14 @@ frontend-test:
 
 frontend-check: frontend-lint frontend-format-check frontend-test frontend-build
 
-check: lint test frontend-check
+# Static checks for Workers-runtime pitfalls the CPython unit tests cannot see
+# (FFI boundary bypasses, handler inconsistencies, Pyodide-incompatible code).
+agent-checks:
+	uv run python scripts/agent-tools/check_ffi_boundary.py
+	uv run python scripts/agent-tools/check_handler_consistency.py
+	uv run python scripts/agent-tools/check_pyodide_pitfalls.py
+
+check: lint agent-checks test frontend-check
 
 smoke-staging:
 	@python3 scripts/smoke-test.py https://tasche-staging.adewale-883.workers.dev
