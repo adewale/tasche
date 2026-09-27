@@ -451,10 +451,10 @@ class TestDefaultSortIsNewest:
         select_calls = [(sql, params) for sql, params in captured if "SELECT" in sql]
         assert len(select_calls) >= 1
 
-        # Verify the SQL uses ORDER BY created_at DESC (the 'newest' sort)
+        # Verify the SQL uses ORDER BY articles.created_at DESC (the 'newest' sort)
         sql = select_calls[0][0]
-        assert "ORDER BY created_at DESC" in sql, (
-            f"Expected 'ORDER BY created_at DESC' in SQL, got: {sql}. "
+        assert "ORDER BY articles.created_at DESC" in sql, (
+            f"Expected 'ORDER BY articles.created_at DESC' in SQL, got: {sql}. "
             "If this default ever changes, the frontend's 'newest' sort "
             "would break because it never sends sort='newest'."
         )

@@ -13,12 +13,14 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
-from src.articles.routes import _sanitize_fts5_query, router
+from src.articles.routes import _LIST_COLUMNS, _VALID_SORT_OPTIONS, _sanitize_fts5_query, router
 from tests.conftest import (
     ArticleFactory,
     MockEnv,
+    SqliteD1,
     TrackingD1,
     make_test_helpers,
 )
@@ -259,7 +261,7 @@ class TestSearchSqlStructure:
 
         sql = _select_sql(db)
         assert "articles_fts" not in sql
-        assert "ORDER BY created_at DESC" in sql
+        assert "ORDER BY articles.created_at DESC" in sql
 
 
 # ---------------------------------------------------------------------------
@@ -344,7 +346,7 @@ class TestSearchComposesWithFilters:
         client.get("/api/articles?q=test&sort=oldest")
 
         sql = _select_sql(db)
-        assert "ORDER BY created_at ASC" in sql
+        assert "ORDER BY articles.created_at ASC" in sql
         assert "bm25(" not in sql
 
     async def test_pagination_params_passed_through(self) -> None:
@@ -355,6 +357,167 @@ class TestSearchComposesWithFilters:
         params = _select_params(db)
         assert params[-2] == 5
         assert params[-1] == 10
+
+
+# ---------------------------------------------------------------------------
+# GET /api/articles?q=... against real SQLite FTS5 (the production migrations)
+#
+# The string assertions above pin the SQL text; these run that SQL. Restores
+# the SQLite-backed ranking tier from 887c8e3 (LESSONS_LEARNED Lesson 82),
+# which 45cc325 replaced with string checks. Unlike the originals, they go
+# through the endpoint, so they test the SQL the code actually generates
+# against the schema the migrations actually create.
+# ---------------------------------------------------------------------------
+
+
+async def _sqlite_search_client() -> tuple[TestClient, SqliteD1]:
+    db = SqliteD1()
+    for user_id in ("user_001", "user_002"):
+        db.conn.execute(
+            "INSERT INTO users (id, email, username) VALUES (?, ?, ?)",
+            (user_id, f"{user_id}@example.com", user_id),
+        )
+    client, _ = await _authenticated_client(MockEnv(db=db))
+    return client, db
+
+
+def _insert_article(
+    db: SqliteD1,
+    *,
+    id: str,
+    title: str = "",
+    excerpt: str = "",
+    markdown_content: str = "",
+    user_id: str = "user_001",
+    created_at: str = "2026-01-01T00:00:00.000+00:00",
+) -> None:
+    db.conn.execute(
+        "INSERT INTO articles (id, user_id, original_url, title, excerpt, markdown_content, "
+        "status, created_at) VALUES (?, ?, ?, ?, ?, ?, 'ready', ?)",
+        (id, user_id, f"https://example.com/{id}", title, excerpt, markdown_content, created_at),
+    )
+
+
+def _ids(resp: Any) -> list[str]:
+    assert resp.status_code == 200, resp.text
+    return [article["id"] for article in resp.json()]
+
+
+class TestSearchOnSqliteFts5:
+    async def test_search_sql_executes_and_matches(self) -> None:
+        client, db = await _sqlite_search_client()
+        _insert_article(db, id="a1", title="Test article")
+        assert _ids(client.get("/api/articles?q=test")) == ["a1"]
+
+    async def test_title_match_ranks_above_content_match(self) -> None:
+        client, db = await _sqlite_search_client()
+        _insert_article(
+            db,
+            id="content_only",
+            title="Unrelated Topic",
+            excerpt="Nothing here",
+            markdown_content="This article discusses python programming at length",
+        )
+        _insert_article(
+            db,
+            id="title_match",
+            title="Python Programming Guide",
+            excerpt="Not relevant",
+            markdown_content="Some other content entirely",
+        )
+        assert _ids(client.get("/api/articles?q=python")) == ["title_match", "content_only"]
+
+    async def test_excerpt_match_ranks_above_content_match(self) -> None:
+        client, db = await _sqlite_search_client()
+        _insert_article(
+            db,
+            id="content_only",
+            title="Unrelated",
+            excerpt="Nothing relevant",
+            markdown_content="This covers rust language features in detail",
+        )
+        _insert_article(
+            db,
+            id="excerpt_match",
+            title="Unrelated",
+            excerpt="A comprehensive guide to rust programming",
+            markdown_content="Other content",
+        )
+        assert _ids(client.get("/api/articles?q=rust")) == ["excerpt_match", "content_only"]
+
+    async def test_title_match_ranks_above_excerpt_match(self) -> None:
+        """Title (10x) outranks excerpt (5x): catches swapped bm25 weights."""
+        client, db = await _sqlite_search_client()
+        _insert_article(
+            db,
+            id="excerpt_only",
+            title="Unrelated Topic",
+            excerpt="Learn everything about kubernetes orchestration",
+            markdown_content="Other content",
+        )
+        _insert_article(
+            db,
+            id="title_match",
+            title="Kubernetes Deep Dive",
+            excerpt="Not relevant at all",
+            markdown_content="Other content",
+        )
+        assert _ids(client.get("/api/articles?q=kubernetes")) == ["title_match", "excerpt_only"]
+
+    async def test_filters_by_user_id(self) -> None:
+        client, db = await _sqlite_search_client()
+        _insert_article(db, id="mine", title="My Python Article", user_id="user_001")
+        _insert_article(db, id="theirs", title="Their Python Article", user_id="user_002")
+        assert _ids(client.get("/api/articles?q=python")) == ["mine"]
+
+    async def test_no_matches_returns_empty(self) -> None:
+        client, db = await _sqlite_search_client()
+        _insert_article(db, id="a1", title="Something else")
+        assert _ids(client.get("/api/articles?q=nonexistent")) == []
+
+    async def test_result_contains_list_columns_and_parsed_tags(self) -> None:
+        client, db = await _sqlite_search_client()
+        _insert_article(db, id="a1", title="Column Check")
+        db.conn.execute(
+            "INSERT INTO tags (id, user_id, name, created_at) VALUES ('t1', 'user_001', 'x', 'now')"
+        )
+        db.conn.execute("INSERT INTO article_tags (article_id, tag_id) VALUES ('a1', 't1')")
+
+        resp = client.get("/api/articles?q=column")
+
+        assert _ids(resp) == ["a1"]
+        (row,) = resp.json()
+        for column in (c.strip() for c in _LIST_COLUMNS.split(",")):
+            assert column in row, f"missing column {column}"
+        assert row["tags"] == [{"id": "t1", "name": "x"}]
+        assert "tags_json" not in row
+
+    @pytest.mark.parametrize(
+        "query",
+        ["python", "hello world", "café", "test123", "'; DROP TABLE articles; --", "* OR 1=1 --"],
+        ids=["simple", "multi_word", "unicode", "alphanumeric", "sql_injection", "fts_operators"],
+    )
+    async def test_sanitized_queries_run_without_sqlite_errors(self, query: str) -> None:
+        client, db = await _sqlite_search_client()
+        _insert_article(db, id="a1", title="Python hello world café test123")
+        resp = client.get("/api/articles", params={"q": query})
+        assert resp.status_code == 200, resp.text
+        if query in ("python", "hello world", "café", "test123"):
+            assert _ids(resp) == ["a1"]
+        assert db.conn.execute("SELECT COUNT(*) FROM articles").fetchone()[0] == 1
+
+    @pytest.mark.parametrize("sort", sorted(_VALID_SORT_OPTIONS))
+    async def test_every_sort_composes_with_search(self, sort: str) -> None:
+        """Explicit sorts replace bm25 and must still be valid next to the FTS join."""
+        client, db = await _sqlite_search_client()
+        _insert_article(db, id="b", title="Beta python", created_at="2026-01-02T00:00:00+00:00")
+        _insert_article(db, id="a", title="Alpha python", created_at="2026-01-01T00:00:00+00:00")
+        ids = _ids(client.get(f"/api/articles?q=python&sort={sort}"))
+        assert sorted(ids) == ["a", "b"]
+        if sort in ("title_asc", "oldest"):
+            assert ids == ["a", "b"]
+        if sort == "newest":
+            assert ids == ["b", "a"]
 
 
 # ---------------------------------------------------------------------------

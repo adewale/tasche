@@ -93,12 +93,14 @@ _VALID_AUDIO_STATUSES = {"pending", "generating", "ready", "failed"}
 
 # Allowlist of safe sort options — maps user-facing key to SQL ORDER BY clause.
 # Prevents SQL injection by never interpolating user input directly.
+# Columns are table-qualified: with ``q`` the query joins articles_fts, which
+# also has a ``title`` column, and a bare ``title`` is ambiguous (D1 error).
 _VALID_SORT_OPTIONS: dict[str, str] = {
-    "newest": "created_at DESC",
-    "oldest": "created_at ASC",
-    "shortest": "reading_time_minutes ASC NULLS LAST",
-    "longest": "reading_time_minutes DESC NULLS LAST",
-    "title_asc": "title ASC",
+    "newest": "articles.created_at DESC",
+    "oldest": "articles.created_at ASC",
+    "shortest": "articles.reading_time_minutes ASC NULLS LAST",
+    "longest": "articles.reading_time_minutes DESC NULLS LAST",
+    "title_asc": "articles.title ASC",
 }
 
 # Characters that have special meaning in FTS5 query syntax.
