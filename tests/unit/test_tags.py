@@ -18,6 +18,7 @@ from tests.conftest import (
     ArticleFactory,
     MockD1,
     MockEnv,
+    SqliteD1,
     TrackingD1,
     make_test_helpers,
 )
@@ -133,6 +134,71 @@ class TestCreateTag:
 
         assert resp.status_code == 400
         assert "100" in resp.json()["detail"]
+
+
+class TestCreateTagOnSqlite:
+    """POST /api/tags against real SQLite with the production schema.
+
+    No test supplies a ``meta.changes`` value: SQLite's UNIQUE(user_id, name)
+    index decides, and SqliteD1 reports changes the way recorded D1 does.
+    """
+
+    @staticmethod
+    def _db(after_execute: Any = None) -> SqliteD1:
+        db = SqliteD1(after_execute=after_execute)
+        db.conn.execute(
+            "INSERT INTO users (id, email, username) VALUES (?, ?, ?)",
+            ("user_001", "test@example.com", "tester"),
+        )
+        return db
+
+    async def test_creates_and_persists_tag(self) -> None:
+        db = self._db()
+        client, _ = await _authenticated_client(MockEnv(db=db))
+
+        resp = client.post("/api/tags", json={"name": "python"})
+
+        assert resp.status_code == 201
+        rows = db.conn.execute("SELECT id, name FROM tags WHERE user_id = 'user_001'").fetchall()
+        assert [(r["id"], r["name"]) for r in rows] == [(resp.json()["id"], "python")]
+
+    async def test_concurrent_duplicate_reaches_the_insert_or_ignore_409(self) -> None:
+        """A tag created between the duplicate SELECT and the INSERT yields 409.
+
+        The concurrent request is simulated by inserting the same name right
+        after the route's SELECT runs, so the route's SELECT sees nothing and
+        its INSERT OR IGNORE hits the UNIQUE index (D1 changes=0).
+        """
+        raced = []
+
+        def concurrent_insert(sql: str, params: list[Any], conn: Any) -> None:
+            if not raced and sql.startswith("SELECT id FROM tags WHERE user_id = ? AND name = ?"):
+                raced.append(params)
+                conn.execute(
+                    "INSERT INTO tags (id, user_id, name, created_at) VALUES (?, ?, ?, ?)",
+                    ("tag_other_request", *params, "2026-01-01"),
+                )
+
+        db = self._db(after_execute=concurrent_insert)
+        client, _ = await _authenticated_client(MockEnv(db=db))
+
+        resp = client.post("/api/tags", json={"name": "race-tag"})
+
+        assert raced == [["user_001", "race-tag"]]
+        assert resp.status_code == 409
+        assert "already exists" in resp.json()["detail"]
+        rows = db.conn.execute("SELECT id FROM tags WHERE name = 'race-tag'").fetchall()
+        assert [r["id"] for r in rows] == ["tag_other_request"]
+
+    async def test_sequential_duplicate_is_caught_by_the_select(self) -> None:
+        db = self._db()
+        client, _ = await _authenticated_client(MockEnv(db=db))
+
+        assert client.post("/api/tags", json={"name": "python"}).status_code == 201
+        resp = client.post("/api/tags", json={"name": "python"})
+
+        assert resp.status_code == 409
+        assert db.conn.execute("SELECT COUNT(*) FROM tags").fetchone()[0] == 1
 
 
 class TestListTags:
