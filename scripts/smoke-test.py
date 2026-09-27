@@ -29,7 +29,9 @@ def check(base, path, validate):
 
 CHECKS = [
     ("/api/health", lambda d: d.get("status") == "ok"),
-    ("/api/health/config", lambda d: d.get("status") in ("ok", "degraded", "error")),
+    # "error" means a required binding or secret is missing (src/entry.py), so
+    # the deploy is broken. "degraded" means only an optional one is missing.
+    ("/api/health/config", lambda d: d.get("status") in ("ok", "degraded")),
 ]
 
 
