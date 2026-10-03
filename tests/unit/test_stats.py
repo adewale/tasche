@@ -214,6 +214,41 @@ class TestActivityWindows:
         assert stats["archived_this_week"] == 1
         assert stats["archived_this_month"] == 2
 
+    async def test_week_window_excludes_articles_just_over_seven_days_old(
+        self, db: SqliteD1
+    ) -> None:
+        """Regression: ISO timestamps ('...T...') were compared as text against
+        datetime('now', ...) ('... ...'). 'T' sorts after ' ', so anything saved on
+        the cutoff's calendar day counted, up to a day older than the window."""
+        _add_article(db, created=_ago(days=7, minutes=-1), updated=_ago(days=7, minutes=-1))
+        _add_article(
+            db,
+            created=_ago(days=7, minutes=1),
+            updated=_ago(days=7, minutes=1),
+            reading_status="archived",
+        )
+
+        stats = await _stats(db)
+
+        assert stats["articles_this_week"] == 1
+        assert stats["archived_this_week"] == 0
+
+    async def test_month_window_excludes_articles_just_over_thirty_days_old(
+        self, db: SqliteD1
+    ) -> None:
+        _add_article(db, created=_ago(days=30, minutes=-1))
+        _add_article(
+            db,
+            created=_ago(days=30, minutes=1),
+            updated=_ago(days=30, minutes=1),
+            reading_status="archived",
+        )
+
+        stats = await _stats(db)
+
+        assert stats["articles_this_month"] == 1
+        assert stats["archived_this_month"] == 0
+
 
 class TestArticlesByMonth:
     async def test_merges_saved_and_archived_months_in_order(self, db: SqliteD1) -> None:

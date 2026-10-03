@@ -16,6 +16,15 @@ from auth.dependencies import get_current_user
 
 router = APIRouter()
 
+# Timestamps are stored as ISO 8601 text ('2026-01-31T09:00:00.000+00:00', from
+# now_iso() and the schema defaults), so window cutoffs must use the same format.
+# datetime('now', ...) returns '2026-01-31 09:00:00', and because 'T' sorts after
+# ' ', comparing against it admits everything on the cutoff's calendar day.
+_ISO_NOW = "strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now', '{}')"
+_WEEK_AGO = _ISO_NOW.format("-7 days")
+_MONTH_AGO = _ISO_NOW.format("-30 days")
+_YEAR_AGO = _ISO_NOW.format("-12 months")
+
 
 @router.get("")
 async def get_stats(
@@ -67,12 +76,12 @@ async def get_stats(
         # 4-7. Weekly/monthly activity (saved + archived) in a single query
         db.prepare(
             "SELECT "
-            "COUNT(CASE WHEN created_at >= datetime('now', '-7 days') THEN 1 END) AS saved_week, "
-            "COUNT(CASE WHEN created_at >= datetime('now', '-30 days') THEN 1 END) AS saved_month, "
+            f"COUNT(CASE WHEN created_at >= {_WEEK_AGO} THEN 1 END) AS saved_week, "
+            f"COUNT(CASE WHEN created_at >= {_MONTH_AGO} THEN 1 END) AS saved_month, "
             "COUNT(CASE WHEN reading_status = 'archived' "
-            "AND updated_at >= datetime('now', '-7 days') THEN 1 END) AS archived_week, "
+            f"AND updated_at >= {_WEEK_AGO} THEN 1 END) AS archived_week, "
             "COUNT(CASE WHEN reading_status = 'archived' "
-            "AND updated_at >= datetime('now', '-30 days') THEN 1 END) AS archived_month "
+            f"AND updated_at >= {_MONTH_AGO} THEN 1 END) AS archived_month "
             "FROM articles WHERE user_id = ?"
         )
         .bind(user_id)
@@ -106,7 +115,7 @@ async def get_stats(
         db.prepare(
             "SELECT strftime('%Y-%m', created_at) AS month, COUNT(*) AS cnt "
             "FROM articles WHERE user_id = ? "
-            "AND created_at >= datetime('now', '-12 months') "
+            f"AND created_at >= {_YEAR_AGO} "
             "GROUP BY month ORDER BY month"
         )
         .bind(user_id)
@@ -115,7 +124,7 @@ async def get_stats(
         db.prepare(
             "SELECT strftime('%Y-%m', updated_at) AS month, COUNT(*) AS cnt "
             "FROM articles WHERE user_id = ? AND reading_status = 'archived' "
-            "AND updated_at >= datetime('now', '-12 months') "
+            f"AND updated_at >= {_YEAR_AGO} "
             "GROUP BY month ORDER BY month"
         )
         .bind(user_id)
