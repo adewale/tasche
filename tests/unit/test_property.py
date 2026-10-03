@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from hypothesis import given, settings
+from hypothesis import example, given, settings
 from hypothesis import strategies as st
 
 from src.articles.extraction import calculate_reading_time, count_words
@@ -191,6 +191,7 @@ class TestChunkPackingProperties:
 
     @given(sentences=st.lists(_sentence, min_size=1, max_size=40), max_chars=st.integers(1, 400))
     @settings(max_examples=200)
+    @example(sentences=["Aa.", "Bb.", "Cc."], max_chars=7)  # first two fill it exactly
     def test_chunks_fit_and_are_packed_greedily(self, sentences: list[str], max_chars: int) -> None:
         """Each chunk fits the TTS limit (unless it is one oversized sentence) and
         ends only because the next sentence would not fit, so an article is spoken

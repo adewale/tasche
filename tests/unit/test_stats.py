@@ -145,6 +145,7 @@ class TestTotals:
         _add_article(db, reading_status="archived", word_count=300)
         _add_article(db, reading_status="archived", word_count=None)
         _add_article(db, reading_status="unread", word_count=9000)
+        _add_article(db, reading_status="reading", word_count=700)
 
         assert (await _stats(db))["total_words_read"] == 1500
 
@@ -258,12 +259,13 @@ class TestArticlesByMonth:
         recent, middle, older = _ago(days=5), _ago(days=70), _ago(days=140)
         _add_article(db, created=middle, updated=recent, reading_status="archived")
         _add_article(db, created=older, reading_status="unread")
-        _add_article(db, created=older, reading_status="unread")
+        _add_article(db, created=older, reading_status="archived")
+        _add_article(db, created=recent, reading_status="unread")
 
         assert (await _stats(db))["articles_by_month"] == [
-            {"month": older.strftime("%Y-%m"), "saved": 2, "archived": 0},
+            {"month": older.strftime("%Y-%m"), "saved": 2, "archived": 1},
             {"month": middle.strftime("%Y-%m"), "saved": 1, "archived": 0},
-            {"month": recent.strftime("%Y-%m"), "saved": 0, "archived": 1},
+            {"month": recent.strftime("%Y-%m"), "saved": 1, "archived": 1},
         ]
 
     async def test_excludes_articles_older_than_twelve_months(self, db: SqliteD1) -> None:
@@ -289,6 +291,12 @@ class TestReadingStreak:
             _add_article(db, updated=_ago(days=days), reading_status="archived")
 
         assert (await _stats(db))["reading_streak_days"] == 2
+
+    async def test_zero_when_last_archive_was_before_yesterday(self, db: SqliteD1) -> None:
+        for days in (2, 3):
+            _add_article(db, updated=_ago(days=days), reading_status="archived")
+
+        assert (await _stats(db))["reading_streak_days"] == 0
 
     async def test_only_archived_articles_count(self, db: SqliteD1) -> None:
         _add_article(db, updated=_ago(days=0), reading_status="unread")
