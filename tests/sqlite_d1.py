@@ -82,14 +82,16 @@ class SqliteD1:
     def write(self, sql: str, params: list[Any]) -> int:
         # Measured inside a transaction: in autocommit mode the FTS5 index flush
         # at commit adds a change that D1 does not report.
-        self.conn.execute("BEGIN")
+        # A savepoint also nests inside a transaction a test opened itself.
+        self.conn.execute("SAVEPOINT d1_write")
         try:
             before = self.conn.total_changes
             self.conn.execute(sql, params).fetchall()
             changes = self.conn.total_changes - before
-            self.conn.execute("COMMIT")
+            self.conn.execute("RELEASE d1_write")
         except BaseException:
-            self.conn.execute("ROLLBACK")
+            self.conn.execute("ROLLBACK TO d1_write")
+            self.conn.execute("RELEASE d1_write")
             raise
         return changes
 
