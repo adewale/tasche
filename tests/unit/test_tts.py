@@ -2320,8 +2320,8 @@ class TestContentProportionalDuration:
 class TestKnownTextGolden:
     """Feed a fixed, known piece of text and verify audio output properties.
 
-    Uses a deterministic 500-word text and verifies:
-    - Expected number of TTS chunks
+    Uses a deterministic 720-word text and verifies:
+    - Chunks fit the TTS limit and are packed greedily
     - Audio duration within expected range (at ~150 WPM)
     - All sentences from input appear in timing manifest
     - Total audio bytes match sum of chunk sizes
@@ -2333,26 +2333,22 @@ class TestKnownTextGolden:
         "How vexingly quick daft zebras jump. "
         "The five boxing wizards jump quickly. "
         "Jackdaws love my big sphinx of quartz. "
-    ) * 20  # ~500 words, ~2500 chars → 2 chunks
+    ) * 20  # 720 words, 4000 chars
 
-    async def test_golden_text_chunk_count(self) -> None:
-        """Known text should produce the expected number of chunks.
-
-        The golden text is ~4000 chars of plain text (no markdown to strip),
-        so at 1900 chars/chunk it should produce exactly 3 chunks, each
-        under the 1900-char limit.
-        """
+    async def test_golden_text_chunks_fit_the_tts_limit(self) -> None:
+        """At the default 1900-char budget, every chunk fits and no two adjacent
+        chunks would have fit together (packing itself is property-tested in
+        test_property.py::TestChunkPackingProperties)."""
         from tts.processing import chunk_text
 
-        # The golden text has no markdown syntax, so strip_markdown is a no-op.
-        # We call chunk_text directly and validate against a hardcoded count.
         chunks = chunk_text(self.GOLDEN_TEXT)
-        assert len(chunks) == 3, (
-            f"Expected exactly 3 chunks for ~4000 chars at 1900 char limit, got {len(chunks)}"
-        )
-        # Every chunk should be under the limit
-        for i, chunk in enumerate(chunks):
-            assert len(chunk) <= 1900, f"Chunk {i} is {len(chunk)} chars, exceeds 1900 limit"
+
+        assert len(chunks) > 1
+        for chunk in chunks:
+            assert len(chunk) <= 1900
+        for current, following in zip(chunks, chunks[1:]):
+            first_sentence = following.split(". ")[0] + "."
+            assert len(current) + 1 + len(first_sentence) > 1900
 
     async def test_golden_text_produces_complete_audio(self) -> None:
         """All chunks of golden text are processed and concatenated."""

@@ -172,6 +172,36 @@ class TestChunkTextWithSentencesProperties:
             assert chunk_text_with_sentences(text) == []
 
 
+# st.text() rarely contains a sentence boundary, so the properties above mostly
+# see single-sentence input. Generated prose reaches the packing logic.
+_word = st.text(alphabet="abcdefghijklmnopqrstuvwxyz", min_size=1, max_size=12)
+_sentence = st.builds(
+    lambda words, end: " ".join(words).capitalize() + end,
+    st.lists(_word, min_size=1, max_size=10),
+    st.sampled_from(".!?"),
+)
+
+
+class TestChunkPackingProperties:
+    @given(sentences=st.lists(_sentence, min_size=1, max_size=40), max_chars=st.integers(1, 400))
+    @settings(max_examples=200)
+    def test_sentences_kept_whole_and_in_order(self, sentences: list[str], max_chars: int) -> None:
+        chunks = chunk_text_with_sentences(" ".join(sentences), max_chars)
+        assert [s for chunk in chunks for s in chunk["sentences"]] == sentences
+
+    @given(sentences=st.lists(_sentence, min_size=1, max_size=40), max_chars=st.integers(1, 400))
+    @settings(max_examples=200)
+    def test_chunks_fit_and_are_packed_greedily(self, sentences: list[str], max_chars: int) -> None:
+        """Each chunk fits the TTS limit (unless it is one oversized sentence) and
+        ends only because the next sentence would not fit, so an article is spoken
+        in as few TTS calls as its sentence boundaries allow."""
+        chunks = chunk_text_with_sentences(" ".join(sentences), max_chars)
+        for chunk in chunks:
+            assert len(chunk["text"]) <= max_chars or len(chunk["sentences"]) == 1
+        for current, following in zip(chunks, chunks[1:]):
+            assert len(current["text"]) + 1 + len(following["sentences"][0]) > max_chars
+
+
 # ---------------------------------------------------------------------------
 # 4. strip_markdown
 # ---------------------------------------------------------------------------
