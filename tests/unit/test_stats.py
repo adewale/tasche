@@ -148,12 +148,14 @@ class TestTotals:
 
         assert (await _stats(db))["total_words_read"] == 1500
 
-    async def test_articles_by_status(self, db: SqliteD1) -> None:
+    async def test_articles_by_status_folds_legacy_reading_into_unread(self, db: SqliteD1) -> None:
+        # The CHECK constraint still allows the historical 'reading' value.
         _add_article(db, reading_status="unread")
         _add_article(db, reading_status="unread")
+        _add_article(db, reading_status="reading")
         _add_article(db, reading_status="archived")
 
-        assert (await _stats(db))["articles_by_status"] == {"unread": 2, "archived": 1}
+        assert (await _stats(db))["articles_by_status"] == {"unread": 3, "archived": 1}
 
     async def test_avg_reading_time_ignores_missing_values(self, db: SqliteD1) -> None:
         for minutes in (5, 7, 10, None):

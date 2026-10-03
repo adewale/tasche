@@ -141,7 +141,8 @@ async def get_stats(
     for row in status_rows:
         status = row.get("reading_status", "")
         if status in articles_by_status:
-            articles_by_status[status] = row.get("cnt", 0)
+            # += because a legacy 'reading' row may already have been folded in
+            articles_by_status[status] += row.get("cnt", 0)
         elif status == "reading":
             # Fold legacy 'reading' status into 'unread'
             articles_by_status["unread"] += row.get("cnt", 0)
