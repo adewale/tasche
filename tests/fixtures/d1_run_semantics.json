@@ -1,0 +1,176 @@
+{
+  "description": "meta.changes returned by D1's stmt.bind(...).run(), recorded locally by scripts/record-d1-semantics.mjs. Scenarios run in order after setup.",
+  "recorded_with": {
+    "wrangler": "4.71.0",
+    "miniflare": "4.20260301.1",
+    "workerd": "1.20260301.1",
+    "node": "v22.22.2"
+  },
+  "setup": [
+    {
+      "sql": "INSERT INTO users (id, email, username) VALUES (?, ?, ?)",
+      "params": [
+        "user_001",
+        "a@example.com",
+        "a"
+      ]
+    },
+    {
+      "sql": "INSERT INTO tags (id, user_id, name, created_at) VALUES (?, ?, ?, ?)",
+      "params": [
+        "tag_1",
+        "user_001",
+        "python",
+        "2026-01-01"
+      ]
+    },
+    {
+      "sql": "INSERT INTO tags (id, user_id, name, created_at) VALUES (?, ?, ?, ?)",
+      "params": [
+        "tag_2",
+        "user_001",
+        "rust",
+        "2026-01-01"
+      ]
+    },
+    {
+      "sql": "INSERT INTO articles (id, user_id, original_url, title) VALUES (?, ?, ?, ?)",
+      "params": [
+        "art_1",
+        "user_001",
+        "https://example.com/1",
+        "One"
+      ]
+    },
+    {
+      "sql": "INSERT INTO articles (id, user_id, original_url, title) VALUES (?, ?, ?, ?)",
+      "params": [
+        "art_2",
+        "user_001",
+        "https://example.com/2",
+        "Two"
+      ]
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "insert_new_row",
+      "unconfigured_mock": true,
+      "sql": "INSERT INTO tags (id, user_id, name, created_at) VALUES (?, ?, ?, ?)",
+      "params": [
+        "tag_3",
+        "user_001",
+        "go",
+        "2026-01-02"
+      ],
+      "success": true,
+      "meta_changes": 1
+    },
+    {
+      "name": "insert_or_ignore_new_row",
+      "unconfigured_mock": true,
+      "sql": "INSERT OR IGNORE INTO tags (id, user_id, name, created_at) VALUES (?, ?, ?, ?)",
+      "params": [
+        "tag_4",
+        "user_001",
+        "zig",
+        "2026-01-02"
+      ],
+      "success": true,
+      "meta_changes": 1
+    },
+    {
+      "name": "insert_or_ignore_unique_conflict",
+      "unconfigured_mock": false,
+      "sql": "INSERT OR IGNORE INTO tags (id, user_id, name, created_at) VALUES (?, ?, ?, ?)",
+      "params": [
+        "tag_5",
+        "user_001",
+        "python",
+        "2026-01-02"
+      ],
+      "success": true,
+      "meta_changes": 0
+    },
+    {
+      "name": "insert_into_table_with_fts_trigger",
+      "unconfigured_mock": false,
+      "sql": "INSERT INTO articles (id, user_id, original_url, title) VALUES (?, ?, ?, ?)",
+      "params": [
+        "art_3",
+        "user_001",
+        "https://example.com/3",
+        "Three"
+      ],
+      "success": true,
+      "meta_changes": 3
+    },
+    {
+      "name": "update_one_matching_row",
+      "unconfigured_mock": false,
+      "sql": "UPDATE tags SET name = ? WHERE id = ? AND user_id = ?",
+      "params": [
+        "python3",
+        "tag_1",
+        "user_001"
+      ],
+      "success": true,
+      "meta_changes": 1
+    },
+    {
+      "name": "update_no_matching_row",
+      "unconfigured_mock": true,
+      "sql": "UPDATE articles SET is_favorite = ?, updated_at = ? WHERE id = ? AND user_id = ?",
+      "params": [
+        1,
+        "2026-01-03",
+        "nonexistent",
+        "user_001"
+      ],
+      "success": true,
+      "meta_changes": 0
+    },
+    {
+      "name": "update_rows_with_fts_trigger",
+      "unconfigured_mock": false,
+      "sql": "UPDATE articles SET is_favorite = ? WHERE user_id = ?",
+      "params": [
+        1,
+        "user_001"
+      ],
+      "success": true,
+      "meta_changes": 15
+    },
+    {
+      "name": "delete_one_matching_row",
+      "unconfigured_mock": false,
+      "sql": "DELETE FROM tags WHERE id = ? AND user_id = ?",
+      "params": [
+        "tag_2",
+        "user_001"
+      ],
+      "success": true,
+      "meta_changes": 1
+    },
+    {
+      "name": "delete_no_matching_row",
+      "unconfigured_mock": true,
+      "sql": "DELETE FROM tags WHERE id = ?",
+      "params": [
+        "nonexistent"
+      ],
+      "success": true,
+      "meta_changes": 0
+    },
+    {
+      "name": "select_via_run",
+      "unconfigured_mock": true,
+      "sql": "SELECT id FROM tags WHERE user_id = ?",
+      "params": [
+        "user_001"
+      ],
+      "success": true,
+      "meta_changes": 0
+    }
+  ]
+}

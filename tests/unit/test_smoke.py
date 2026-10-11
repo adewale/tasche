@@ -76,21 +76,6 @@ class TestCheckFunction:
             )
         assert result is True
 
-    @pytest.mark.parametrize("status", ["ok", "degraded", "error"])
-    def test_validates_health_config_statuses(self, status):
-        body = {"status": status}
-        with patch.object(
-            smoke_test.urllib.request,
-            "urlopen",
-            return_value=_mock_urlopen(body=body),
-        ):
-            result = smoke_test.check(
-                "https://example.com",
-                "/api/health/config",
-                lambda d: d.get("status") in ("ok", "degraded", "error"),
-            )
-        assert result is True
-
     def test_sends_custom_user_agent(self):
         with patch.object(
             smoke_test.urllib.request,
@@ -117,6 +102,40 @@ class TestMain:
             pytest.raises(SystemExit, match="1"),
         ):
             smoke_test.main(base="https://example.com")
+
+    @staticmethod
+    def _deployment(config_body):
+        """urlopen stand-in: /api/health is fine, /api/health/config returns config_body."""
+
+        def urlopen(req, timeout=None):
+            if req.full_url.endswith("/api/health/config"):
+                return _mock_urlopen(body=config_body)
+            return _mock_urlopen(body={"status": "ok"})
+
+        return urlopen
+
+    @pytest.mark.parametrize("status", ["ok", "degraded"])
+    def test_passes_when_config_is_usable(self, status):
+        with patch.object(
+            smoke_test.urllib.request, "urlopen", side_effect=self._deployment({"status": status})
+        ):
+            smoke_test.main(base="https://example.com")
+
+    @pytest.mark.parametrize(
+        "config_body",
+        [{"status": "error"}, {"status": "unexpected"}, {}],
+        ids=["error", "unknown_status", "no_status"],
+    )
+    def test_exits_1_when_config_reports_a_broken_deploy(self, config_body, capsys):
+        """src/entry.py reports "error" when a required binding or secret is missing."""
+        with (
+            patch.object(
+                smoke_test.urllib.request, "urlopen", side_effect=self._deployment(config_body)
+            ),
+            pytest.raises(SystemExit, match="1"),
+        ):
+            smoke_test.main(base="https://example.com")
+        assert "FAILED: /api/health/config" in capsys.readouterr().out
 
     def test_succeeds_when_all_checks_pass(self):
         with patch.object(

@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -69,24 +71,33 @@ class MockD1Statement:
     async def run(self) -> dict[str, Any]:
         """Execute a statement that does not return rows (INSERT/UPDATE/DELETE).
 
-        Tracks row changes: ``meta.changes`` reflects the number of rows
-        returned by ``_execute`` (0 when no match, otherwise the count).
+        ``meta.changes`` follows D1 as recorded in
+        ``tests/fixtures/d1_run_semantics.json`` (see test_mock_fidelity.py):
+
+        - ``_execute`` returned ``{"changes": n}``: ``n`` (explicit override).
+        - ``_execute`` returned rows: one change per matched row.
+        - Nothing returned: an empty MockD1 holds no rows, so an INSERT (including
+          INSERT OR IGNORE) cannot conflict and inserts one row (1), while an
+          UPDATE/DELETE matched nothing (0), as does a read.
+
+        D1 also counts changes made by triggers (an INSERT into ``articles``
+        reports 3 because of the FTS5 sync trigger), which this schema-less mock
+        does not model; use ``SqliteD1`` when that matters.
         """
         rows = self._db._execute(self._sql, self._params)
         if isinstance(rows, dict) and "changes" in rows:
             changes = rows["changes"]
         elif rows:
             changes = len(rows)
-        elif self._is_write_statement():
+        elif self._is_insert_statement():
             changes = 1
         else:
             changes = 0
         return {"success": True, "meta": {"changes": changes}}
 
-    def _is_write_statement(self) -> bool:
-        """Check if the SQL is a write statement (INSERT/UPDATE/DELETE)."""
-        stripped = self._sql.strip().upper()
-        return stripped.startswith(("INSERT", "UPDATE", "DELETE"))
+    def _is_insert_statement(self) -> bool:
+        """Check if the SQL is an INSERT (including INSERT OR IGNORE/REPLACE)."""
+        return self._sql.strip().upper().startswith("INSERT")
 
 
 class MockD1:
@@ -109,6 +120,83 @@ class MockD1:
     def prepare(self, sql: str) -> MockD1Statement:
         """Create a prepared statement."""
         return MockD1Statement(sql, self)
+
+
+# ---------------------------------------------------------------------------
+# SQLite-backed D1 (real SQL engine, production migrations)
+# ---------------------------------------------------------------------------
+
+MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "migrations"
+
+
+def migrated_sqlite() -> sqlite3.Connection:
+    """In-memory SQLite with every migration in ``migrations/`` applied, in order."""
+    # TestClient runs the app on another thread; tests use it sequentially.
+    conn = sqlite3.connect(":memory:", isolation_level=None, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")  # D1 enforces foreign keys
+    for migration in sorted(MIGRATIONS_DIR.glob("*.sql")):
+        conn.executescript(migration.read_text(encoding="utf-8"))
+    return conn
+
+
+class SqliteD1Statement(MockD1Statement):
+    """Prepared statement executed by SQLite instead of a callback."""
+
+    async def all(self) -> dict[str, Any]:
+        return {"results": self._db._query(self._sql, self._params), "success": True}
+
+    async def first(self) -> dict[str, Any] | None:
+        rows = self._db._query(self._sql, self._params)
+        return rows[0] if rows else None
+
+    async def run(self) -> dict[str, Any]:
+        return {"success": True, "meta": {"changes": self._db._write(self._sql, self._params)}}
+
+
+class SqliteD1:
+    """D1 double backed by real SQLite and the production schema.
+
+    Use it where SQL behaviour matters (FTS5 ranking, constraints, triggers):
+    queries run for real instead of returning canned rows. ``meta.changes`` is
+    measured the way D1 reports it (writes made while the statement runs,
+    including triggers, before commit), which matches every scenario in
+    ``tests/fixtures/d1_run_semantics.json``.
+
+    ``after_execute(sql, params, conn)``, if given, runs after each statement;
+    tests use it to simulate a concurrent request landing between two queries.
+    """
+
+    def __init__(
+        self,
+        conn: sqlite3.Connection | None = None,
+        after_execute: Any | None = None,
+    ) -> None:
+        self.conn = conn or migrated_sqlite()
+        self._after_execute = after_execute
+
+    def prepare(self, sql: str) -> SqliteD1Statement:
+        return SqliteD1Statement(sql, self)
+
+    def _query(self, sql: str, params: list[Any]) -> list[dict[str, Any]]:
+        rows = [dict(row) for row in self.conn.execute(sql, params).fetchall()]
+        if self._after_execute is not None:
+            self._after_execute(sql, params, self.conn)
+        return rows
+
+    def _write(self, sql: str, params: list[Any]) -> int:
+        self.conn.execute("BEGIN")
+        try:
+            before = self.conn.total_changes
+            self.conn.execute(sql, params).fetchall()
+            changes = self.conn.total_changes - before
+            self.conn.execute("COMMIT")
+        except BaseException:
+            self.conn.execute("ROLLBACK")
+            raise
+        if self._after_execute is not None:
+            self._after_execute(sql, params, self.conn)
+        return changes
 
 
 # ---------------------------------------------------------------------------

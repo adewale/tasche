@@ -4,6 +4,16 @@ All notable changes to Tasche are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **Search with an explicit sort no longer fails** — `GET /api/articles?q=…&sort=title_asc` returned 500 because `title` is ambiguous once `articles_fts` is joined. Sort columns are now table-qualified. Found by the new SQLite-backed search tests.
+- **Post-deploy smoke fails on a broken config** — `scripts/smoke-test.py` no longer accepts `/api/health/config` status `"error"` (a required binding or secret is missing).
+
+### Testing
+- `MockD1`'s `meta.changes` now matches D1 responses recorded locally (`scripts/record-d1-semantics.mjs`, `tests/fixtures/d1_run_semantics.json`): an UPDATE or DELETE that matches nothing reports 0, not 1.
+- New `SqliteD1` double runs real SQL against the production migrations; the bm25 ranking tests removed in 45cc325 are back on it, alongside a real `INSERT OR IGNORE` race test for tag creation (409).
+- `make check` runs the agent-tools static checks; `verify-staging` runs nightly in CI (needs Cloudflare secrets, fails without them).
+- Playwright TTS tests skip only on a capability probe, never after TTS fails; requested staging E2E runs fail when staging is unreachable.
+
 ### Changed
 - **Bookmarklet rewritten** — replaced cross-origin `fetch()` with a `window.open()` popup backed by a dedicated `/bookmarklet` page. The popup makes a same-origin request, shows "Saved!", and auto-closes. No more CORS issues with `SameSite=Lax` cookies.
 - **CORS locked down to localhost** — production requests are now same-origin (via the bookmarklet popup), so CORS is restricted to `localhost` and `127.0.0.1` for local dev only.

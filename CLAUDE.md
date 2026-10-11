@@ -10,7 +10,7 @@ Tasche is a single-user, self-hosted read-it-later service built entirely on the
 
 ```bash
 make dev                # Local dev server (installs deps, builds frontend, applies migrations)
-make check              # All quality gates (lint, test, format, build)
+make check              # All quality gates (lint, agent-checks, test, frontend lint/format/test/build)
 make test               # Backend unit tests only
 make deploy-staging     # Quality gates + deploy to staging
 make deploy-production  # Quality gates + deploy to production
@@ -21,6 +21,21 @@ uv run pytest tests/unit/test_articles.py::TestClassName::test_method_name -x -q
 ```
 
 **Important:** Use `pywrangler` (not regular `wrangler`) — regular wrangler cannot deploy Python Workers with packages. Packages are defined in `pyproject.toml`, not `requirements.txt`. Always deploy via `make deploy-*` targets so D1 migrations are applied automatically before code goes out.
+
+## Testing
+
+Tiers, fastest first. `make check` (CI) runs the first three; the last runs against deployed staging.
+
+1. **Unit tests** (`make test`): FastAPI routes with mock bindings from `tests/conftest.py` (`MockD1`, `MockKV`, `MockR2`, `MockQueue`, `MockAI`).
+2. **SQLite tier**: `SqliteD1` in `tests/conftest.py` runs real SQL against in-memory SQLite built from `migrations/`. Use it whenever the SQL itself is the behaviour (FTS5/bm25 ranking, constraints, `INSERT OR IGNORE` races, triggers). Asserting on SQL strings does not test ranking or column validity (Lesson 82); keep the SQLite tests beside any string tests rather than replacing them.
+3. **Static runtime checks** (`make agent-checks`): FFI boundary, handler consistency and Pyodide pitfalls. CI tests run on CPython, so these are the only gate on Workers-only mistakes.
+4. **Staging** (`make verify-staging`, and `.github/workflows/verify-staging.yml` nightly): smoke, `tests/e2e` and Playwright + axe against the real runtime. Lessons 27, 38 and 50: mocks passed while the core workflow was broken.
+
+Rules:
+- **Mock fidelity comes from the real service.** Expected values in `tests/unit/test_mock_fidelity.py` come from `tests/fixtures/d1_run_semantics.json`, recorded from local D1 by `node scripts/record-d1-semantics.mjs`. Never write down what you believe D1 returns; record it. (A test once asserted `meta.changes == 1` for a DELETE that matched nothing. D1 returns 0.) D1's `meta.changes` also counts trigger writes, so treat it as "something changed", not a row count, for tables with triggers such as `articles`.
+- **Do not downgrade a tier when cleaning up tests.** If you delete or rewrite a real-SQLite, browser or staging test, say which test and why in the PR.
+- **No skip on failure.** E2E tests may skip only because of a capability probe run before the behaviour under test (see `ttsUnavailableReason` in `frontend/tests/e2e/immersive-and-settings.spec.js`), never inside the branch where the feature failed. With `RUN_E2E_TESTS=1`, an unreachable staging fails the run.
+- **The post-deploy smoke fails on `/api/health/config` status `"error"`** (a required binding or secret is missing).
 
 ## Architecture
 

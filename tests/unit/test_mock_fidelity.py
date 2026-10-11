@@ -2,16 +2,20 @@
 
 Covers:
 - MockD1 ``bind()`` parameter validation (placeholder count vs. bound params)
-- MockD1 ``run()`` row change tracking via ``meta.changes``
+- MockD1 and SqliteD1 ``run()`` ``meta.changes`` against recorded real-D1 responses
 - MockKV TTL tracking and ``advance_time()``
 - MockR2 ``httpMetadata`` storage and retrieval
 """
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+from typing import Any
+
 import pytest
 
-from tests.conftest import MockD1, MockKV, MockR2
+from tests.conftest import MockD1, MockKV, MockR2, SqliteD1
 
 # =========================================================================
 # MockD1 bind() parameter validation
@@ -74,17 +78,33 @@ class TestMockD1BindValidation:
 # MockD1 run() row change tracking
 # =========================================================================
 
+# Expected values come from real D1, not from the mocks: recorded locally by
+# scripts/record-d1-semantics.mjs (wrangler d1 migrations apply --local, then
+# Miniflare's D1 binding). Re-run that script to refresh the fixture.
+D1_RECORDING = json.loads(
+    (Path(__file__).resolve().parents[1] / "fixtures" / "d1_run_semantics.json").read_text()
+)
+SCENARIOS = D1_RECORDING["scenarios"]
+
+
+def _ids(scenario: dict[str, Any]) -> str:
+    return scenario["name"]
+
 
 class TestMockD1RunChanges:
-    """Verify that run() tracks row changes in meta.changes."""
+    """MockD1's meta.changes must agree with recorded D1 responses."""
 
-    async def test_run_returns_changes_1_for_write_with_no_execute_fn(self) -> None:
-        """Default MockD1 returns changes=1 for write statements."""
-        db = MockD1()
-        stmt = db.prepare("INSERT INTO articles (id) VALUES (?)")
-        result = await stmt.bind("art_001").run()
-        assert result["success"] is True
-        assert result["meta"]["changes"] == 1
+    @pytest.mark.parametrize("scenario", [s for s in SCENARIOS if s["unconfigured_mock"]], ids=_ids)
+    async def test_unconfigured_mock_matches_recorded_d1(self, scenario: dict[str, Any]) -> None:
+        """An empty MockD1 answers like D1 when nothing matches or conflicts.
+
+        The previous version of this test asserted ``changes == 1`` for a
+        DELETE that matched nothing and called it D1 behaviour; D1 returns 0,
+        as src/tags/routes.py and the batch-update endpoint assume.
+        """
+        result = await MockD1().prepare(scenario["sql"]).bind(*scenario["params"]).run()
+        assert result["success"] is scenario["success"]
+        assert result["meta"]["changes"] == scenario["meta_changes"]
 
     async def test_run_returns_changes_based_on_returned_rows(self) -> None:
         """When execute_fn returns rows, changes reflects the count."""
@@ -94,26 +114,36 @@ class TestMockD1RunChanges:
         result = await stmt.bind("ready", "user_001").run()
         assert result["meta"]["changes"] == 2
 
-    async def test_run_returns_changes_0_when_execute_returns_empty(self) -> None:
-        """When execute_fn returns empty list for a write, changes is 1.
-
-        This matches D1 behavior where writes return changes=1 even
-        when they execute successfully but don't match rows (in most cases).
-        """
-        db = MockD1(execute=lambda sql, params: [])
-        stmt = db.prepare("DELETE FROM articles WHERE id = ?")
-        result = await stmt.bind("nonexistent").run()
-        # Write statements with no matching rows: the _execute_fn returned []
-        # but the SQL is a write statement, so we fall through to changes=1
-        # because _is_write_statement is true and the result was empty/falsy.
-        assert result["meta"]["changes"] == 1
-
-    async def test_run_returns_changes_0_for_non_write_empty(self) -> None:
-        """Non-write statements with empty results get changes=0."""
-        db = MockD1(execute=lambda sql, params: [])
-        stmt = db.prepare("SELECT * FROM articles WHERE id = ?")
-        result = await stmt.bind("art_001").run()
+    async def test_explicit_changes_override(self) -> None:
+        """execute_fn can state changes directly, e.g. an INSERT OR IGNORE conflict."""
+        db = MockD1(execute=lambda sql, params: {"changes": 0})
+        stmt = db.prepare("INSERT OR IGNORE INTO tags (id) VALUES (?)")
+        result = await stmt.bind("tag_1").run()
         assert result["meta"]["changes"] == 0
+
+
+class TestSqliteD1MatchesRecordedD1:
+    """The SQLite-backed double reproduces every recorded D1 response."""
+
+    async def test_replays_the_recording(self) -> None:
+        db = SqliteD1()
+        for step in D1_RECORDING["setup"]:
+            await db.prepare(step["sql"]).bind(*step["params"]).run()
+        observed = {}
+        for scenario in SCENARIOS:
+            result = await db.prepare(scenario["sql"]).bind(*scenario["params"]).run()
+            observed[scenario["name"]] = (result["success"], result["meta"]["changes"])
+        assert observed == {s["name"]: (s["success"], s["meta_changes"]) for s in SCENARIOS}
+
+    def test_recording_covers_the_production_assumptions(self) -> None:
+        """The cases src/ branches on are in the recording, with D1's answer."""
+        by_name = {s["name"]: s["meta_changes"] for s in SCENARIOS}
+        assert by_name["insert_or_ignore_unique_conflict"] == 0  # tags create_tag -> 409
+        assert by_name["update_no_matching_row"] == 0  # batch-update "updated" count
+        assert by_name["delete_no_matching_row"] == 0
+        # D1 counts trigger writes: meta.changes is "did anything change", not a row
+        # count, for tables with triggers (articles has FTS5 sync triggers).
+        assert by_name["insert_into_table_with_fts_trigger"] > 1
 
 
 # =========================================================================

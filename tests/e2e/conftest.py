@@ -38,9 +38,17 @@ def _is_server_reachable(url: str, timeout: float = 5.0) -> bool:
 
 @pytest.fixture(scope="session")
 def staging_url() -> str:
-    """Return the staging base URL, skipping if unreachable."""
+    """Return the staging base URL.
+
+    When E2E runs were requested (RUN_E2E_TESTS=1, as `make verify-staging`
+    and the verify-staging workflow do), an unreachable staging is a failure:
+    skipping would report a broken deployment as a clean run.
+    """
     if not _is_server_reachable(STAGING_URL):
-        pytest.skip(f"Staging server unreachable: {STAGING_URL}")
+        message = f"Staging server unreachable: {STAGING_URL}"
+        if os.environ.get("RUN_E2E_TESTS"):
+            pytest.fail(message)
+        pytest.skip(message)
     return STAGING_URL
 
 

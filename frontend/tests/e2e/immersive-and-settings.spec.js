@@ -47,6 +47,39 @@ async function createArticle(request, url, title) {
   return body;
 }
 
+/**
+ * Capability probe for generated audio, decided from the deployment's declared
+ * configuration before any TTS behaviour runs, never from the feature failing.
+ * Returns a skip reason, or null when TTS must work (and its tests must pass).
+ * An operator can declare TTS unavailable, e.g. for `wrangler dev` without
+ * Workers AI access, with E2E_TTS_UNAVAILABLE=1.
+ */
+async function ttsUnavailableReason(request) {
+  if (process.env.E2E_TTS_UNAVAILABLE === '1') {
+    return 'E2E_TTS_UNAVAILABLE=1: operator declared Workers AI unavailable';
+  }
+  const resp = await request.get('/api/health/config');
+  expect(resp.ok(), `/api/health/config returned ${resp.status()}`).toBeTruthy();
+  const { checks } = await resp.json();
+  expect(checks, 'health/config lists checks only when auth is bypassed').toBeTruthy();
+  const ai = checks.find((check) => check.name === 'AI');
+  return ai && ai.status === 'ok' ? null : 'Workers AI binding is not configured on this backend';
+}
+
+/** Poll until audio is ready or failed (max 120 s); returns the last status seen. */
+async function waitForAudio(request, id) {
+  let status = 'unknown';
+  const deadline = Date.now() + 120_000;
+  while (Date.now() < deadline) {
+    const getResp = await request.get(`/api/articles/${id}`);
+    expect(getResp.ok(), `GET /api/articles/${id} returned ${getResp.status()}`).toBeTruthy();
+    status = (await getResp.json()).audio_status;
+    if (status === 'ready' || status === 'failed') break;
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+  return status;
+}
+
 async function _createTag(request, name) {
   const resp = await request.post('/api/tags', { data: { name } });
   expect(resp.ok()).toBeTruthy();
@@ -78,6 +111,23 @@ test.describe('Immersive Reading', () => {
     // Should show a toast about audio generation being queued
     await expect(page.locator('.toast').first()).toBeVisible({ timeout: 5000 });
   });
+});
+
+// Tests that need generated audio. Skipped only when the capability probe says
+// this backend cannot generate audio; if it can, a failed listen-later or audio
+// that never becomes ready is a test failure (these used to call test.skip()
+// in exactly those cases, so broken TTS reported as "skipped").
+test.describe('Immersive Reading — generated audio', () => {
+  /** @type {string | null} */
+  let ttsSkipReason = null;
+
+  test.beforeAll(async ({ request }) => {
+    ttsSkipReason = await ttsUnavailableReason(request);
+  });
+
+  test.beforeEach(() => {
+    test.skip(ttsSkipReason !== null, ttsSkipReason ?? '');
+  });
 
   test('audio-timing endpoint returns valid data after TTS', async ({ request }) => {
     const { id } = await createArticle(
@@ -87,35 +137,9 @@ test.describe('Immersive Reading', () => {
     );
     await request.post(`/api/articles/${id}/process-now`);
 
-    // Trigger listen-later via API
     const listenResp = await request.post(`/api/articles/${id}/listen-later`);
-    // May fail if article has no content — that's acceptable
-    if (!listenResp.ok()) {
-      test.skip();
-      return;
-    }
-
-    // Poll for audio_status=ready (max 120 seconds)
-    let audioReady = false;
-    const deadline = Date.now() + 120_000;
-    while (Date.now() < deadline) {
-      const getResp = await request.get(`/api/articles/${id}`);
-      if (!getResp.ok()) break;
-      const article = await getResp.json();
-      if (article.audio_status === 'ready') {
-        audioReady = true;
-        break;
-      }
-      if (article.audio_status === 'failed') break;
-      // Wait 3 seconds before polling again
-      await new Promise((r) => setTimeout(r, 3000));
-    }
-
-    if (!audioReady) {
-      // TTS may not be available in this environment — skip gracefully
-      test.skip();
-      return;
-    }
+    expect(listenResp.ok(), `listen-later returned ${listenResp.status()}`).toBeTruthy();
+    expect(await waitForAudio(request, id), 'audio_status after up to 120 s').toBe('ready');
 
     // GET audio-timing manifest
     const timingResp = await request.get(`/api/articles/${id}/audio-timing`);
@@ -151,30 +175,8 @@ test.describe('Immersive Reading', () => {
 
     // Trigger TTS via API
     const listenResp = await request.post(`/api/articles/${id}/listen-later`);
-    if (!listenResp.ok()) {
-      test.skip();
-      return;
-    }
-
-    // Poll for audio_status=ready (max 120 seconds)
-    let audioReady = false;
-    const deadline = Date.now() + 120_000;
-    while (Date.now() < deadline) {
-      const getResp = await request.get(`/api/articles/${id}`);
-      if (!getResp.ok()) break;
-      const article = await getResp.json();
-      if (article.audio_status === 'ready') {
-        audioReady = true;
-        break;
-      }
-      if (article.audio_status === 'failed') break;
-      await new Promise((r) => setTimeout(r, 3000));
-    }
-
-    if (!audioReady) {
-      test.skip();
-      return;
-    }
+    expect(listenResp.ok(), `listen-later returned ${listenResp.status()}`).toBeTruthy();
+    expect(await waitForAudio(request, id), 'audio_status after up to 120 s').toBe('ready');
 
     await page.goto(`/#/article/${id}`);
     await expect(page.locator('.reader-header')).toBeVisible({ timeout: 10000 });

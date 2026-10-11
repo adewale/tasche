@@ -2348,6 +2348,9 @@ class TestBatchUpdateArticles:
         def execute(sql: str, params: list) -> list:
             if "UPDATE articles SET" in sql:
                 updates.append({"sql": sql, "params": params})
+                # Both articles exist and belong to the user: one row matched each.
+                # (An empty result means "no row matched", i.e. D1 changes=0.)
+                return [{"id": params[-2]}]
             return []
 
         db = MockD1(execute=execute)
