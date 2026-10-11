@@ -1,655 +1,305 @@
 """Tests for the reading statistics endpoint (src/stats/routes.py).
 
-Covers the GET /api/stats endpoint including total counts, status breakdowns,
-weekly/monthly activity, top domains, reading streak, average reading time,
-and monthly trends.
+GET /api/stats runs against ``SqliteD1``: real SQLite with the production
+migrations. Each test seeds rows and checks the statistics the production SQL
+computes from them, so a wrong filter, grouping, window or ordering fails here.
+Expected values are counted by hand from the seeded rows.
+
+The streak arithmetic itself has property tests in test_property.py; the tests
+here cover the SQL that feeds it.
 """
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+from itertools import count
+from typing import Any
+
+import pytest
 from fastapi.testclient import TestClient
 
 from src.stats.routes import router
-from tests.conftest import (
-    MockD1,
-    MockEnv,
-    make_test_helpers,
-)
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+from tests.conftest import MockEnv, make_test_helpers
+from tests.sqlite_d1 import SqliteD1
 
 _make_app, _authenticated_client = make_test_helpers((router, "/api/stats"))
 
+USER = "user_001"  # the user _authenticated_client signs in as
+OTHER_USER = "user_002"
+
+_ids = count()
+
+
+def _ago(*, days: float = 0, minutes: float = 0) -> datetime:
+    return datetime.now(UTC) - timedelta(days=days, minutes=minutes)
+
+
+def _add_article(
+    db: SqliteD1,
+    *,
+    user_id: str = USER,
+    created: datetime | None = None,
+    updated: datetime | None = None,
+    **columns: Any,
+) -> None:
+    """Insert an article the way the app writes it (timestamps from now_iso())."""
+    article_id = f"a{next(_ids)}"
+    created = created or _ago(days=100)
+    db.insert(
+        "articles",
+        id=article_id,
+        user_id=user_id,
+        original_url=f"https://example.com/{article_id}",
+        created_at=created.isoformat(),
+        updated_at=(updated or created).isoformat(),
+        **columns,
+    )
+
+
+@pytest.fixture
+def db() -> SqliteD1:
+    db = SqliteD1()
+    for user_id in (USER, OTHER_USER):
+        db.insert("users", id=user_id, email=f"{user_id}@example.com", username=user_id)
+    return db
+
+
+async def _stats(db: SqliteD1) -> dict[str, Any]:
+    client, _ = await _authenticated_client(MockEnv(db=db))
+    resp = client.get("/api/stats")
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
 
 # ---------------------------------------------------------------------------
-# GET /api/stats — Reading statistics
+# Response contract
 # ---------------------------------------------------------------------------
 
 
 class TestGetStats:
     async def test_requires_auth(self) -> None:
-        """GET /api/stats returns 401 without a session cookie."""
-        env = MockEnv()
-        app = _make_app(env)
-        client = TestClient(app, raise_server_exceptions=False)
-        resp = client.get("/api/stats")
-        assert resp.status_code == 401
+        client = TestClient(_make_app(MockEnv()), raise_server_exceptions=False)
+        assert client.get("/api/stats").status_code == 401
 
-    async def test_returns_all_stat_keys(self) -> None:
-        """GET /api/stats returns all expected keys in the response."""
-        env = MockEnv()
-        client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats")
-
-        assert resp.status_code == 200
-        data = resp.json()
-
-        expected_keys = {
-            "total_articles",
-            "total_words_read",
-            "articles_by_status",
-            "articles_this_week",
-            "articles_this_month",
-            "archived_this_week",
-            "archived_this_month",
-            "top_domains",
-            "reading_streak_days",
-            "avg_reading_time_minutes",
-            "articles_by_month",
+    async def test_empty_library_returns_zeros(self, db: SqliteD1) -> None:
+        """SUM/AVG over no rows are NULL in SQL; the API must still return numbers."""
+        assert await _stats(db) == {
+            "total_articles": 0,
+            "total_words_read": 0,
+            "articles_by_status": {"unread": 0, "archived": 0},
+            "articles_this_week": 0,
+            "articles_this_month": 0,
+            "archived_this_week": 0,
+            "archived_this_month": 0,
+            "top_domains": [],
+            "reading_streak_days": 0,
+            "avg_reading_time_minutes": 0,
+            "articles_by_month": [],
         }
-        assert set(data.keys()) == expected_keys
 
-    async def test_empty_library_returns_zeros(self) -> None:
-        """GET /api/stats returns zeros when user has no articles."""
-        env = MockEnv()
-        client, sid = await _authenticated_client(env)
+    async def test_cache_control(self, db: SqliteD1) -> None:
+        client, _ = await _authenticated_client(MockEnv(db=db))
         resp = client.get("/api/stats")
+        assert resp.headers["cache-control"] == "private, max-age=120"
 
-        assert resp.status_code == 200
-        data = resp.json()
+    async def test_other_users_articles_are_excluded_from_every_stat(self, db: SqliteD1) -> None:
+        for days in (0, 1, 2):
+            _add_article(
+                db,
+                user_id=OTHER_USER,
+                created=_ago(days=days),
+                reading_status="archived",
+                word_count=500,
+                reading_time_minutes=4,
+                domain="other.example",
+            )
 
-        assert data["total_articles"] == 0
-        assert data["total_words_read"] == 0
-        assert data["articles_by_status"] == {
-            "unread": 0,
-            "archived": 0,
-        }
-        assert data["articles_this_week"] == 0
-        assert data["articles_this_month"] == 0
-        assert data["archived_this_week"] == 0
-        assert data["archived_this_month"] == 0
-        assert data["top_domains"] == []
-        assert data["reading_streak_days"] == 0
-        assert data["avg_reading_time_minutes"] == 0
-        assert data["articles_by_month"] == []
+        stats = await _stats(db)
 
-    async def test_total_articles_count(self) -> None:
-        """GET /api/stats returns the correct total article count."""
+        assert stats["total_articles"] == 0
+        assert stats["total_words_read"] == 0
+        assert stats["articles_by_status"] == {"unread": 0, "archived": 0}
+        assert stats["articles_this_week"] == 0
+        assert stats["archived_this_month"] == 0
+        assert stats["top_domains"] == []
+        assert stats["reading_streak_days"] == 0
+        assert stats["avg_reading_time_minutes"] == 0
+        assert stats["articles_by_month"] == []
 
-        def execute(sql: str, params: list) -> list:
-            if (
-                "COUNT(*) AS cnt FROM articles WHERE user_id" in sql
-                and "reading_status" not in sql
-                and "datetime" not in sql
-            ):
-                return [{"cnt": 42}]
-            if "SUM(word_count)" in sql:
-                return [{"total": 0}]
-            if "GROUP BY reading_status" in sql:
-                return []
-            if "GROUP BY domain" in sql:
-                return []
-            if "DISTINCT date" in sql:
-                return []
-            if "AVG(reading_time_minutes)" in sql:
-                return [{"avg_rt": None}]
-            if "strftime" in sql:
-                return []
-            return [{"cnt": 0}]
 
-        db = MockD1(execute=execute)
-        env = MockEnv(db=db)
-        client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats")
+# ---------------------------------------------------------------------------
+# Totals and breakdowns
+# ---------------------------------------------------------------------------
 
-        assert resp.status_code == 200
-        assert resp.json()["total_articles"] == 42
 
-    async def test_total_words_read(self) -> None:
-        """GET /api/stats returns the total words read from archived articles."""
+class TestTotals:
+    async def test_total_articles_counts_every_status(self, db: SqliteD1) -> None:
+        _add_article(db, reading_status="unread", status="pending")
+        _add_article(db, reading_status="archived", status="ready")
+        _add_article(db, reading_status="unread", status="failed")
 
-        def execute(sql: str, params: list) -> list:
-            if "SUM(word_count)" in sql:
-                return [{"total": 150000}]
-            if "COUNT(*)" in sql:
-                return [{"cnt": 0}]
-            if "GROUP BY reading_status" in sql:
-                return []
-            if "GROUP BY domain" in sql:
-                return []
-            if "DISTINCT date" in sql:
-                return []
-            if "AVG(" in sql:
-                return [{"avg_rt": None}]
-            if "strftime" in sql:
-                return []
-            return []
+        assert (await _stats(db))["total_articles"] == 3
 
-        db = MockD1(execute=execute)
-        env = MockEnv(db=db)
-        client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats")
+    async def test_words_read_sums_archived_articles_only(self, db: SqliteD1) -> None:
+        _add_article(db, reading_status="archived", word_count=1200)
+        _add_article(db, reading_status="archived", word_count=300)
+        _add_article(db, reading_status="archived", word_count=None)
+        _add_article(db, reading_status="unread", word_count=9000)
+        _add_article(db, reading_status="reading", word_count=700)
 
-        assert resp.status_code == 200
-        assert resp.json()["total_words_read"] == 150000
+        assert (await _stats(db))["total_words_read"] == 1500
 
-    async def test_articles_by_status(self) -> None:
-        """GET /api/stats returns correct breakdown by reading status."""
+    async def test_articles_by_status_folds_legacy_reading_into_unread(self, db: SqliteD1) -> None:
+        # The CHECK constraint still allows the historical 'reading' value.
+        _add_article(db, reading_status="unread")
+        _add_article(db, reading_status="unread")
+        _add_article(db, reading_status="reading")
+        _add_article(db, reading_status="archived")
 
-        def execute(sql: str, params: list) -> list:
-            if "GROUP BY reading_status" in sql:
-                return [
-                    {"reading_status": "unread", "cnt": 30},
-                    {"reading_status": "archived", "cnt": 20},
-                ]
-            if "SUM(word_count)" in sql:
-                return [{"total": 0}]
-            if "COUNT(*)" in sql:
-                return [{"cnt": 0}]
-            if "GROUP BY domain" in sql:
-                return []
-            if "DISTINCT date" in sql:
-                return []
-            if "AVG(" in sql:
-                return [{"avg_rt": None}]
-            if "strftime" in sql:
-                return []
-            return []
+        assert (await _stats(db))["articles_by_status"] == {"unread": 3, "archived": 1}
 
-        db = MockD1(execute=execute)
-        env = MockEnv(db=db)
-        client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats")
+    async def test_avg_reading_time_ignores_missing_values(self, db: SqliteD1) -> None:
+        for minutes in (5, 7, 10, None):
+            _add_article(db, reading_time_minutes=minutes)
 
-        assert resp.status_code == 200
-        status = resp.json()["articles_by_status"]
-        assert status == {"unread": 30, "archived": 20}
+        # (5 + 7 + 10) / 3 = 7.33...; counting the NULL as 0 would give 5.5.
+        assert (await _stats(db))["avg_reading_time_minutes"] == 7.3
 
-    async def test_top_domains(self) -> None:
-        """GET /api/stats returns top domains sorted by count."""
 
-        def execute(sql: str, params: list) -> list:
-            if "GROUP BY domain" in sql:
-                return [
-                    {"domain": "example.com", "cnt": 15},
-                    {"domain": "blog.dev", "cnt": 8},
-                    {"domain": "news.org", "cnt": 3},
-                ]
-            if "SUM(word_count)" in sql:
-                return [{"total": 0}]
-            if "COUNT(*)" in sql:
-                return [{"cnt": 0}]
-            if "GROUP BY reading_status" in sql:
-                return []
-            if "DISTINCT date" in sql:
-                return []
-            if "AVG(" in sql:
-                return [{"avg_rt": None}]
-            if "strftime" in sql:
-                return []
-            return []
+class TestTopDomains:
+    async def test_most_saved_first_and_null_domains_skipped(self, db: SqliteD1) -> None:
+        for domain, n in (("b.example", 1), ("a.example", 3), ("c.example", 2), (None, 5)):
+            for _ in range(n):
+                _add_article(db, domain=domain)
 
-        db = MockD1(execute=execute)
-        env = MockEnv(db=db)
-        client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats")
+        assert (await _stats(db))["top_domains"] == [
+            {"domain": "a.example", "count": 3},
+            {"domain": "c.example", "count": 2},
+            {"domain": "b.example", "count": 1},
+        ]
 
-        assert resp.status_code == 200
-        domains = resp.json()["top_domains"]
-        assert len(domains) == 3
-        assert domains[0] == {"domain": "example.com", "count": 15}
-        assert domains[1] == {"domain": "blog.dev", "count": 8}
-        assert domains[2] == {"domain": "news.org", "count": 3}
+    async def test_limited_to_ten_most_saved(self, db: SqliteD1) -> None:
+        # d1 has 1 article, d2 has 2, ... d11 has 11.
+        for n in range(1, 12):
+            for _ in range(n):
+                _add_article(db, domain=f"d{n}.example")
 
-    async def test_avg_reading_time(self) -> None:
-        """GET /api/stats returns average reading time rounded to one decimal."""
+        domains = [d["domain"] for d in (await _stats(db))["top_domains"]]
 
-        def execute(sql: str, params: list) -> list:
-            if "AVG(reading_time_minutes)" in sql:
-                return [{"avg_rt": 7.333}]
-            if "SUM(word_count)" in sql:
-                return [{"total": 0}]
-            if "COUNT(*)" in sql:
-                return [{"cnt": 0}]
-            if "GROUP BY reading_status" in sql:
-                return []
-            if "GROUP BY domain" in sql:
-                return []
-            if "DISTINCT date" in sql:
-                return []
-            if "strftime" in sql:
-                return []
-            return []
+        assert domains == [f"d{n}.example" for n in range(11, 1, -1)]
 
-        db = MockD1(execute=execute)
-        env = MockEnv(db=db)
-        client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats")
 
-        assert resp.status_code == 200
-        assert resp.json()["avg_reading_time_minutes"] == 7.3
+# ---------------------------------------------------------------------------
+# Weekly / monthly activity windows
+# ---------------------------------------------------------------------------
 
-    async def test_articles_by_month(self) -> None:
-        """GET /api/stats returns monthly saved/archived breakdown."""
 
-        def execute(sql: str, params: list) -> list:
-            if "strftime" in sql and "reading_status = 'archived'" in sql:
-                return [
-                    {"month": "2026-01", "cnt": 10},
-                    {"month": "2026-02", "cnt": 5},
-                ]
-            if "strftime" in sql:
-                return [
-                    {"month": "2026-01", "cnt": 20},
-                    {"month": "2026-02", "cnt": 15},
-                ]
-            if "SUM(word_count)" in sql:
-                return [{"total": 0}]
-            if "COUNT(*)" in sql:
-                return [{"cnt": 0}]
-            if "GROUP BY reading_status" in sql:
-                return []
-            if "GROUP BY domain" in sql:
-                return []
-            if "DISTINCT date" in sql:
-                return []
-            if "AVG(" in sql:
-                return [{"avg_rt": None}]
-            return []
+class TestActivityWindows:
+    async def test_saved_counts_use_created_at(self, db: SqliteD1) -> None:
+        for days in (1, 6, 8, 29, 31):
+            _add_article(db, created=_ago(days=days), updated=_ago(days=0))
 
-        db = MockD1(execute=execute)
-        env = MockEnv(db=db)
-        client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats")
+        stats = await _stats(db)
 
-        assert resp.status_code == 200
-        by_month = resp.json()["articles_by_month"]
-        assert len(by_month) == 2
-        assert by_month[0] == {"month": "2026-01", "saved": 20, "archived": 10}
-        assert by_month[1] == {"month": "2026-02", "saved": 15, "archived": 5}
+        assert stats["articles_this_week"] == 2  # 1 and 6 days ago
+        assert stats["articles_this_month"] == 4  # all but 31 days ago
+
+    async def test_archived_counts_use_updated_at_of_archived_articles(self, db: SqliteD1) -> None:
+        for days in (2, 10, 40):
+            _add_article(
+                db, created=_ago(days=60), updated=_ago(days=days), reading_status="archived"
+            )
+        # Recently touched but not archived: not counted.
+        _add_article(db, created=_ago(days=60), updated=_ago(days=1), reading_status="unread")
+
+        stats = await _stats(db)
+
+        assert stats["archived_this_week"] == 1
+        assert stats["archived_this_month"] == 2
+
+    async def test_week_window_excludes_articles_just_over_seven_days_old(
+        self, db: SqliteD1
+    ) -> None:
+        """Regression: ISO timestamps ('...T...') were compared as text against
+        datetime('now', ...) ('... ...'). 'T' sorts after ' ', so anything saved on
+        the cutoff's calendar day counted, up to a day older than the window."""
+        _add_article(db, created=_ago(days=7, minutes=-1), updated=_ago(days=7, minutes=-1))
+        _add_article(
+            db,
+            created=_ago(days=7, minutes=1),
+            updated=_ago(days=7, minutes=1),
+            reading_status="archived",
+        )
+
+        stats = await _stats(db)
+
+        assert stats["articles_this_week"] == 1
+        assert stats["archived_this_week"] == 0
+
+    async def test_month_window_excludes_articles_just_over_thirty_days_old(
+        self, db: SqliteD1
+    ) -> None:
+        _add_article(db, created=_ago(days=30, minutes=-1))
+        _add_article(
+            db,
+            created=_ago(days=30, minutes=1),
+            updated=_ago(days=30, minutes=1),
+            reading_status="archived",
+        )
+
+        stats = await _stats(db)
+
+        assert stats["articles_this_month"] == 1
+        assert stats["archived_this_month"] == 0
+
+
+class TestArticlesByMonth:
+    async def test_merges_saved_and_archived_months_in_order(self, db: SqliteD1) -> None:
+        # At least 65 days apart, so each falls in a different calendar month.
+        recent, middle, older = _ago(days=5), _ago(days=70), _ago(days=140)
+        _add_article(db, created=middle, updated=recent, reading_status="archived")
+        _add_article(db, created=older, reading_status="unread")
+        _add_article(db, created=older, reading_status="archived")
+        _add_article(db, created=recent, reading_status="unread")
+
+        assert (await _stats(db))["articles_by_month"] == [
+            {"month": older.strftime("%Y-%m"), "saved": 2, "archived": 1},
+            {"month": middle.strftime("%Y-%m"), "saved": 1, "archived": 0},
+            {"month": recent.strftime("%Y-%m"), "saved": 1, "archived": 1},
+        ]
+
+    async def test_excludes_articles_older_than_twelve_months(self, db: SqliteD1) -> None:
+        _add_article(db, created=_ago(days=400), updated=_ago(days=380), reading_status="archived")
+
+        assert (await _stats(db))["articles_by_month"] == []
+
+
+# ---------------------------------------------------------------------------
+# Reading streak (the SQL that feeds _calculate_streak)
+# ---------------------------------------------------------------------------
 
 
 class TestReadingStreak:
-    async def test_streak_with_consecutive_days(self) -> None:
-        """Reading streak counts consecutive days ending today."""
-        from datetime import UTC, datetime, timedelta
+    async def test_counts_consecutive_archive_days_ending_today(self, db: SqliteD1) -> None:
+        for days in (0, 0, 1, 2, 4):  # two archived today; gap at 3 days ago
+            _add_article(db, updated=_ago(days=days), reading_status="archived")
 
-        today = datetime.now(UTC).date()
-        dates = [{"d": (today - timedelta(days=i)).isoformat()} for i in range(5)]
+        assert (await _stats(db))["reading_streak_days"] == 3
 
-        def execute(sql: str, params: list) -> list:
-            if "DISTINCT date" in sql:
-                return dates
-            if "SUM(word_count)" in sql:
-                return [{"total": 0}]
-            if "COUNT(*)" in sql:
-                return [{"cnt": 0}]
-            if "GROUP BY reading_status" in sql:
-                return []
-            if "GROUP BY domain" in sql:
-                return []
-            if "AVG(" in sql:
-                return [{"avg_rt": None}]
-            if "strftime" in sql:
-                return []
-            return []
+    async def test_can_start_yesterday(self, db: SqliteD1) -> None:
+        for days in (1, 2):
+            _add_article(db, updated=_ago(days=days), reading_status="archived")
 
-        db = MockD1(execute=execute)
-        env = MockEnv(db=db)
-        client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats")
+        assert (await _stats(db))["reading_streak_days"] == 2
 
-        assert resp.status_code == 200
-        assert resp.json()["reading_streak_days"] == 5
+    async def test_zero_when_last_archive_was_before_yesterday(self, db: SqliteD1) -> None:
+        for days in (2, 3):
+            _add_article(db, updated=_ago(days=days), reading_status="archived")
 
-    async def test_streak_starting_yesterday(self) -> None:
-        """Reading streak can start from yesterday (no activity today yet)."""
-        from datetime import UTC, datetime, timedelta
+        assert (await _stats(db))["reading_streak_days"] == 0
 
-        yesterday = datetime.now(UTC).date() - timedelta(days=1)
-        dates = [{"d": (yesterday - timedelta(days=i)).isoformat()} for i in range(3)]
+    async def test_only_archived_articles_count(self, db: SqliteD1) -> None:
+        _add_article(db, updated=_ago(days=0), reading_status="unread")
+        _add_article(db, updated=_ago(days=1), reading_status="unread")
 
-        def execute(sql: str, params: list) -> list:
-            if "DISTINCT date" in sql:
-                return dates
-            if "SUM(word_count)" in sql:
-                return [{"total": 0}]
-            if "COUNT(*)" in sql:
-                return [{"cnt": 0}]
-            if "GROUP BY reading_status" in sql:
-                return []
-            if "GROUP BY domain" in sql:
-                return []
-            if "AVG(" in sql:
-                return [{"avg_rt": None}]
-            if "strftime" in sql:
-                return []
-            return []
-
-        db = MockD1(execute=execute)
-        env = MockEnv(db=db)
-        client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats")
-
-        assert resp.status_code == 200
-        assert resp.json()["reading_streak_days"] == 3
-
-    async def test_streak_broken_gap(self) -> None:
-        """Reading streak breaks on a gap day."""
-        from datetime import UTC, datetime, timedelta
-
-        today = datetime.now(UTC).date()
-        # Today, yesterday, then skip a day, then 2 more days
-        dates = [
-            {"d": today.isoformat()},
-            {"d": (today - timedelta(days=1)).isoformat()},
-            {"d": (today - timedelta(days=3)).isoformat()},
-            {"d": (today - timedelta(days=4)).isoformat()},
-        ]
-
-        def execute(sql: str, params: list) -> list:
-            if "DISTINCT date" in sql:
-                return dates
-            if "SUM(word_count)" in sql:
-                return [{"total": 0}]
-            if "COUNT(*)" in sql:
-                return [{"cnt": 0}]
-            if "GROUP BY reading_status" in sql:
-                return []
-            if "GROUP BY domain" in sql:
-                return []
-            if "AVG(" in sql:
-                return [{"avg_rt": None}]
-            if "strftime" in sql:
-                return []
-            return []
-
-        db = MockD1(execute=execute)
-        env = MockEnv(db=db)
-        client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats")
-
-        assert resp.status_code == 200
-        # Streak is 2 (today + yesterday), gap at day 2 breaks it
-        assert resp.json()["reading_streak_days"] == 2
-
-    async def test_streak_no_recent_activity(self) -> None:
-        """Reading streak is 0 when no recent archived activity."""
-        from datetime import UTC, datetime, timedelta
-
-        old_date = datetime.now(UTC).date() - timedelta(days=10)
-
-        def execute(sql: str, params: list) -> list:
-            if "DISTINCT date" in sql:
-                return [{"d": old_date.isoformat()}]
-            if "SUM(word_count)" in sql:
-                return [{"total": 0}]
-            if "COUNT(*)" in sql:
-                return [{"cnt": 0}]
-            if "GROUP BY reading_status" in sql:
-                return []
-            if "GROUP BY domain" in sql:
-                return []
-            if "AVG(" in sql:
-                return [{"avg_rt": None}]
-            if "strftime" in sql:
-                return []
-            return []
-
-        db = MockD1(execute=execute)
-        env = MockEnv(db=db)
-        client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats")
-
-        assert resp.status_code == 200
-        assert resp.json()["reading_streak_days"] == 0
-
-    async def test_streak_empty_dates(self) -> None:
-        """Reading streak is 0 when no archived articles exist at all."""
-
-        def execute(sql: str, params: list) -> list:
-            if "DISTINCT date" in sql:
-                return []
-            if "SUM(word_count)" in sql:
-                return [{"total": 0}]
-            if "COUNT(*)" in sql:
-                return [{"cnt": 0}]
-            if "GROUP BY reading_status" in sql:
-                return []
-            if "GROUP BY domain" in sql:
-                return []
-            if "AVG(" in sql:
-                return [{"avg_rt": None}]
-            if "strftime" in sql:
-                return []
-            return []
-
-        db = MockD1(execute=execute)
-        env = MockEnv(db=db)
-        client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats")
-
-        assert resp.status_code == 200
-        assert resp.json()["reading_streak_days"] == 0
-
-
-# ---------------------------------------------------------------------------
-# Weekly/monthly activity counts
-# ---------------------------------------------------------------------------
-
-
-class TestWeeklyMonthlyActivity:
-    async def test_articles_this_week_count(self) -> None:
-        """GET /api/stats returns correct articles_this_week count."""
-
-        def execute(sql: str, params: list) -> list:
-            if "saved_week" in sql:
-                return [
-                    {
-                        "saved_week": 7,
-                        "saved_month": 0,
-                        "archived_week": 0,
-                        "archived_month": 0,
-                    }
-                ]
-            if "SUM(word_count)" in sql:
-                return [{"total": 0}]
-            if "COUNT(*)" in sql:
-                return [{"cnt": 0}]
-            if "GROUP BY reading_status" in sql:
-                return []
-            if "GROUP BY domain" in sql:
-                return []
-            if "DISTINCT date" in sql:
-                return []
-            if "AVG(" in sql:
-                return [{"avg_rt": None}]
-            if "strftime" in sql:
-                return []
-            return []
-
-        db = MockD1(execute=execute)
-        env = MockEnv(db=db)
-        client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats")
-
-        assert resp.status_code == 200
-        assert resp.json()["articles_this_week"] == 7
-
-    async def test_archived_this_month_count(self) -> None:
-        """GET /api/stats returns correct archived_this_month count."""
-
-        def execute(sql: str, params: list) -> list:
-            if "saved_week" in sql:
-                return [
-                    {
-                        "saved_week": 0,
-                        "saved_month": 0,
-                        "archived_week": 0,
-                        "archived_month": 12,
-                    }
-                ]
-            if "SUM(word_count)" in sql:
-                return [{"total": 0}]
-            if "COUNT(*)" in sql:
-                return [{"cnt": 0}]
-            if "GROUP BY reading_status" in sql:
-                return []
-            if "GROUP BY domain" in sql:
-                return []
-            if "DISTINCT date" in sql:
-                return []
-            if "AVG(" in sql:
-                return [{"avg_rt": None}]
-            if "strftime" in sql:
-                return []
-            return []
-
-        db = MockD1(execute=execute)
-        env = MockEnv(db=db)
-        client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats")
-
-        assert resp.status_code == 200
-        assert resp.json()["archived_this_month"] == 12
-
-
-# ---------------------------------------------------------------------------
-# Stats response structure
-# ---------------------------------------------------------------------------
-
-
-class TestStatsResponseStructure:
-    async def test_articles_by_status_has_all_keys(self) -> None:
-        """articles_by_status always includes unread and archived keys."""
-        env = MockEnv()
-        client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats")
-
-        assert resp.status_code == 200
-        status = resp.json()["articles_by_status"]
-        assert "unread" in status
-        assert "archived" in status
-
-    async def test_top_domains_is_list(self) -> None:
-        """top_domains is always a list, even when empty."""
-        env = MockEnv()
-        client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats")
-
-        assert resp.status_code == 200
-        assert isinstance(resp.json()["top_domains"], list)
-
-    async def test_articles_by_month_is_list(self) -> None:
-        """articles_by_month is always a list, even when empty."""
-        env = MockEnv()
-        client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats")
-
-        assert resp.status_code == 200
-        assert isinstance(resp.json()["articles_by_month"], list)
-
-    async def test_avg_reading_time_zero_when_no_data(self) -> None:
-        """avg_reading_time_minutes is 0 when no articles have reading time."""
-        env = MockEnv()
-        client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats")
-
-        assert resp.status_code == 200
-        assert resp.json()["avg_reading_time_minutes"] == 0
-
-    async def test_all_values_are_serializable(self) -> None:
-        """All stats values are JSON-serializable primitives (no None, JsNull, etc.)."""
-
-        def execute(sql: str, params: list) -> list:
-            if "SUM(word_count)" in sql:
-                return [{"total": 0}]
-            if "COUNT(*)" in sql:
-                return [{"cnt": 0}]
-            if "GROUP BY reading_status" in sql:
-                return [
-                    {"reading_status": "unread", "cnt": 1},
-                    {"reading_status": "archived", "cnt": 0},
-                ]
-            if "GROUP BY domain" in sql:
-                return []
-            if "DISTINCT date" in sql:
-                return []
-            if "AVG(" in sql:
-                return [{"avg_rt": None}]
-            if "strftime" in sql:
-                return []
-            return []
-
-        db = MockD1(execute=execute)
-        env = MockEnv(db=db)
-        client, sid = await _authenticated_client(env)
-        resp = client.get("/api/stats")
-
-        assert resp.status_code == 200
-        data = resp.json()
-        # All top-level values should be int, float, list, or dict (no None)
-        for key in [
-            "total_articles",
-            "total_words_read",
-            "articles_this_week",
-            "articles_this_month",
-            "archived_this_week",
-            "archived_this_month",
-            "reading_streak_days",
-            "avg_reading_time_minutes",
-        ]:
-            assert isinstance(data[key], (int, float)), (
-                f"{key} should be numeric, got {type(data[key])}: {data[key]}"
-            )
-
-
-class TestStatsCacheControl:
-    async def test_stats_has_cache_control(self) -> None:
-        """GET /api/stats includes Cache-Control: private, max-age=120."""
-
-        def execute(sql, params):
-            if "COUNT(*)" in sql:
-                return [{"cnt": 0}]
-            if "SUM(word_count)" in sql:
-                return [{"total": 0}]
-            if "GROUP BY reading_status" in sql:
-                return []
-            if "GROUP BY domain" in sql:
-                return []
-            if "DISTINCT date" in sql:
-                return []
-            if "AVG(" in sql:
-                return [{"avg_rt": None}]
-            if "strftime" in sql:
-                return []
-            if "saved_week" in sql:
-                return [
-                    {
-                        "saved_week": 0,
-                        "saved_month": 0,
-                        "archived_week": 0,
-                        "archived_month": 0,
-                    }
-                ]
-            return []
-
-        env = MockEnv(db=MockD1(execute=execute))
-        client, _ = await _authenticated_client(env)
-        resp = client.get("/api/stats")
-        assert resp.status_code == 200
-        cc = resp.headers.get("cache-control", "")
-        assert "private" in cc
-        assert "max-age=120" in cc
+        assert (await _stats(db))["reading_streak_days"] == 0
